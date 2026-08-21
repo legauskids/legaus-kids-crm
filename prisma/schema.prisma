@@ -1,0 +1,260 @@
+// Legaus Kids CRM — schema Prisma
+// Portabilidade: só usamos tipos String/Int/Float/Boolean/DateTime.
+// Migrar para Postgres em produção = trocar só "provider" abaixo + DATABASE_URL.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum StatusConversa {
+  FILA
+  ATENDENDO
+}
+
+enum EscopoResposta {
+  COMPARTILHADA
+  PESSOAL
+}
+
+enum StatusMensagemAgendada {
+  PENDENTE
+  ENVIADA
+  CANCELADA
+}
+
+enum TipoAtividade {
+  NOTA
+  WHATSAPP
+  SISTEMA
+}
+
+enum StatusTarefa {
+  A_FAZER
+  EM_ANDAMENTO
+  APROVACAO
+  CONCLUIDA
+}
+
+enum TipoEtapa {
+  NORMAL
+  GANHO
+  PERDIDO
+}
+
+enum DirecaoMensagem {
+  ENTRADA
+  SAIDA
+}
+
+enum OrigemMensagem {
+  MANUAL
+  SISTEMA
+  WHATSAPP
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  nome         String
+  papel        String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  conversasAtendidas  Conversa[]         @relation("AtendenteConversa")
+  negociosResponsavel Negocio[]          @relation("ResponsavelNegocio")
+  tarefasResponsavel  Tarefa[]           @relation("ResponsavelTarefa")
+  tarefasSolicitadas  Tarefa[]           @relation("SolicitanteTarefa")
+  lembretes           Lembrete[]
+  respostasRapidas    RespostaRapida[]
+  notasInternas       NotaInterna[]
+  mensagensEnviadas   Mensagem[]
+  atividades          Atividade[]
+}
+
+model Setor {
+  id        String     @id @default(cuid())
+  nome      String     @unique
+  conversas Conversa[]
+}
+
+model Contato {
+  id        String     @id @default(cuid())
+  nome      String
+  empresa   String?
+  telefone  String     @unique
+  createdAt DateTime   @default(now())
+
+  conversas Conversa[]
+  negocios  Negocio[]
+  tarefas   Tarefa[]
+}
+
+model Conversa {
+  id          String         @id @default(cuid())
+  contatoId   String
+  contato     Contato        @relation(fields: [contatoId], references: [id])
+  setorId     String
+  setor       Setor          @relation(fields: [setorId], references: [id])
+  atendenteId String?
+  atendente   User?          @relation("AtendenteConversa", fields: [atendenteId], references: [id])
+  status      StatusConversa @default(FILA)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  mensagens          Mensagem[]
+  notas              NotaInterna[]
+  mensagensAgendadas MensagemAgendada[]
+  negociosOrigem     Negocio[]          @relation("OrigemConversaNegocio")
+  tarefas            Tarefa[]
+}
+
+model Mensagem {
+  id          String          @id @default(cuid())
+  conversaId  String
+  conversa    Conversa        @relation(fields: [conversaId], references: [id])
+  direcao     DirecaoMensagem
+  origem      OrigemMensagem  @default(MANUAL)
+  texto       String
+  autorUserId String?
+  autor       User?           @relation(fields: [autorUserId], references: [id])
+  externalId  String?         @unique
+  enviadaEm   DateTime        @default(now())
+}
+
+model NotaInterna {
+  id         String   @id @default(cuid())
+  conversaId String
+  conversa   Conversa @relation(fields: [conversaId], references: [id])
+  autorId    String
+  autor      User     @relation(fields: [autorId], references: [id])
+  texto      String
+  criadaEm   DateTime @default(now())
+}
+
+model MensagemAgendada {
+  id           String                 @id @default(cuid())
+  conversaId   String
+  conversa     Conversa               @relation(fields: [conversaId], references: [id])
+  texto        String
+  agendadaPara DateTime
+  status       StatusMensagemAgendada @default(PENDENTE)
+  criadaPorId  String
+  criadaEm     DateTime               @default(now())
+}
+
+model Funil {
+  id       String    @id @default(cuid())
+  nome     String
+  ordem    Int       @default(0)
+  etapas   Etapa[]
+  negocios Negocio[]
+}
+
+model Etapa {
+  id       String    @id @default(cuid())
+  funilId  String
+  funil    Funil     @relation(fields: [funilId], references: [id])
+  nome     String
+  ordem    Int
+  slaDias  Int?
+  tipo     TipoEtapa @default(NORMAL)
+  negocios Negocio[]
+}
+
+model Negocio {
+  id                 String    @id @default(cuid())
+  titulo             String
+  contatoId          String
+  contato            Contato   @relation(fields: [contatoId], references: [id])
+  funilId            String
+  funil              Funil     @relation(fields: [funilId], references: [id])
+  etapaId            String
+  etapa              Etapa     @relation(fields: [etapaId], references: [id])
+  valorCentavos      Int       @default(0)
+  responsavelId      String
+  responsavel        User      @relation("ResponsavelNegocio", fields: [responsavelId], references: [id])
+  dataInicio         DateTime  @default(now())
+  dataEntradaNaEtapa DateTime  @default(now())
+  previsaoFechamento DateTime?
+  origem             String?
+  progressoProducao  Int?
+  previsaoProducao   DateTime?
+  dataInstalacao     DateTime?
+  equipeInstalacao   String?
+  motivoPerda        String?
+  origemConversaId   String?
+  origemConversa     Conversa? @relation("OrigemConversaNegocio", fields: [origemConversaId], references: [id])
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tarefas    Tarefa[]
+  atividades Atividade[]
+}
+
+model Tarefa {
+  id            String       @id @default(cuid())
+  titulo        String
+  negocioId     String?
+  negocio       Negocio?     @relation(fields: [negocioId], references: [id])
+  contatoId     String?
+  contato       Contato?     @relation(fields: [contatoId], references: [id])
+  conversaId    String?
+  conversa      Conversa?    @relation(fields: [conversaId], references: [id])
+  responsavelId String
+  responsavel   User         @relation("ResponsavelTarefa", fields: [responsavelId], references: [id])
+  solicitanteId String
+  solicitante   User         @relation("SolicitanteTarefa", fields: [solicitanteId], references: [id])
+  prazo         DateTime
+  status        StatusTarefa @default(A_FAZER)
+  descricao     String?
+  automatica    Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  lembretes Lembrete[]
+}
+
+model Lembrete {
+  id            String   @id @default(cuid())
+  paraUsuarioId String
+  paraUsuario   User     @relation(fields: [paraUsuarioId], references: [id])
+  texto         String
+  tarefaId      String?
+  tarefa        Tarefa?  @relation(fields: [tarefaId], references: [id])
+  lido          Boolean  @default(false)
+  criadoEm      DateTime @default(now())
+}
+
+model RespostaRapida {
+  id     String         @id @default(cuid())
+  titulo String
+  texto  String
+  escopo EscopoResposta
+  donoId String?
+  dono   User?          @relation(fields: [donoId], references: [id])
+}
+
+model Atividade {
+  id        String        @id @default(cuid())
+  negocioId String
+  negocio   Negocio       @relation(fields: [negocioId], references: [id])
+  tipo      TipoAtividade
+  texto     String
+  autorId   String?
+  autor     User?         @relation(fields: [autorId], references: [id])
+  criadoEm  DateTime      @default(now())
+}
+
+model Meta {
+  id                String @id @default(cuid())
+  mes               Int
+  ano               Int
+  valorAlvoCentavos Int
+
+  @@unique([mes, ano])
+}
