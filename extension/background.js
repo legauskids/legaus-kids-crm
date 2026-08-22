@@ -7,7 +7,7 @@ const ALARME_FILA_ENVIO = "legaus-poll-fila-envio";
 
 async function getConfig() {
   const { apiUrl, apiToken } = await chrome.storage.local.get(["apiUrl", "apiToken"]);
-  return { apiUrl: apiUrl || "http://localhost:3000", apiToken: apiToken || "" };
+  return { apiUrl: apiUrl || "https://crm.legauskids.com.br", apiToken: apiToken || "" };
 }
 
 async function chamarApi(caminho, options = {}) {

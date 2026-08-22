@@ -6,7 +6,7 @@ Extensão de Chrome (Manifest V3) que sincroniza o WhatsApp Web com o CRM. Sem b
 
 1. `chrome://extensions` → ativar "Modo do desenvolvedor" → "Carregar sem compactação" → selecionar esta pasta (`extension/`).
 2. No app, acesse `/extensao`, copie seu token de acesso.
-3. Clique no ícone da extensão, cole o token e a URL do sistema (`http://localhost:3000` em dev), clique em "Salvar e testar conexão".
+3. Clique no ícone da extensão, cole o token e a URL do sistema (`https://crm.legauskids.com.br` em produção; `http://localhost:3000` só se estiver testando localmente), clique em "Salvar e testar conexão".
 4. Abra `web.whatsapp.com` e escaneie o QR code pelo celular normalmente.
 
 ## Como funciona

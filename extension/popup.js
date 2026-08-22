@@ -4,7 +4,7 @@ const statusEl = document.getElementById("status");
 
 async function carregar() {
   const { apiUrl, apiToken } = await chrome.storage.local.get(["apiUrl", "apiToken"]);
-  apiUrlInput.value = apiUrl || "http://localhost:3000";
+  apiUrlInput.value = apiUrl || "https://crm.legauskids.com.br";
   apiTokenInput.value = apiToken || "";
 }
 

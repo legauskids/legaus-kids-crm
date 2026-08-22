@@ -142,7 +142,7 @@ function injetarBadge() {
   badge.target = "_blank";
   badge.rel = "noopener";
   chrome.storage.local.get(["apiUrl"], ({ apiUrl }) => {
-    badge.href = `${apiUrl || "http://localhost:3000"}/atendimento`;
+    badge.href = `${apiUrl || "https://crm.legauskids.com.br"}/atendimento`;
   });
   cabecalho.appendChild(badge);
 }
@@ -152,7 +152,7 @@ function atualizarBadge(telefone) {
   const badge = document.querySelector(".legaus-badge");
   if (badge && conversaId) {
     chrome.storage.local.get(["apiUrl"], ({ apiUrl }) => {
-      badge.href = `${apiUrl || "http://localhost:3000"}/atendimento?conversaId=${conversaId}`;
+      badge.href = `${apiUrl || "https://crm.legauskids.com.br"}/atendimento?conversaId=${conversaId}`;
     });
   }
 }

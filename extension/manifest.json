@@ -4,7 +4,12 @@
   "version": "0.1.0",
   "description": "Sincroniza o WhatsApp Web com o CRM da Legaus Kids.",
   "permissions": ["storage", "alarms", "scripting"],
-  "host_permissions": ["https://web.whatsapp.com/*", "http://localhost/*"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://crm.legauskids.com.br/*",
+    "https://legaus-kids-crm.vercel.app/*",
+    "http://localhost/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
