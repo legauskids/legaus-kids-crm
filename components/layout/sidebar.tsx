@@ -9,6 +9,7 @@ import {
   Handshake,
   ListChecks,
   Factory,
+  Puzzle,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -17,6 +18,10 @@ const NAV_ITEMS = [
   { href: "/negocios", label: "Negócios", icon: Handshake },
   { href: "/tarefas", label: "Tarefas", icon: ListChecks },
   { href: "/producao", label: "Produção", icon: Factory },
+];
+
+const NAV_ITEMS_SECUNDARIOS = [
+  { href: "/extensao", label: "Extensão", icon: Puzzle },
 ];
 
 export function Sidebar() {
@@ -30,6 +35,27 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1 p-2">
         {NAV_ITEMS.map((item) => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <Icon className="size-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <nav className="space-y-1 border-t p-2">
+        {NAV_ITEMS_SECUNDARIOS.map((item) => {
+          const active = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link

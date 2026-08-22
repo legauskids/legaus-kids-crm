@@ -10,6 +10,50 @@ import { prisma } from "@/lib/db";
 
 export type EscopoConversa = "minhas" | "fila" | "todas";
 
+function normalizarTelefone(telefone: string): string {
+  return telefone.replace(/\D/g, "");
+}
+
+/**
+ * Ponto de entrada da futura extensão de WhatsApp: acha a conversa de um
+ * telefone (criando Contato + Conversa se for a primeira vez que esse
+ * número aparece). Novos contatos caem na fila do setor de
+ * Atendimento/Pré-vendas, igual a um lead chegando do zero.
+ */
+export async function encontrarOuCriarConversaPorTelefone(input: {
+  telefone: string;
+  nomeContato?: string;
+}) {
+  const telefone = normalizarTelefone(input.telefone);
+
+  const contatoExistente = await prisma.contato.findUnique({
+    where: { telefone },
+    include: { conversas: true },
+  });
+
+  if (contatoExistente) {
+    const conversaExistente = contatoExistente.conversas[0];
+    if (conversaExistente) return conversaExistente;
+
+    const setorPadrao = await prisma.setor.findFirstOrThrow({
+      where: { nome: "Atendimento/Pré-vendas" },
+    });
+    return prisma.conversa.create({
+      data: { contatoId: contatoExistente.id, setorId: setorPadrao.id },
+    });
+  }
+
+  const setorPadrao = await prisma.setor.findFirstOrThrow({
+    where: { nome: "Atendimento/Pré-vendas" },
+  });
+  const contato = await prisma.contato.create({
+    data: { telefone, nome: input.nomeContato?.trim() || telefone },
+  });
+  return prisma.conversa.create({
+    data: { contatoId: contato.id, setorId: setorPadrao.id },
+  });
+}
+
 export function listConversas(input: { escopo: EscopoConversa; setorId?: string; userId: string }) {
   return prisma.conversa.findMany({
     where: {
@@ -41,12 +85,36 @@ export function getConversaDetalhada(conversaId: string) {
   });
 }
 
+export function encontrarMensagemPorExternalId(externalId: string) {
+  return prisma.mensagem.findUnique({ where: { externalId } });
+}
+
+/**
+ * Mensagens de saída que ainda não foram de fato entregues pelo WhatsApp
+ * real (criadas pelo composer do Atendimento ou por uma mensagem agendada
+ * que venceu) — a extensão consome essa fila e retransmite pra conversa
+ * real, depois confirma via `confirmarEnvioMensagem`.
+ */
+export function listMensagensPendentesDeRelay() {
+  return prisma.mensagem.findMany({
+    where: { direcao: "SAIDA", origem: { not: "WHATSAPP" }, externalId: null },
+    include: { conversa: { include: { contato: true } } },
+    orderBy: { enviadaEm: "asc" },
+  });
+}
+
+export function confirmarEnvioMensagem(mensagemId: string, externalId: string) {
+  return prisma.mensagem.update({ where: { id: mensagemId }, data: { externalId } });
+}
+
 export async function registrarMensagem(input: {
   conversaId: string;
   texto: string;
   direcao: "ENTRADA" | "SAIDA";
   origem?: "MANUAL" | "SISTEMA" | "WHATSAPP";
   autorUserId?: string;
+  externalId?: string;
+  enviadaEm?: Date;
 }) {
   const mensagem = await prisma.mensagem.create({
     data: {
@@ -55,6 +123,8 @@ export async function registrarMensagem(input: {
       direcao: input.direcao,
       origem: input.origem ?? "MANUAL",
       autorUserId: input.autorUserId,
+      externalId: input.externalId,
+      enviadaEm: input.enviadaEm,
     },
   });
   await prisma.conversa.update({ where: { id: input.conversaId }, data: { updatedAt: new Date() } });
