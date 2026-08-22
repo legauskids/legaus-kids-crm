@@ -14,11 +14,14 @@ import { HistoricoTab } from "@/app/(app)/negocios/[negocioId]/historico-tab";
 
 export default async function NegocioDetalhePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ negocioId: string }>;
+  searchParams: Promise<{ abrirTarefa?: string }>;
 }) {
   await requireUser();
   const { negocioId } = await params;
+  const { abrirTarefa } = await searchParams;
   const negocio = await getNegocioDetalhado(negocioId);
   if (!negocio) notFound();
 
@@ -50,7 +53,7 @@ export default async function NegocioDetalhePage({
         isFunilPosVenda={isFunilPosVenda}
       />
 
-      <Tabs defaultValue="dados">
+      <Tabs defaultValue={abrirTarefa ? "tarefas" : "dados"}>
         <TabsList>
           <TabsTrigger value="dados">Dados</TabsTrigger>
           <TabsTrigger value="tarefas">Tarefas ({negocio.tarefas.length})</TabsTrigger>
@@ -60,7 +63,12 @@ export default async function NegocioDetalhePage({
           <DadosTab negocio={negocio} usuarios={usuarios} isFunilPosVenda={isFunilPosVenda} />
         </TabsContent>
         <TabsContent value="tarefas">
-          <TarefasTab negocioId={negocio.id} tarefas={negocio.tarefas} usuarios={usuarios} />
+          <TarefasTab
+            negocioId={negocio.id}
+            tarefas={negocio.tarefas}
+            usuarios={usuarios}
+            abrirFormularioInicialmente={abrirTarefa === "1"}
+          />
         </TabsContent>
         <TabsContent value="historico">
           <HistoricoTab negocioId={negocio.id} atividades={negocio.atividades} />

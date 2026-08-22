@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -41,12 +41,14 @@ export function NegociosBoardShell({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [items, setItems] = useState<KanbanItemDef<NegocioCard>[]>(() => toItems(negocios));
+  const [negociosAnteriores, setNegociosAnteriores] = useState(negocios);
   const [novoOpen, setNovoOpen] = useState(false);
   const [motivoDialog, setMotivoDialog] = useState<{ negocioId: string; etapaId: string } | null>(null);
 
-  useEffect(() => {
+  if (negocios !== negociosAnteriores) {
+    setNegociosAnteriores(negocios);
     setItems(toItems(negocios));
-  }, [negocios]);
+  }
 
   const funilSelecionado = funis.find((f) => f.id === funilSelecionadoId) ?? funis[0];
   if (!funilSelecionado) {

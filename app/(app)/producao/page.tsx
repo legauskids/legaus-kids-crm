@@ -1,8 +1,30 @@
-export default function ProducaoPage() {
+import { requireUser } from "@/lib/auth/guards";
+import { listEmProducao, listInstalacoes } from "@/lib/server/producao";
+import { ProducaoShell } from "@/app/(app)/producao/producao-shell";
+
+export default async function ProducaoPage() {
+  await requireUser();
+
+  const [emProducao, instalacoes] = await Promise.all([listEmProducao(), listInstalacoes()]);
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold">Produção &amp; Instalações</h1>
-      <p className="mt-1 text-muted-foreground">Em construção — Milestone 6.</p>
-    </div>
+    <ProducaoShell
+      emProducao={emProducao.map((n) => ({
+        id: n.id,
+        titulo: n.titulo,
+        contatoNome: n.contato.nome,
+        responsavelNome: n.responsavel.nome,
+        progressoProducao: n.progressoProducao,
+        previsaoProducao: n.previsaoProducao?.toISOString() ?? null,
+      }))}
+      instalacoes={instalacoes.map((n) => ({
+        id: n.id,
+        titulo: n.titulo,
+        contatoNome: n.contato.nome,
+        responsavelNome: n.responsavel.nome,
+        dataInstalacao: n.dataInstalacao!.toISOString(),
+        equipeInstalacao: n.equipeInstalacao,
+      }))}
+    />
   );
 }

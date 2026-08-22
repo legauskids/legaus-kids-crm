@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,22 +42,26 @@ export function TarefasTab({
   negocioId,
   tarefas,
   usuarios,
+  abrirFormularioInicialmente = false,
 }: {
   negocioId: string;
   tarefas: Tarefa[];
   usuarios: { id: string; nome: string }[];
+  abrirFormularioInicialmente?: boolean;
 }) {
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(abrirFormularioInicialmente);
   const initialState: CriarTarefaRapidaState = {};
   const [state, formAction, pending] = useActionState(
     criarTarefaRapidaAction.bind(null, negocioId),
     initialState,
   );
   const [, startTransition] = useTransition();
+  const [successAnterior, setSuccessAnterior] = useState(state.success);
 
-  useEffect(() => {
+  if (state.success !== successAnterior) {
+    setSuccessAnterior(state.success);
     if (state.success) setFormOpen(false);
-  }, [state.success]);
+  }
 
   return (
     <div className="mt-4 space-y-4">

@@ -4,15 +4,7 @@ import { LogOut } from "lucide-react";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { getLembretesNaoLidos } from "@/lib/server/lembretes";
 import type { SessionUser } from "@/lib/auth/session";
-
-function initials(nome: string): string {
-  return nome
-    .split(" ")
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
+import { initials } from "@/lib/utils";
 
 export async function Topbar({ user }: { user: SessionUser }) {
   const lembretes = await getLembretesNaoLidos(user.id);
