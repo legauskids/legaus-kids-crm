@@ -1,9 +1,8 @@
 // Legaus Kids CRM — schema Prisma
-// Portabilidade: só usamos tipos String/Int/Float/Boolean/DateTime.
-// Migrar para Postgres em produção = trocar só "provider" abaixo + DATABASE_URL.
+// Postgres (Neon) em dev e produção — ver DATABASE_URL no .env / painel da Vercel.
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
