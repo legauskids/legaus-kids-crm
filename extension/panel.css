@@ -310,3 +310,172 @@
   color: #dc2626;
 }
 
+/* Trilha de navegação entre telas (resumo/notas/lembretes/respostas/etiquetas/ferramentas). */
+.legaus-nav-rail {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.legaus-nav-btn {
+  flex: 1;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 6px 0 !important;
+  font-size: 15px !important;
+  border-radius: 6px;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+}
+
+.legaus-nav-btn:hover {
+  background: #f3f4f6 !important;
+}
+
+.legaus-nav-btn-ativo {
+  background: #111827 !important;
+  border-color: #111827 !important;
+}
+
+/* Textareas seguem o mesmo estilo dos inputs de formulário. */
+#legaus-sidepanel-conteudo textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+}
+
+.legaus-texto-ajuda {
+  color: #6b7280;
+  font-size: 11px;
+  margin: 0 0 10px;
+}
+
+/* Notas */
+.legaus-nota-card {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.legaus-nota-texto {
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.legaus-nota-meta {
+  font-size: 10px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+#legaus-form-nota,
+#legaus-form-lembrete {
+  margin-top: 10px;
+}
+
+/* Respostas rápidas */
+.legaus-resposta-card {
+  display: block !important;
+  text-align: left;
+  padding: 8px 10px !important;
+  margin-bottom: 6px !important;
+}
+
+.legaus-resposta-titulo {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.legaus-resposta-texto {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Etiquetas */
+.legaus-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.legaus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.legaus-chip-remover {
+  width: auto !important;
+  margin: 0 !important;
+  padding: 0 4px !important;
+  border: none !important;
+  background: transparent !important;
+  color: #9ca3af;
+  font-size: 13px !important;
+  line-height: 1;
+}
+
+.legaus-chip-remover:hover {
+  color: #dc2626;
+  background: transparent !important;
+}
+
+.legaus-form-linha {
+  display: flex !important;
+  gap: 6px;
+}
+
+.legaus-form-linha input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.legaus-form-linha button {
+  width: auto !important;
+  margin: 0 !important;
+  padding: 6px 12px !important;
+}
+
+/* Ferramentas */
+#legaus-lista-ferramentas .legaus-card-acao {
+  margin-bottom: 8px;
+}
+
+.legaus-subtela label {
+  font-size: 12px;
+  color: #6b7280;
+  display: block;
+  margin-top: 8px;
+}
+
+/* Borrar mensagens (ferramenta "gravar vídeo tutorial") */
+body.legaus-mensagens-borradas [data-testid="conversation-panel-messages"] {
+  filter: blur(6px);
+  transition: filter 0.15s ease;
+}
+

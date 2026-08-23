@@ -52,6 +52,20 @@ async function chamarApiComDetalhes(caminho, options = {}) {
   }
 }
 
+/** Igual chamarApiComDetalhes, mas devolve texto puro (usado pro CSV de contatos). */
+async function chamarApiTexto(caminho) {
+  const { apiUrl, apiToken } = await getConfig();
+  try {
+    const resposta = await fetch(`${apiUrl}${caminho}`, {
+      headers: { Authorization: `Bearer ${apiToken}` },
+    });
+    const texto = await resposta.text();
+    return { ok: resposta.ok, status: resposta.status, texto };
+  } catch (erro) {
+    return { ok: false, status: 0, texto: "" };
+  }
+}
+
 async function reportarMensagemRecebida(payload) {
   return chamarApi("/api/integracoes/whatsapp/mensagens", {
     method: "POST",
@@ -109,6 +123,10 @@ chrome.runtime.onMessage.addListener((mensagem, _sender, sendResponse) => {
   }
   if (mensagem.type === "LEGAUS_API_CALL") {
     chamarApiComDetalhes(mensagem.caminho, mensagem.options).then(sendResponse);
+    return true;
+  }
+  if (mensagem.type === "LEGAUS_API_CALL_TEXTO") {
+    chamarApiTexto(mensagem.caminho).then(sendResponse);
     return true;
   }
 });
