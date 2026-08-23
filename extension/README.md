@@ -24,6 +24,19 @@ window.__legausDebug()
 
 Mostra quantos elementos cada seletor de `selectors.js` encontrou no DOM atual. Zero em alguma linha = esse seletor mudou e precisa ser ajustado — é o primeiro lugar a olhar se algo parar de sincronizar.
 
+## Painel lateral (side-panel.js)
+
+Painel recolhível injetado à direita do WhatsApp Web (aba "CRM"). Estrutura em telas, navegadas pela trilha de ícones no topo:
+
+- 🏠 **Resumo** — nome/telefone do contato, "Salvar contato no CRM" (com opção de também pré-preencher a tela nativa "Novo contato" do WhatsApp) e o atalho pra Negócios.
+- 📝 **Notas** — lista e cria notas internas do contato (mesmas exibidas na aba Atendimento do CRM).
+- ⏰ **Lembretes** — cria um lembrete rápido pro usuário logado (aparece no sininho do CRM).
+- ⚡ **Respostas rápidas** — lista o banco de respostas do CRM; clicar insere o texto na caixa de mensagem do WhatsApp.
+- 🏷️ **Etiquetas** — tags livres por contato (`Contato.tags`, array no Postgres).
+- 🧰 **Ferramentas** — Agendar reunião (abre o Google Agenda com um link direto, sem OAuth), Envio em massa (enfileira uma mensagem pendente por número, retransmitida pela fila normal — não manda nada direto pra evitar quebrar no meio de uma navegação), Exportar contatos (baixa um CSV), Borrar mensagens (blur de CSS pra gravar vídeo tutorial), Assistente IA (ainda não implementado, só um aviso "em breve").
+
+Essas telas foram inspiradas no [WaSeller](https://chromewebstore.google.com/detail/waseller-perder-vendas-no/illemhbijpiebjfilfmgebahaakajkpe) (pesquisado via a página da loja + a extensão de verdade logada — mas a UI real deles ficou travada atrás do login próprio, então a lista de funcionalidades da loja foi a referência principal). Todas as rotas de backend novas foram conferidas via curl contra produção; **o clique de verdade dentro do WhatsApp Web (preencher os formulários, clicar em cada botão) ainda não foi testado ao vivo** — feito assim de propósito, a pedido explícito do usuário, pra revisar tudo junto numa sessão seguinte.
+
 ## Limitações conhecidas (leia antes de reportar "não funciona")
 
 - **Seletores confirmados contra uma sessão real** (WhatsApp Business Web, 2026-08-22) — `chat-list`, `cell-frame-container`, `conversation-panel-messages`, `conversation-header`, `conversation-info-header-chat-title`, `conversation-compose-box-input`, botão "Enviar", `tail-out` (mensagem enviada) e os `data-testid="conv-msg-{id}"` de cada bolha. **Não confirmado ainda**: `tail-in` (mensagem recebida) foi inferido por simetria com `tail-out`, mas não apareceu numa conversa real durante a inspeção — é o primeiro lugar a checar com `window.__legausDebug()` se mensagens recebidas não estiverem sincronizando.
