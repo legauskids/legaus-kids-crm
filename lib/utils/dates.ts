@@ -44,6 +44,16 @@ export function colunaKanbanTarefa(prazo: Date, status: string): ColunaTarefa {
   return status as ColunaTarefa;
 }
 
+export type CorPrazoData = "atrasada" | "hoje" | "normal";
+
+/** Mesma lógica de cor usada nas tarefas, mas só pela data — sem status de conclusão
+ * (as listas de produção/instalação já só trazem itens pendentes). */
+export function corPrazoData(data: Date): CorPrazoData {
+  if (isHoje(data)) return "hoje";
+  if (data.getTime() < Date.now()) return "atrasada";
+  return "normal";
+}
+
 export type Periodo = "hoje" | "semana" | "mes";
 
 export function estaNoPeriodo(data: Date, periodo: Periodo): boolean {

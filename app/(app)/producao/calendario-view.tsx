@@ -19,9 +19,16 @@ import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { corPrazoData } from "@/lib/utils/dates";
 import type { EmProducaoVM, InstalacaoVM } from "@/app/(app)/producao/types";
 
 type Evento = { id: string; titulo: string; icone: string; data: Date };
+
+const COR_TEXTO_PRAZO: Record<string, string> = {
+  atrasada: "text-destructive",
+  hoje: "text-amber-600 dark:text-amber-400",
+  normal: "text-sky-600 dark:text-sky-400",
+};
 
 export function CalendarioProducaoView({
   emProducao,
@@ -52,7 +59,7 @@ export function CalendarioProducaoView({
   }, [mesAtual]);
 
   return (
-    <div className="flex h-full flex-col p-4">
+    <div className="flex flex-col p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium capitalize">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</h2>
         <div className="flex gap-1">
@@ -88,7 +95,10 @@ export function CalendarioProducaoView({
               <ul className="space-y-0.5">
                 {eventosDoDia.map((e) => (
                   <li key={`${e.icone}-${e.id}`} className="truncate" title={e.titulo}>
-                    <Link href={`/negocios/${e.id}`} className="hover:underline">
+                    <Link
+                      href={`/negocios/${e.id}`}
+                      className={cn("font-medium hover:underline", COR_TEXTO_PRAZO[corPrazoData(e.data)])}
+                    >
                       {e.icone} {e.titulo}
                     </Link>
                   </li>
