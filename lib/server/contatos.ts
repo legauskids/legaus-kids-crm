@@ -1,8 +1,21 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 
-function normalizarTelefone(telefone: string): string {
+export function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
+}
+
+/** Usado pelo painel da extensão pra decidir entre a tela de "contato novo" e a de resumo. */
+export function buscarContatoComNegociosPorTelefone(telefone: string) {
+  return prisma.contato.findUnique({
+    where: { telefone: normalizarTelefone(telefone) },
+    include: {
+      negocios: {
+        include: { funil: true, etapa: true },
+        orderBy: { updatedAt: "desc" },
+      },
+    },
+  });
 }
 
 /**

@@ -70,30 +70,143 @@
   display: block;
 }
 
-#legaus-sidepanel h2 {
+.legaus-header {
   font-size: 15px;
-  margin: 0 0 14px;
+  font-weight: 700;
+  margin: 0 0 16px;
 }
 
 #legaus-sem-conversa {
   color: #6b7280;
 }
 
-#legaus-contato-nome {
+/* Card com nome/telefone do contato, no topo de cada tela. */
+.legaus-contato-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.legaus-contato-nome {
   font-weight: 600;
   font-size: 14px;
 }
 
-#legaus-contato-telefone {
+.legaus-contato-telefone {
   color: #6b7280;
   font-size: 12px;
-  margin-bottom: 14px;
 }
 
-#legaus-sidepanel hr {
+.legaus-badge-novo {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.legaus-secao-titulo {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin: 4px 0 8px;
+}
+
+/* Card clicável de "Ações rápidas" (ex.: Negócios), estilo Agendor. */
+.legaus-card-acao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.legaus-card-acao:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.legaus-card-acao-titulo {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.legaus-card-acao-sub {
+  display: block;
+  color: #6b7280;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.legaus-card-acao-seta {
+  color: #9ca3af;
+  font-size: 16px;
+}
+
+.legaus-breadcrumb {
+  background: none;
   border: none;
-  border-top: 1px solid #e5e7eb;
-  margin: 14px 0;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.legaus-breadcrumb:hover {
+  color: #111827;
+}
+
+.legaus-sem-negocios {
+  color: #6b7280;
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.legaus-negocio-card {
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.legaus-negocio-card:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.legaus-negocio-titulo {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.legaus-negocio-valor {
+  font-size: 12px;
+  color: #111827;
+  margin-top: 2px;
+}
+
+.legaus-negocio-etapa {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
 }
 
 #legaus-sidepanel-conteudo button {
@@ -112,15 +225,13 @@
   background: #f3f4f6;
 }
 
-#legaus-salvar-contato,
-#legaus-form-negocio button[type="submit"] {
+.legaus-btn-primario {
   background: #111827 !important;
   color: #fff !important;
   border-color: #111827 !important;
 }
 
-#legaus-salvar-contato:hover,
-#legaus-form-negocio button[type="submit"]:hover {
+.legaus-btn-primario:hover {
   background: #374151 !important;
 }
 
@@ -128,7 +239,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 #legaus-form-negocio label {
@@ -144,6 +255,16 @@
   border-radius: 6px;
   font-size: 13px;
   font-family: inherit;
+}
+
+.legaus-form-botoes {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.legaus-form-botoes button {
+  margin: 0 !important;
 }
 
 .legaus-status {
