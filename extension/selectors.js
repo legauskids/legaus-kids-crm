@@ -69,6 +69,11 @@ const LEGAUS_SELECTORS = {
   // salva um contato no CRM, deixando a sincronização com o celular pro
   // clique final do próprio usuário (não automatizamos o clique em salvar).
   botaoNovaConversa: ['[aria-label="Nova conversa"]', '[title="Nova conversa"]'],
+
+  // Nome do perfil comercial (contas WhatsApp Business), visível só dentro
+  // do painel "Dados do contato" — o cabeçalho da conversa mostra só o
+  // telefone quando o contato não está salvo nos contatos pessoais.
+  nomeEmpresaContato: ['[data-testid="business-top-card-name-title"]'],
   campoNomeNovoContato: ['div[data-testid="text-input"][aria-label="Nome"]'],
   campoTelefoneNovoContato: ['input[data-testid="phone-number-input"]'],
   toggleSincronizarNovoContato: ['input[data-testid="save-contact-drawer"]'],

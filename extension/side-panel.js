@@ -2,7 +2,7 @@
 // no Agendor): identifica o contato da conversa aberta, oferece salvar no CRM
 // e, a partir daí, criar/ver negócios vinculados como cards.
 // Depende de LEGAUS_SELECTORS/primeiroElemento (selectors.js) e de
-// telefoneDaConversaAtual/cabecalhoAtualTexto/log (content-script.js) —
+// telefoneDaConversaAtual/nomeDaConversaAtual/log (content-script.js) —
 // mesmo "isolated world", scripts carregados em sequência no manifest.
 
 let legausFunisCache = null;
@@ -145,13 +145,13 @@ function legausMostrarTela(nome) {
   }
 }
 
-function legausAlternarFormNegocio(mostrar) {
+async function legausAlternarFormNegocio(mostrar) {
   const form = document.getElementById("legaus-form-negocio");
   form.style.display = mostrar ? "flex" : "none";
   document.getElementById("legaus-status-negocio").textContent = "";
   if (mostrar) {
     const telefone = legausUltimoTelefonePainel;
-    document.getElementById("legaus-negocio-titulo").value = (cabecalhoAtualTexto || telefone || "").trim();
+    document.getElementById("legaus-negocio-titulo").value = ((await nomeDaConversaAtual()) || telefone || "").trim();
   }
 }
 
@@ -235,7 +235,7 @@ async function legausAtualizarConversaNoPainel() {
   semConversa.style.display = "none";
   comConversa.style.display = "block";
 
-  const nomeDaConversa = (cabecalhoAtualTexto || telefone).trim();
+  const nomeDaConversa = ((await nomeDaConversaAtual()) || telefone).trim();
   const info = await legausBuscarContato(telefone);
   legausContatoAtual = info;
 
@@ -256,11 +256,11 @@ async function legausAtualizarConversaNoPainel() {
 }
 
 /** Abre a tela de formulário já com o nome puxado do WhatsApp (ou o já salvo no CRM). */
-function legausAbrirFormContato() {
+async function legausAbrirFormContato() {
   const telefone = legausUltimoTelefonePainel;
   const semNomeSalvo = !legausContatoAtual?.existe || legausContatoAtual.contato.nome === legausContatoAtual.contato.telefone;
   const nomeSugerido = semNomeSalvo
-    ? (cabecalhoAtualTexto || telefone || "").trim()
+    ? ((await nomeDaConversaAtual()) || telefone || "").trim()
     : legausContatoAtual.contato.nome;
 
   document.getElementById("legaus-contato-form-nome").value = nomeSugerido;
@@ -333,7 +333,7 @@ async function legausCriarNegocio(evento) {
       method: "POST",
       body: JSON.stringify({
         telefone,
-        nomeContato: cabecalhoAtualTexto,
+        nomeContato: await nomeDaConversaAtual(),
         titulo,
         funilId,
         valorReais: valor ? Number(valor) : 0,

@@ -7,6 +7,8 @@ const telefonePorConversaAberta = new Map(); // telefone -> conversaId (preenchi
 
 let telefoneAtual = null;
 let cabecalhoAtualTexto = null;
+let nomeAtual = null;
+let nomeAtualCabecalhoTexto = null;
 
 function log(...args) {
   console.log("[Legaus]", ...args);
@@ -66,6 +68,45 @@ async function telefoneDaConversaAtual() {
   cabecalhoAtualTexto = textoCabecalho;
   telefoneAtual = await obterTelefoneDaConversaAberta();
   return telefoneAtual;
+}
+
+function pareceApenasTelefone(texto) {
+  return /^[+\d][\d\s()+-]*$/.test((texto || "").trim());
+}
+
+/**
+ * Contas WhatsApp Business não-salvas mostram só o telefone no cabeçalho da
+ * conversa — o nome real ("Lancheria Trevo", por ex.) só aparece dentro do
+ * painel "Dados do contato" (perfil comercial). Só abre esse painel quando
+ * o cabeçalho parece ser só um telefone; se já tem nome, usa ele direto.
+ */
+async function obterNomeDoNegocioAberto() {
+  const cabecalho = primeiroElemento(LEGAUS_SELECTORS.cabecalhoConversa);
+  if (!cabecalho) return null;
+
+  cabecalho.click();
+  await new Promise((resolve) => setTimeout(resolve, 600));
+
+  const elNome = primeiroElemento(LEGAUS_SELECTORS.nomeEmpresaContato);
+  const nome = elNome?.textContent?.trim() || null;
+
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  return nome;
+}
+
+async function nomeDaConversaAtual() {
+  const cabecalho = primeiroElemento(LEGAUS_SELECTORS.tituloCabecalho);
+  const textoCabecalho = (cabecalho?.textContent ?? "").trim();
+
+  if (!pareceApenasTelefone(textoCabecalho)) {
+    return textoCabecalho;
+  }
+  if (textoCabecalho === nomeAtualCabecalhoTexto && nomeAtual) {
+    return nomeAtual;
+  }
+  nomeAtualCabecalhoTexto = textoCabecalho;
+  nomeAtual = await obterNomeDoNegocioAberto();
+  return nomeAtual || textoCabecalho;
 }
 
 function extrairTextoMensagem(bolha) {
