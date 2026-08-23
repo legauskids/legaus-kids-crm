@@ -271,6 +271,21 @@
   font-family: inherit;
 }
 
+.legaus-checkbox-linha {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px !important;
+  color: #6b7280;
+  margin-top: 12px !important;
+  cursor: pointer;
+}
+
+.legaus-checkbox-linha input {
+  width: auto !important;
+  margin-top: 1px;
+}
+
 .legaus-form-botoes {
   display: flex;
   gap: 8px;

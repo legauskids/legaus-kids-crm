@@ -63,6 +63,15 @@ const LEGAUS_SELECTORS = {
   // telefone quando o contato tem nome salvo e o aria-label do composer
   // não mostra o número.
   secaoTelefoneContato: ['[data-testid="section-about-and-phone-number"]'],
+
+  // Fluxo nativo "Novo contato" do WhatsApp Web (confirmado ao vivo em
+  // 2026-08-22) — usado pra pré-preencher nome/telefone quando o usuário
+  // salva um contato no CRM, deixando a sincronização com o celular pro
+  // clique final do próprio usuário (não automatizamos o clique em salvar).
+  botaoNovaConversa: ['[title="Nova conversa"]'],
+  campoNomeNovoContato: ['div[data-testid="text-input"][aria-label="Nome"]'],
+  campoTelefoneNovoContato: ['input[data-testid="phone-number-input"]'],
+  toggleSincronizarNovoContato: ['input[data-testid="save-contact-drawer"]'],
 };
 
 function contarCandidatos(seletores) {

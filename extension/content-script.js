@@ -187,6 +187,55 @@ function clicarEnviar() {
   return true;
 }
 
+/**
+ * Abre a tela nativa "Novo contato" do WhatsApp Web e pré-preenche nome e
+ * telefone, com "Sincronizar contato com celular" já ligado quando o campo
+ * permitir. NÃO clica no botão final de salvar — isso grava um contato de
+ * verdade no celular conectado à conta, então o clique de confirmação fica
+ * por conta do usuário (decisão deliberada, não é descuido).
+ */
+async function abrirNovoContatoNativoPreenchido(nome, telefoneComDDI) {
+  const botaoNovaConversa = primeiroElemento(LEGAUS_SELECTORS.botaoNovaConversa);
+  if (!botaoNovaConversa) return false;
+  botaoNovaConversa.click();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  const itemNovoContato = Array.from(document.querySelectorAll("div,span")).find(
+    (el) => el.textContent.trim() === "Novo contato" && el.children.length === 0,
+  );
+  if (!itemNovoContato) return false;
+  itemNovoContato.click();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  const campoNome = primeiroElemento(LEGAUS_SELECTORS.campoNomeNovoContato);
+  if (campoNome) {
+    campoNome.focus();
+    document.execCommand("selectAll", false, undefined);
+    document.execCommand("delete", false, undefined);
+    document.execCommand("insertText", false, nome);
+  }
+
+  // O campo de telefone nativo já assume o DDI do país selecionado (BR +55
+  // por padrão) — remove o "55" do início do telefone normalizado que
+  // guardamos, senão duplica o DDI.
+  const telefoneSemDDI = telefoneComDDI.startsWith("55") ? telefoneComDDI.slice(2) : telefoneComDDI;
+  const campoTelefone = primeiroElemento(LEGAUS_SELECTORS.campoTelefoneNovoContato);
+  if (campoTelefone) {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+    campoTelefone.focus();
+    setter.call(campoTelefone, telefoneSemDDI);
+    campoTelefone.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 400)); // dá tempo do WA validar o número e habilitar o toggle
+  const toggle = primeiroElemento(LEGAUS_SELECTORS.toggleSincronizarNovoContato);
+  if (toggle && !toggle.disabled && toggle.getAttribute("aria-checked") !== "true") {
+    toggle.click();
+  }
+
+  return true;
+}
+
 async function enviarMensagemReal({ telefone, texto, mensagemId }) {
   if (!location.href.includes(`phone=${telefone}`)) {
     location.href = `https://web.whatsapp.com/send?phone=${telefone}`;

@@ -73,6 +73,10 @@ function legausCriarPainel() {
             <input id="legaus-contato-form-telefone" type="text" disabled />
             <label>Empresa (opcional)</label>
             <input id="legaus-contato-form-empresa" type="text" placeholder="Nome da empresa" />
+            <label class="legaus-checkbox-linha">
+              <input id="legaus-contato-form-sync-whatsapp" type="checkbox" checked />
+              Também abrir no WhatsApp, pré-preenchido, pra eu confirmar e sincronizar com o celular
+            </label>
             <div class="legaus-form-botoes">
               <button type="button" id="legaus-cancelar-contato">Cancelar</button>
               <button type="submit" class="legaus-btn-primario">Salvar no CRM</button>
@@ -280,6 +284,8 @@ async function legausSalvarContato(evento) {
     return;
   }
 
+  const tambemAbrirNoWhatsApp = document.getElementById("legaus-contato-form-sync-whatsapp").checked;
+
   status.textContent = "Salvando...";
   status.className = "legaus-status";
   try {
@@ -289,6 +295,15 @@ async function legausSalvarContato(evento) {
     });
     legausUltimoTelefonePainel = null; // força reconsulta pra pegar o contato atualizado
     await legausAtualizarConversaNoPainel();
+
+    if (tambemAbrirNoWhatsApp) {
+      try {
+        const abriu = await abrirNovoContatoNativoPreenchido(nome, telefone);
+        if (!abriu) log("Não achei a tela nativa \"Novo contato\" do WhatsApp — seletores podem ter mudado.");
+      } catch (erroWhatsApp) {
+        log("Falha ao pré-preencher o contato nativo do WhatsApp:", erroWhatsApp.message);
+      }
+    }
   } catch (erro) {
     status.textContent = erro.message;
     status.className = "legaus-status legaus-status-erro";
