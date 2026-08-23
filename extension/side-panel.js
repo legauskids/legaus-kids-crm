@@ -235,7 +235,13 @@ async function legausAtualizarConversaNoPainel() {
   semConversa.style.display = "none";
   comConversa.style.display = "block";
 
-  const nomeDaConversa = ((await nomeDaConversaAtual()) || telefone).trim();
+  // Usa o texto do cabeçalho direto aqui (sem abrir o painel de dados do
+  // contato) — abrir/fechar esse painel automaticamente a cada troca de
+  // conversa causava um Escape atrasado (~600ms) que às vezes fechava a
+  // conversa errada quando o usuário trocava de conversa rápido demais.
+  // O nome completo (fallback do perfil comercial) só é buscado quando o
+  // usuário efetivamente clica em salvar (legausAbrirFormContato/legausCriarNegocio).
+  const nomeDaConversa = (cabecalhoAtualTexto || telefone).trim();
   const info = await legausBuscarContato(telefone);
   legausContatoAtual = info;
 
