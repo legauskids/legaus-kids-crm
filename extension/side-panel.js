@@ -8,25 +8,21 @@ let legausFunisCache = null;
 let legausPainelAberto = true;
 
 async function legausConfiguracaoSalva() {
-  const { apiUrl, apiToken } = await chrome.storage.local.get(["apiUrl", "apiToken"]);
-  return { apiUrl: apiUrl || "https://crm.legauskids.com.br", apiToken: apiToken || "" };
+  const { apiUrl } = await chrome.storage.local.get(["apiUrl"]);
+  return { apiUrl: apiUrl || "https://crm.legauskids.com.br" };
 }
 
+/**
+ * O content script não pode fazer fetch direto pra fora de web.whatsapp.com
+ * (o CSP da própria página bloqueia "Failed to fetch"), então repassa pro
+ * service worker (background.js), que não tem essa restrição.
+ */
 async function legausChamarApi(caminho, options = {}) {
-  const { apiUrl, apiToken } = await legausConfiguracaoSalva();
-  const resposta = await fetch(`${apiUrl}${caminho}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiToken}`,
-      ...(options.headers || {}),
-    },
-  });
-  if (!resposta.ok) {
-    const corpo = await resposta.json().catch(() => ({}));
-    throw new Error(corpo.error || `Erro HTTP ${resposta.status}`);
+  const resultado = await chrome.runtime.sendMessage({ type: "LEGAUS_API_CALL", caminho, options });
+  if (!resultado?.ok) {
+    throw new Error(resultado?.dados?.error || `Erro HTTP ${resultado?.status ?? 0}`);
   }
-  return resposta.json();
+  return resultado.dados;
 }
 
 function legausCriarPainel() {
@@ -82,7 +78,6 @@ function legausCriarPainel() {
 function legausAplicarEstadoPainel(aberto) {
   legausPainelAberto = aberto;
   document.getElementById("legaus-sidepanel")?.classList.toggle("legaus-aberto", aberto);
-  document.body.classList.toggle("legaus-painel-aberto", aberto);
 }
 
 function legausAlternarPainel() {

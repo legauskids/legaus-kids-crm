@@ -33,9 +33,11 @@
 #legaus-toggle {
   position: absolute;
   top: 16px;
-  left: -34px;
-  width: 34px;
-  height: 34px;
+  left: -32px;
+  width: 32px !important;
+  height: 84px;
+  margin: 0 !important;
+  padding: 0 !important;
   border: none;
   border-radius: 8px 0 0 8px;
   background: #111827;
@@ -43,7 +45,13 @@
   cursor: pointer;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+#legaus-toggle:hover {
+  background: #374151;
 }
 
 #legaus-sidepanel-conteudo {
@@ -88,7 +96,7 @@
   margin: 14px 0;
 }
 
-#legaus-sidepanel button {
+#legaus-sidepanel-conteudo button {
   width: 100%;
   padding: 8px 10px;
   margin: 4px 0;
@@ -100,7 +108,7 @@
   font-size: 13px;
 }
 
-#legaus-sidepanel button:hover {
+#legaus-sidepanel-conteudo button:hover {
   background: #f3f4f6;
 }
 
@@ -152,9 +160,3 @@
   color: #dc2626;
 }
 
-/* Reduz a largura do app do WhatsApp Web pra abrir espaço pro painel,
-   em vez de sobrepor por cima da conversa. */
-body.legaus-painel-aberto #app {
-  margin-right: 300px !important;
-  transition: margin-right 0.15s ease;
-}

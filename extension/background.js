@@ -29,6 +29,29 @@ async function chamarApi(caminho, options = {}) {
   return resposta.json();
 }
 
+/**
+ * Proxy genérico pro painel lateral (side-panel.js): o content script não
+ * pode fazer fetch direto pra fora de web.whatsapp.com (o CSP da própria
+ * página bloqueia), então repassa pra cá via chrome.runtime.sendMessage.
+ */
+async function chamarApiComDetalhes(caminho, options = {}) {
+  const { apiUrl, apiToken } = await getConfig();
+  try {
+    const resposta = await fetch(`${apiUrl}${caminho}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiToken}`,
+        ...options.headers,
+      },
+    });
+    const dados = await resposta.json().catch(() => ({}));
+    return { ok: resposta.ok, status: resposta.status, dados };
+  } catch (erro) {
+    return { ok: false, status: 0, dados: { error: erro.message } };
+  }
+}
+
 async function reportarMensagemRecebida(payload) {
   return chamarApi("/api/integracoes/whatsapp/mensagens", {
     method: "POST",
@@ -82,6 +105,10 @@ async function processarFilaDeEnvio() {
 chrome.runtime.onMessage.addListener((mensagem, _sender, sendResponse) => {
   if (mensagem.type === "LEGAUS_MENSAGEM_RECEBIDA") {
     reportarMensagemRecebida(mensagem.payload).then(sendResponse);
+    return true;
+  }
+  if (mensagem.type === "LEGAUS_API_CALL") {
+    chamarApiComDetalhes(mensagem.caminho, mensagem.options).then(sendResponse);
     return true;
   }
 });
