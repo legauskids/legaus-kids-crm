@@ -68,7 +68,7 @@ const LEGAUS_SELECTORS = {
   // 2026-08-22) — usado pra pré-preencher nome/telefone quando o usuário
   // salva um contato no CRM, deixando a sincronização com o celular pro
   // clique final do próprio usuário (não automatizamos o clique em salvar).
-  botaoNovaConversa: ['[title="Nova conversa"]'],
+  botaoNovaConversa: ['[aria-label="Nova conversa"]', '[title="Nova conversa"]'],
   campoNomeNovoContato: ['div[data-testid="text-input"][aria-label="Nome"]'],
   campoTelefoneNovoContato: ['input[data-testid="phone-number-input"]'],
   toggleSincronizarNovoContato: ['input[data-testid="save-contact-drawer"]'],
