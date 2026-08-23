@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { corPrazoTarefa } from "@/lib/utils/dates";
+import { EditarTarefaDialog } from "@/app/(app)/tarefas/editar-tarefa-dialog";
 import type { TarefaVM } from "@/app/(app)/tarefas/types";
 
 const COR_DOT: Record<string, string> = {
@@ -27,8 +28,17 @@ const COR_DOT: Record<string, string> = {
   normal: "bg-muted-foreground",
 };
 
-export function CalendarioView({ tarefas }: { tarefas: TarefaVM[] }) {
+export function CalendarioView({
+  tarefas,
+  usuarios,
+  negocios,
+}: {
+  tarefas: TarefaVM[];
+  usuarios: { id: string; nome: string }[];
+  negocios: { id: string; titulo: string; contatoNome: string }[];
+}) {
   const [mesAtual, setMesAtual] = useState(() => new Date());
+  const [tarefaSelecionada, setTarefaSelecionada] = useState<TarefaVM | null>(null);
 
   const dias = useMemo(() => {
     const inicio = startOfWeek(startOfMonth(mesAtual), { weekStartsOn: 0 });
@@ -37,7 +47,7 @@ export function CalendarioView({ tarefas }: { tarefas: TarefaVM[] }) {
   }, [mesAtual]);
 
   return (
-    <div className="flex h-full flex-col p-4">
+    <div className="flex flex-col p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium capitalize">{format(mesAtual, "MMMM yyyy", { locale: ptBR })}</h2>
         <div className="flex gap-1">
@@ -72,9 +82,16 @@ export function CalendarioView({ tarefas }: { tarefas: TarefaVM[] }) {
               <span className={cn("text-[11px]", isToday(dia) && "font-bold text-primary")}>{format(dia, "d")}</span>
               <ul className="space-y-0.5">
                 {tarefasDoDia.map((t) => (
-                  <li key={t.id} className="flex items-center gap-1 truncate" title={t.titulo}>
-                    <span className={cn("size-1.5 shrink-0 rounded-full", COR_DOT[corPrazoTarefa(new Date(t.prazo), t.status)])} />
-                    <span className="truncate">{t.titulo}</span>
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => setTarefaSelecionada(t)}
+                      className="flex w-full items-center gap-1 truncate rounded text-left hover:bg-muted"
+                      title={t.titulo}
+                    >
+                      <span className={cn("size-1.5 shrink-0 rounded-full", COR_DOT[corPrazoTarefa(new Date(t.prazo), t.status)])} />
+                      <span className="truncate">{t.titulo}</span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -82,6 +99,13 @@ export function CalendarioView({ tarefas }: { tarefas: TarefaVM[] }) {
           );
         })}
       </div>
+
+      <EditarTarefaDialog
+        tarefa={tarefaSelecionada}
+        onOpenChange={(open) => !open && setTarefaSelecionada(null)}
+        usuarios={usuarios}
+        negocios={negocios}
+      />
     </div>
   );
 }

@@ -38,6 +38,25 @@ export function criarTarefa(input: CriarTarefaInput) {
   return prisma.tarefa.create({ data: input });
 }
 
+export type AtualizarTarefaInput = {
+  titulo: string;
+  negocioId?: string | null;
+  responsavelId: string;
+  prazo: Date;
+  descricao?: string | null;
+  status: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA";
+};
+
+export async function atualizarTarefa(tarefaId: string, input: AtualizarTarefaInput): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const anterior = await tx.tarefa.findUniqueOrThrow({ where: { id: tarefaId } });
+    await tx.tarefa.update({ where: { id: tarefaId }, data: input });
+    if (input.status === "CONCLUIDA" && anterior.status !== "CONCLUIDA") {
+      await onTarefaConcluida(tx, tarefaId);
+    }
+  });
+}
+
 export async function moverTarefaStatus(
   tarefaId: string,
   novoStatus: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA",

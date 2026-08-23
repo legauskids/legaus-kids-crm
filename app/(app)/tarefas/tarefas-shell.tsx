@@ -193,7 +193,7 @@ export function TarefasShell({
         )}
         {view === "calendario" && (
           <div className="h-full overflow-auto">
-            <CalendarioView tarefas={tarefasFiltradas} />
+            <CalendarioView tarefas={tarefasFiltradas} usuarios={usuarios} negocios={negocios} />
           </div>
         )}
       </div>
