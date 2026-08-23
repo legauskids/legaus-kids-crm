@@ -7,8 +7,6 @@ const telefonePorConversaAberta = new Map(); // telefone -> conversaId (preenchi
 
 let telefoneAtual = null;
 let cabecalhoAtualTexto = null;
-let nomeAtual = null;
-let nomeAtualCabecalhoTexto = null;
 
 function log(...args) {
   console.log("[Legaus]", ...args);
@@ -70,43 +68,28 @@ async function telefoneDaConversaAtual() {
   return telefoneAtual;
 }
 
-function pareceApenasTelefone(texto) {
-  return /^[+\d][\d\s()+-]*$/.test((texto || "").trim());
-}
-
 /**
  * Contas WhatsApp Business não-salvas mostram só o telefone no cabeçalho da
  * conversa — o nome real ("Lancheria Trevo", por ex.) só aparece dentro do
- * painel "Dados do contato" (perfil comercial). Só abre esse painel quando
- * o cabeçalho parece ser só um telefone; se já tem nome, usa ele direto.
+ * painel "Dados do contato" (perfil comercial).
+ *
+ * IMPORTANTE: já tentamos abrir esse painel automaticamente (clique no
+ * cabeçalho + Escape pra fechar de novo) e isso fechava a conversa aberta
+ * de verdade em teste ao vivo — mesmo disparado só por um clique explícito
+ * do usuário, não por polling. Não repita essa abordagem sem entender por
+ * que o Escape estava sendo interpretado como "fechar a conversa" (talvez
+ * dependa de foco/estado que não reproduzimos ainda). Por segurança, só
+ * lemos o nome se o painel JÁ estiver aberto (o usuário abriu manualmente);
+ * do contrário, devolve o texto do cabeçalho mesmo — o campo "Nome" do
+ * formulário de salvar contato é editável, então o usuário digita à mão
+ * quando vier só o telefone.
  */
-async function obterNomeDoNegocioAberto() {
-  const cabecalho = primeiroElemento(LEGAUS_SELECTORS.cabecalhoConversa);
-  if (!cabecalho) return null;
-
-  cabecalho.click();
-  await new Promise((resolve) => setTimeout(resolve, 600));
-
-  const elNome = primeiroElemento(LEGAUS_SELECTORS.nomeEmpresaContato);
-  const nome = elNome?.textContent?.trim() || null;
-
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  return nome;
-}
-
-async function nomeDaConversaAtual() {
+function nomeDaConversaAtual() {
   const cabecalho = primeiroElemento(LEGAUS_SELECTORS.tituloCabecalho);
   const textoCabecalho = (cabecalho?.textContent ?? "").trim();
 
-  if (!pareceApenasTelefone(textoCabecalho)) {
-    return textoCabecalho;
-  }
-  if (textoCabecalho === nomeAtualCabecalhoTexto && nomeAtual) {
-    return nomeAtual;
-  }
-  nomeAtualCabecalhoTexto = textoCabecalho;
-  nomeAtual = await obterNomeDoNegocioAberto();
-  return nomeAtual || textoCabecalho;
+  const elNome = primeiroElemento(LEGAUS_SELECTORS.nomeEmpresaContato);
+  return elNome?.textContent?.trim() || textoCabecalho;
 }
 
 function extrairTextoMensagem(bolha) {
