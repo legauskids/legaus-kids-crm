@@ -87,6 +87,7 @@ model Contato {
   nome      String
   empresa   String?
   telefone  String     @unique
+  tags      String[]   @default([])
   createdAt DateTime   @default(now())
 
   conversas Conversa[]

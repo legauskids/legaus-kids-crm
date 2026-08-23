@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiUser } from "@/lib/auth/api-token";
-import { buscarContatoComNegociosPorTelefone, salvarContatoPorTelefone } from "@/lib/server/contatos";
+import { encontrarOuCriarConversaPorTelefone, criarNotaInterna } from "@/lib/server/conversas";
+import { prisma } from "@/lib/db";
 
 const bodySchema = z.object({
   telefone: z.string().min(1),
-  nome: z.string().optional(),
-  empresa: z.string().optional(),
+  texto: z.string().min(1),
 });
 
 export async function GET(request: Request) {
@@ -21,33 +21,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Parâmetro telefone é obrigatório" }, { status: 400 });
   }
 
-  const contato = await buscarContatoComNegociosPorTelefone(telefone);
-  if (!contato) {
-    return NextResponse.json({ existe: false });
-  }
+  const digitos = telefone.replace(/\D/g, "");
+  const contato = await prisma.contato.findUnique({
+    where: { telefone: digitos },
+    include: { conversas: { include: { notas: { orderBy: { criadaEm: "desc" }, include: { autor: true } } } } },
+  });
 
+  const notas = contato?.conversas[0]?.notas ?? [];
   return NextResponse.json({
-    existe: true,
-    contato: {
-      id: contato.id,
-      nome: contato.nome,
-      telefone: contato.telefone,
-      empresa: contato.empresa,
-      tags: contato.tags,
-    },
-    negocios: contato.negocios.map((negocio) => ({
-      id: negocio.id,
-      titulo: negocio.titulo,
-      valorCentavos: negocio.valorCentavos,
-      funil: negocio.funil.nome,
-      etapa: negocio.etapa.nome,
-    })),
+    notas: notas.map((n) => ({ id: n.id, texto: n.texto, autorNome: n.autor.nome, criadaEm: n.criadaEm })),
   });
 }
 
 export async function POST(request: Request) {
+  let user;
   try {
-    await requireApiUser(request);
+    user = await requireApiUser(request);
   } catch (unauthorized) {
     return unauthorized as Response;
   }
@@ -57,6 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Payload inválido" }, { status: 400 });
   }
 
-  const contato = await salvarContatoPorTelefone(parsed.data);
-  return NextResponse.json({ ok: true, contato });
+  const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: parsed.data.telefone });
+  const nota = await criarNotaInterna(conversa.id, user.id, parsed.data.texto);
+  return NextResponse.json({ ok: true, notaId: nota.id });
 }

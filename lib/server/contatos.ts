@@ -49,3 +49,25 @@ export async function salvarContatoPorTelefone(input: {
     data: { telefone, nome: nome || telefone, empresa: empresa || null },
   });
 }
+
+/** Substitui a lista de etiquetas do contato (cria o contato se o telefone for novo). */
+export async function definirTagsContato(telefone: string, tags: string[]) {
+  const telefoneNormalizado = normalizarTelefone(telefone);
+  const tagsLimpas = [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+
+  const existente = await prisma.contato.findUnique({ where: { telefone: telefoneNormalizado } });
+  if (existente) {
+    return prisma.contato.update({ where: { id: existente.id }, data: { tags: tagsLimpas } });
+  }
+  return prisma.contato.create({
+    data: { telefone: telefoneNormalizado, nome: telefoneNormalizado, tags: tagsLimpas },
+  });
+}
+
+/** Usado pela exportação CSV da extensão. */
+export function listTodosContatosParaExportar() {
+  return prisma.contato.findMany({
+    select: { nome: true, telefone: true, empresa: true, tags: true },
+    orderBy: { nome: "asc" },
+  });
+}

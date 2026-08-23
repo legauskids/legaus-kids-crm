@@ -15,3 +15,7 @@ export async function marcarLembreteLido(lembreteId: string): Promise<void> {
     data: { lido: true },
   });
 }
+
+export function criarLembrete(input: { paraUsuarioId: string; texto: string }) {
+  return prisma.lembrete.create({ data: input });
+}
