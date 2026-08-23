@@ -4,7 +4,9 @@ import { requireApiUser } from "@/lib/auth/api-token";
 import { criarLembrete } from "@/lib/server/lembretes";
 
 const bodySchema = z.object({
-  texto: z.string().min(1),
+  nome: z.string().min(1),
+  descricao: z.string().optional(),
+  notificarEm: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -20,6 +22,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Payload inválido" }, { status: 400 });
   }
 
-  const lembrete = await criarLembrete({ paraUsuarioId: user.id, texto: parsed.data.texto });
+  let notificarEm: Date | undefined;
+  if (parsed.data.notificarEm) {
+    notificarEm = new Date(parsed.data.notificarEm);
+    if (Number.isNaN(notificarEm.getTime())) {
+      return NextResponse.json({ error: "Data/hora inválida" }, { status: 400 });
+    }
+  }
+
+  const lembrete = await criarLembrete({
+    paraUsuarioId: user.id,
+    nome: parsed.data.nome,
+    descricao: parsed.data.descricao,
+    notificarEm,
+  });
   return NextResponse.json({ ok: true, lembreteId: lembrete.id });
 }

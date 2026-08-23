@@ -195,11 +195,28 @@ function legausCriarPainel() {
 
         <!-- Tela: lembretes -->
         <div id="legaus-tela-lembretes" class="legaus-tela" style="display:none">
-          <div class="legaus-secao-titulo">Lembretes</div>
-          <p class="legaus-texto-ajuda">Cria um lembrete pra você — aparece no sininho de notificações do CRM.</p>
+          <div class="legaus-form-titulo">Crie um lembrete</div>
+          <p class="legaus-texto-ajuda">
+            Assim que um lembrete for definido, você será notificado no horário escolhido. Os lembretes podem ser
+            encontrados nas notificações do CRM.
+          </p>
           <form id="legaus-form-lembrete">
-            <textarea id="legaus-lembrete-texto" rows="2" placeholder="Ex.: Ligar de volta pra confirmar orçamento"></textarea>
-            <button type="submit" class="legaus-btn-primario">Criar lembrete</button>
+            <label>Nome</label>
+            <input id="legaus-lembrete-nome" type="text" placeholder="Dê um nome ao seu lembrete" />
+            <label>Descrição</label>
+            <textarea id="legaus-lembrete-descricao" rows="2" placeholder="Adicione uma descrição"></textarea>
+            <label>Data</label>
+            <input id="legaus-lembrete-data" type="date" />
+            <label>Hora</label>
+            <input id="legaus-lembrete-hora" type="time" />
+            <label class="legaus-checkbox-linha">
+              <input id="legaus-lembrete-google" type="checkbox" />
+              Adicionar ao calendário do Google
+            </label>
+            <div class="legaus-form-botoes">
+              <button type="button" id="legaus-cancelar-lembrete">Cancelar</button>
+              <button type="submit" class="legaus-btn-primario">Criar evento</button>
+            </div>
           </form>
           <div id="legaus-status-lembrete" class="legaus-status"></div>
         </div>
@@ -307,6 +324,7 @@ function legausCriarPainel() {
 
   document.getElementById("legaus-form-nota").addEventListener("submit", legausCriarNota);
   document.getElementById("legaus-form-lembrete").addEventListener("submit", legausCriarLembrete);
+  document.getElementById("legaus-cancelar-lembrete").addEventListener("click", () => legausMostrarTela("resumo"));
   document.getElementById("legaus-form-etiqueta").addEventListener("submit", legausEnviarNovaEtiqueta);
   document.getElementById("legaus-form-etiqueta-perfil").addEventListener("submit", legausEnviarNovaEtiqueta);
   document.getElementById("legaus-form-mensagem-agendada").addEventListener("submit", legausCriarMensagemAgendada);
@@ -356,6 +374,10 @@ async function legausIrPara(tela) {
   chrome.storage.local.set({ legausPainelAberto: true });
   legausMostrarTela(tela);
   if (tela === "notas") legausCarregarNotas();
+  if (tela === "lembretes") {
+    document.getElementById("legaus-form-lembrete").reset();
+    document.getElementById("legaus-status-lembrete").textContent = "";
+  }
   if (tela === "respostas") legausCarregarRespostas();
   if (tela === "etiquetas") legausCarregarEtiquetas();
   if (tela === "ferramentas") legausAlternarSubMassa(false);
@@ -697,21 +719,37 @@ async function legausCriarNota(evento) {
 
 async function legausCriarLembrete(evento) {
   evento.preventDefault();
-  const textarea = document.getElementById("legaus-lembrete-texto");
-  const texto = textarea.value.trim();
+  const nomeLembrete = document.getElementById("legaus-lembrete-nome").value.trim();
+  const descricao = document.getElementById("legaus-lembrete-descricao").value.trim();
+  const data = document.getElementById("legaus-lembrete-data").value;
+  const hora = document.getElementById("legaus-lembrete-hora").value;
+  const adicionarGoogle = document.getElementById("legaus-lembrete-google").checked;
   const status = document.getElementById("legaus-status-lembrete");
-  if (!texto) return;
+  if (!nomeLembrete) {
+    status.textContent = "Dê um nome ao lembrete.";
+    status.className = "legaus-status legaus-status-erro";
+    return;
+  }
 
   status.textContent = "Criando...";
   status.className = "legaus-status";
   try {
-    const nome = ((await nomeDaConversaAtual()) || legausUltimoTelefonePainel || "").trim();
+    const nomeContato = ((await nomeDaConversaAtual()) || legausUltimoTelefonePainel || "").trim();
     await legausChamarApi("/api/integracoes/whatsapp/lembretes", {
       method: "POST",
-      body: JSON.stringify({ texto: nome ? `${nome}: ${texto}` : texto }),
+      body: JSON.stringify({
+        nome: nomeContato ? `${nomeContato} — ${nomeLembrete}` : nomeLembrete,
+        descricao: descricao || undefined,
+        notificarEm: data ? new Date(`${data}T${hora || "09:00"}`).toISOString() : undefined,
+      }),
     });
-    textarea.value = "";
-    status.textContent = "Lembrete criado — veja no sininho do CRM.";
+
+    if (adicionarGoogle && data) {
+      legausAbrirGoogleAgenda({ titulo: nomeLembrete, data, hora, descricao });
+    }
+
+    document.getElementById("legaus-form-lembrete").reset();
+    status.textContent = "Lembrete criado.";
     status.className = "legaus-status legaus-status-ok";
   } catch (erro) {
     status.textContent = erro.message;
@@ -943,11 +981,16 @@ function legausAdicionarEventoCalendario(evento) {
   evento.preventDefault();
   const titulo = document.getElementById("legaus-calendario-titulo").value.trim();
   const data = document.getElementById("legaus-calendario-data").value;
-  const hora = document.getElementById("legaus-calendario-hora").value || "09:00";
+  const hora = document.getElementById("legaus-calendario-hora").value;
   const descricao = document.getElementById("legaus-calendario-descricao").value.trim();
   if (!titulo || !data) return;
 
-  const inicio = new Date(`${data}T${hora}`);
+  legausAbrirGoogleAgenda({ titulo, data, hora, descricao });
+}
+
+/** Abre o Google Agenda com um evento pré-preenchido (usado pela tela Calendário e pelo checkbox do Lembrete). */
+function legausAbrirGoogleAgenda({ titulo, data, hora, descricao }) {
+  const inicio = new Date(`${data}T${hora || "09:00"}`);
   const fim = new Date(inicio.getTime() + 60 * 60 * 1000);
   const formatar = (d) => d.toISOString().replace(/[-:]|\.\d{3}/g, "");
 
@@ -955,7 +998,7 @@ function legausAdicionarEventoCalendario(evento) {
     action: "TEMPLATE",
     text: titulo,
     dates: `${formatar(inicio)}/${formatar(fim)}`,
-    details: descricao,
+    details: descricao || "",
   });
   window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener");
 }

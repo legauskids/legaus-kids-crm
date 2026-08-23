@@ -221,14 +221,16 @@ model Tarefa {
 }
 
 model Lembrete {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   paraUsuarioId String
-  paraUsuario   User     @relation(fields: [paraUsuarioId], references: [id])
-  texto         String
+  paraUsuario   User      @relation(fields: [paraUsuarioId], references: [id])
+  nome          String
+  descricao     String?
+  notificarEm   DateTime?
   tarefaId      String?
-  tarefa        Tarefa?  @relation(fields: [tarefaId], references: [id])
-  lido          Boolean  @default(false)
-  criadoEm      DateTime @default(now())
+  tarefa        Tarefa?   @relation(fields: [tarefaId], references: [id])
+  lido          Boolean   @default(false)
+  criadoEm      DateTime  @default(now())
 }
 
 model RespostaRapida {

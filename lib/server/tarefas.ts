@@ -78,7 +78,7 @@ export async function aprovarTarefa(tarefaId: string): Promise<void> {
     await tx.lembrete.create({
       data: {
         paraUsuarioId: tarefa.solicitanteId,
-        texto: `Sua tarefa "${tarefa.titulo}" foi aprovada.`,
+        nome: `Sua tarefa "${tarefa.titulo}" foi aprovada.`,
         tarefaId: tarefa.id,
       },
     });

@@ -15,7 +15,7 @@ import { marcarLembreteComoLido } from "@/components/layout/actions";
 
 type Lembrete = {
   id: string;
-  texto: string;
+  nome: string;
   criadoEm: Date;
 };
 
@@ -46,7 +46,7 @@ export function NotificationBell({ lembretes }: { lembretes: Lembrete[] }) {
             {lembretes.map((lembrete) => (
               <li key={lembrete.id} className="flex items-start justify-between gap-2 px-4 py-3 text-sm">
                 <div>
-                  <p>{lembrete.texto}</p>
+                  <p>{lembrete.nome}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {formatDistanceToNow(lembrete.criadoEm, { addSuffix: true, locale: ptBR })}
                   </p>
