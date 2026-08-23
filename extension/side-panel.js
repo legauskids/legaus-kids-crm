@@ -9,6 +9,7 @@ let legausFunisCache = null;
 let legausPainelAberto = true;
 let legausUltimoTelefonePainel = null;
 let legausNegociosCache = [];
+let legausContatoAtual = null; // { existe, contato, negocios } — última resposta de /contatos
 
 async function legausConfiguracaoSalva() {
   const { apiUrl } = await chrome.storage.local.get(["apiUrl"]);
@@ -50,7 +51,6 @@ function legausCriarPainel() {
             <span class="legaus-badge-novo" id="legaus-badge-sem-nome" style="display:none">SEM NOME</span>
           </div>
           <button id="legaus-salvar-contato" class="legaus-btn-primario">Salvar contato no CRM</button>
-          <div id="legaus-status-contato" class="legaus-status"></div>
 
           <div class="legaus-secao-titulo">Ações rápidas</div>
           <button id="legaus-ir-negocios" class="legaus-card-acao">
@@ -62,7 +62,26 @@ function legausCriarPainel() {
           </button>
         </div>
 
-        <!-- Tela 2: negócios do contato (lista de cards + criar) -->
+        <!-- Tela 2: salvar/atualizar contato -->
+        <div id="legaus-tela-salvar-contato" class="legaus-tela" style="display:none">
+          <button id="legaus-voltar-salvar-contato" class="legaus-breadcrumb">‹ Voltar</button>
+          <div class="legaus-form-titulo">Salvar contato</div>
+          <form id="legaus-form-contato">
+            <label>Nome</label>
+            <input id="legaus-contato-form-nome" type="text" />
+            <label>WhatsApp</label>
+            <input id="legaus-contato-form-telefone" type="text" disabled />
+            <label>Empresa (opcional)</label>
+            <input id="legaus-contato-form-empresa" type="text" placeholder="Nome da empresa" />
+            <div class="legaus-form-botoes">
+              <button type="button" id="legaus-cancelar-contato">Cancelar</button>
+              <button type="submit" class="legaus-btn-primario">Salvar no CRM</button>
+            </div>
+          </form>
+          <div id="legaus-status-contato" class="legaus-status"></div>
+        </div>
+
+        <!-- Tela 3: negócios do contato (lista de cards + criar) -->
         <div id="legaus-tela-negocios" class="legaus-tela" style="display:none">
           <button id="legaus-voltar-negocios" class="legaus-breadcrumb">‹ Voltar</button>
           <div id="legaus-lista-negocios"></div>
@@ -87,7 +106,10 @@ function legausCriarPainel() {
   document.body.appendChild(painel);
 
   document.getElementById("legaus-toggle").addEventListener("click", legausAlternarPainel);
-  document.getElementById("legaus-salvar-contato").addEventListener("click", legausSalvarContato);
+  document.getElementById("legaus-salvar-contato").addEventListener("click", legausAbrirFormContato);
+  document.getElementById("legaus-voltar-salvar-contato").addEventListener("click", () => legausMostrarTela("resumo"));
+  document.getElementById("legaus-cancelar-contato").addEventListener("click", () => legausMostrarTela("resumo"));
+  document.getElementById("legaus-form-contato").addEventListener("submit", legausSalvarContato);
   document.getElementById("legaus-ir-negocios").addEventListener("click", () => legausMostrarTela("negocios"));
   document.getElementById("legaus-voltar-negocios").addEventListener("click", () => legausMostrarTela("resumo"));
   document.getElementById("legaus-toggle-form-negocio").addEventListener("click", () => legausAlternarFormNegocio(true));
@@ -113,7 +135,7 @@ function legausAlternarPainel() {
 }
 
 function legausMostrarTela(nome) {
-  for (const id of ["resumo", "negocios"]) {
+  for (const id of ["resumo", "salvar-contato", "negocios"]) {
     const tela = document.getElementById(`legaus-tela-${id}`);
     if (tela) tela.style.display = id === nome ? "block" : "none";
   }
@@ -211,6 +233,7 @@ async function legausAtualizarConversaNoPainel() {
 
   const nomeDaConversa = (cabecalhoAtualTexto || telefone).trim();
   const info = await legausBuscarContato(telefone);
+  legausContatoAtual = info;
 
   const semNomeSalvo = !info?.existe || info.contato.nome === info.contato.telefone;
   // Enquanto não tem nome salvo no CRM, mostra o nome que já vem do próprio
@@ -220,7 +243,6 @@ async function legausAtualizarConversaNoPainel() {
   document.getElementById("legaus-contato-nome").textContent = nomeExibido;
   document.getElementById("legaus-contato-telefone").textContent = telefone;
   document.getElementById("legaus-badge-sem-nome").style.display = semNomeSalvo ? "inline-flex" : "none";
-  document.getElementById("legaus-status-contato").textContent = "";
 
   legausRenderizarNegocios(info?.negocios ?? []);
   legausAtualizarResumoNegocios();
@@ -229,19 +251,43 @@ async function legausAtualizarConversaNoPainel() {
   legausMostrarTela("resumo");
 }
 
-async function legausSalvarContato() {
+/** Abre a tela de formulário já com o nome puxado do WhatsApp (ou o já salvo no CRM). */
+function legausAbrirFormContato() {
+  const telefone = legausUltimoTelefonePainel;
+  const semNomeSalvo = !legausContatoAtual?.existe || legausContatoAtual.contato.nome === legausContatoAtual.contato.telefone;
+  const nomeSugerido = semNomeSalvo
+    ? (cabecalhoAtualTexto || telefone || "").trim()
+    : legausContatoAtual.contato.nome;
+
+  document.getElementById("legaus-contato-form-nome").value = nomeSugerido;
+  document.getElementById("legaus-contato-form-telefone").value = telefone || "";
+  document.getElementById("legaus-contato-form-empresa").value = legausContatoAtual?.contato?.empresa || "";
+  document.getElementById("legaus-status-contato").textContent = "";
+  legausMostrarTela("salvar-contato");
+}
+
+async function legausSalvarContato(evento) {
+  evento.preventDefault();
   const status = document.getElementById("legaus-status-contato");
-  const telefone = await telefoneDaConversaAtual();
+  const telefone = legausUltimoTelefonePainel;
   if (!telefone) return;
+
+  const nome = document.getElementById("legaus-contato-form-nome").value.trim();
+  const empresa = document.getElementById("legaus-contato-form-empresa").value.trim();
+  if (!nome) {
+    status.textContent = "Preencha o nome.";
+    status.className = "legaus-status legaus-status-erro";
+    return;
+  }
 
   status.textContent = "Salvando...";
   status.className = "legaus-status";
   try {
     await legausChamarApi("/api/integracoes/whatsapp/contatos", {
       method: "POST",
-      body: JSON.stringify({ telefone, nome: cabecalhoAtualTexto }),
+      body: JSON.stringify({ telefone, nome, empresa: empresa || undefined }),
     });
-    legausUltimoTelefonePainel = null; // força reconsulta pra pegar o contato recém-criado
+    legausUltimoTelefonePainel = null; // força reconsulta pra pegar o contato atualizado
     await legausAtualizarConversaNoPainel();
   } catch (erro) {
     status.textContent = erro.message;
