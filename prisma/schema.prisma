@@ -259,3 +259,10 @@ model Meta {
 
   @@unique([mes, ano])
 }
+
+model Catalogo {
+  id       String   @id @default(cuid())
+  nome     String
+  url      String
+  criadoEm DateTime @default(now())
+}

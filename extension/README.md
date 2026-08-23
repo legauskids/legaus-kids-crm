@@ -26,14 +26,15 @@ Mostra quantos elementos cada seletor de `selectors.js` encontrou no DOM atual. 
 
 ## Painel lateral (side-panel.js)
 
-Painel recolhível injetado à direita do WhatsApp Web (aba "CRM"). Estrutura em telas, navegadas pela trilha de ícones no topo:
+Painel recolhível injetado à direita do WhatsApp Web (aba "CRM"). Estrutura em telas, navegadas pela trilha de ícones flutuante sobre a conversa:
 
-- 🏠 **Resumo** — nome/telefone do contato, "Salvar contato no CRM" (com opção de também pré-preencher a tela nativa "Novo contato" do WhatsApp) e o atalho pra Negócios.
-- 📝 **Notas** — lista e cria notas internas do contato (mesmas exibidas na aba Atendimento do CRM).
-- ⏰ **Lembretes** — cria um lembrete rápido pro usuário logado (aparece no sininho do CRM).
-- ⚡ **Respostas rápidas** — lista o banco de respostas do CRM; clicar insere o texto na caixa de mensagem do WhatsApp.
-- 🏷️ **Etiquetas** — tags livres por contato (`Contato.tags`, array no Postgres).
-- 🧰 **Ferramentas** — Agendar reunião (abre o Google Agenda com um link direto, sem OAuth), Envio em massa (enfileira uma mensagem pendente por número, retransmitida pela fila normal — não manda nada direto pra evitar quebrar no meio de uma navegação), Exportar contatos (baixa um CSV), Borrar mensagens (blur de CSS pra gravar vídeo tutorial), Assistente IA (ainda não implementado, só um aviso "em breve").
+- 📦 **Catálogos** — lista os catálogos cadastrados (`GET /api/integracoes/whatsapp/catalogos`); clicar abre o link em nova aba. Ainda não tem tela de cadastro — por enquanto os catálogos são inseridos direto no banco (ex.: via `npx prisma studio`), a tela já está pronta pra exibir assim que existirem.
+- 👤 **Perfil** — nome/telefone/empresa do contato, "Salvar contato no CRM" (com opção de também pré-preencher a tela nativa "Novo contato" do WhatsApp), etiquetas do contato e o atalho pra Negócios — tudo numa tela só.
+- 🕐 **Mensagens agendadas** — cria uma mensagem pra ser enviada num horário futuro (`MensagemAgendada`); a própria fila de envio da extensão (alarme de 1 min) confere agendadas vencidas a cada rodada e as transforma em mensagem pendente de relay, sem depender do CRM aberto no navegador.
+- 📅 **Calendário** — formulário de título/data/hora/descrição que abre o Google Agenda já preenchido (link direto, sem OAuth).
+- 📝 **Anotações** — lista e cria notas internas do contato (mesmas exibidas na aba Atendimento do CRM).
+- ⏰ **Lembrete** — cria um lembrete rápido pro usuário logado (aparece no sininho do CRM).
+- ⋯ **Mais** — Respostas rápidas (banco de respostas do CRM; clicar insere o texto na caixa de mensagem), Etiquetas (mesma tag list do Perfil, tela dedicada), Envio em massa (enfileira uma mensagem pendente por número, retransmitida pela fila normal — não manda nada direto pra evitar quebrar no meio de uma navegação), Exportar contatos (baixa um CSV), Borrar mensagens (blur de CSS pra gravar vídeo tutorial), Assistente IA (ainda não implementado, só um aviso "em breve").
 
 Essas telas foram inspiradas no [WaSeller](https://chromewebstore.google.com/detail/waseller-perder-vendas-no/illemhbijpiebjfilfmgebahaakajkpe) (pesquisado via a página da loja + a extensão de verdade logada — mas a UI real deles ficou travada atrás do login próprio, então a lista de funcionalidades da loja foi a referência principal). Todas as rotas de backend novas foram conferidas via curl contra produção; **o clique de verdade dentro do WhatsApp Web (preencher os formulários, clicar em cada botão) ainda não foi testado ao vivo** — feito assim de propósito, a pedido explícito do usuário, pra revisar tudo junto numa sessão seguinte.
 

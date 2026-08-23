@@ -247,7 +247,9 @@
 }
 
 #legaus-form-negocio,
-#legaus-form-contato {
+#legaus-form-contato,
+#legaus-form-mensagem-agendada,
+#legaus-form-calendario {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -255,7 +257,9 @@
 }
 
 #legaus-form-negocio label,
-#legaus-form-contato label {
+#legaus-form-contato label,
+#legaus-form-mensagem-agendada label,
+#legaus-form-calendario label {
   font-size: 12px;
   color: #6b7280;
   margin-top: 6px;
@@ -263,7 +267,9 @@
 
 #legaus-form-negocio input,
 #legaus-form-negocio select,
-#legaus-form-contato input {
+#legaus-form-contato input,
+#legaus-form-mensagem-agendada input,
+#legaus-form-calendario input {
   padding: 6px 8px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
@@ -312,10 +318,15 @@
 
 /* Barra de ícones flutuante sobre a conversa aberta (estilo Waseller) —
    posicionada via JS (legausReposicionarIconesFlutuantes), ancorada pela
-   borda direita real da lista de conversas em vez de um valor fixo. */
+   borda direita real da lista de conversas em vez de um valor fixo. O
+   top/left aqui são só um fallback visível caso os seletores do WhatsApp
+   Web falhem (JS não conseguir achar a lista de conversas) — sem isso a
+   barra ficava sem "position estático" nenhum e sumia da tela. */
 #legaus-icones-flutuantes {
   position: fixed;
-  z-index: 40;
+  top: 80px;
+  left: 400px;
+  z-index: 2147483000;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -469,6 +480,20 @@
   width: auto !important;
   margin: 0 !important;
   padding: 6px 12px !important;
+}
+
+/* Mensagens agendadas */
+.legaus-agendada-cancelar {
+  width: auto !important;
+  margin: 6px 0 0 !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  color: #dc2626;
+  border-color: #fecaca !important;
+}
+
+.legaus-agendada-cancelar:hover {
+  background: #fef2f2 !important;
 }
 
 /* Ferramentas */

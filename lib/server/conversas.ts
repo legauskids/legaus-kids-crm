@@ -169,6 +169,21 @@ export function cancelarMensagemAgendada(id: string) {
   return prisma.mensagemAgendada.update({ where: { id }, data: { status: "CANCELADA" } });
 }
 
+/** Mensagens agendadas pendentes de um contato pelo telefone (extensão de WhatsApp). */
+export async function listMensagensAgendadasPorTelefone(telefone: string) {
+  const contato = await prisma.contato.findUnique({
+    where: { telefone: normalizarTelefone(telefone) },
+    include: { conversas: true },
+  });
+  const conversaId = contato?.conversas[0]?.id;
+  if (!conversaId) return [];
+
+  return prisma.mensagemAgendada.findMany({
+    where: { conversaId, status: "PENDENTE" },
+    orderBy: { agendadaPara: "asc" },
+  });
+}
+
 /**
  * Envia (converte em Mensagem) qualquer agendada cujo horário já passou.
  * Placeholder: sem canal de envio real ainda, então "enviar" aqui só marca

@@ -26,6 +26,9 @@ const LEGAUS_TELAS = [
   "resumo",
   "salvar-contato",
   "negocios",
+  "catalogos",
+  "mensagens-agendadas",
+  "calendario",
   "notas",
   "lembretes",
   "respostas",
@@ -84,6 +87,13 @@ function legausCriarPainel() {
           </div>
           <button id="legaus-salvar-contato" class="legaus-btn-primario">Salvar contato no CRM</button>
 
+          <div class="legaus-secao-titulo">Etiquetas</div>
+          <div id="legaus-chips-etiquetas-perfil" class="legaus-chips"></div>
+          <form id="legaus-form-etiqueta-perfil" class="legaus-form-linha">
+            <input id="legaus-etiqueta-nova-perfil" type="text" placeholder="Nova etiqueta" />
+            <button type="submit" class="legaus-btn-secundario">+</button>
+          </form>
+
           <div class="legaus-secao-titulo">Ações rápidas</div>
           <button id="legaus-ir-negocios" class="legaus-card-acao">
             <span>
@@ -137,6 +147,41 @@ function legausCriarPainel() {
           <div id="legaus-status-negocio" class="legaus-status"></div>
         </div>
 
+        <!-- Tela: catálogos (só leitura por enquanto — cadastro vem depois) -->
+        <div id="legaus-tela-catalogos" class="legaus-tela" style="display:none">
+          <div class="legaus-secao-titulo">Catálogos</div>
+          <div id="legaus-lista-catalogos"></div>
+        </div>
+
+        <!-- Tela: mensagens agendadas do contato -->
+        <div id="legaus-tela-mensagens-agendadas" class="legaus-tela" style="display:none">
+          <div class="legaus-secao-titulo">Mensagens agendadas</div>
+          <div id="legaus-lista-mensagens-agendadas"></div>
+          <form id="legaus-form-mensagem-agendada">
+            <textarea id="legaus-agendada-texto" rows="2" placeholder="O que enviar..."></textarea>
+            <label>Enviar em</label>
+            <input id="legaus-agendada-data" type="datetime-local" />
+            <button type="submit" class="legaus-btn-primario">Agendar</button>
+          </form>
+          <div id="legaus-status-agendada" class="legaus-status"></div>
+        </div>
+
+        <!-- Tela: adicionar evento ao calendário (Google Agenda) -->
+        <div id="legaus-tela-calendario" class="legaus-tela" style="display:none">
+          <div class="legaus-secao-titulo">Adicionar ao calendário</div>
+          <form id="legaus-form-calendario">
+            <label>Título</label>
+            <input id="legaus-calendario-titulo" type="text" />
+            <label>Data</label>
+            <input id="legaus-calendario-data" type="date" />
+            <label>Hora</label>
+            <input id="legaus-calendario-hora" type="time" />
+            <label>Descrição (opcional)</label>
+            <textarea id="legaus-calendario-descricao" rows="2"></textarea>
+            <button type="submit" class="legaus-btn-primario">Adicionar ao Google Agenda</button>
+          </form>
+        </div>
+
         <!-- Tela: notas internas do contato -->
         <div id="legaus-tela-notas" class="legaus-tela" style="display:none">
           <div class="legaus-secao-titulo">Notas</div>
@@ -180,12 +225,20 @@ function legausCriarPainel() {
         <!-- Tela: ferramentas -->
         <div id="legaus-tela-ferramentas" class="legaus-tela" style="display:none">
           <div id="legaus-lista-ferramentas">
-            <div class="legaus-secao-titulo">Ferramentas</div>
+            <div class="legaus-secao-titulo">Mais</div>
 
-            <button type="button" id="legaus-ferramenta-agenda" class="legaus-card-acao">
+            <button type="button" id="legaus-ferramenta-respostas" class="legaus-card-acao">
               <span>
-                <span class="legaus-card-acao-titulo">📅 Agendar reunião</span>
-                <span class="legaus-card-acao-sub">Cria um evento no Google Agenda</span>
+                <span class="legaus-card-acao-titulo">💬 Respostas rápidas</span>
+                <span class="legaus-card-acao-sub">Insere uma resposta pronta na conversa</span>
+              </span>
+              <span class="legaus-card-acao-seta">›</span>
+            </button>
+
+            <button type="button" id="legaus-ferramenta-etiquetas" class="legaus-card-acao">
+              <span>
+                <span class="legaus-card-acao-titulo">🏷️ Etiquetas</span>
+                <span class="legaus-card-acao-sub">Gerenciar etiquetas desse contato</span>
               </span>
               <span class="legaus-card-acao-seta">›</span>
             </button>
@@ -255,8 +308,12 @@ function legausCriarPainel() {
   document.getElementById("legaus-form-nota").addEventListener("submit", legausCriarNota);
   document.getElementById("legaus-form-lembrete").addEventListener("submit", legausCriarLembrete);
   document.getElementById("legaus-form-etiqueta").addEventListener("submit", legausEnviarNovaEtiqueta);
+  document.getElementById("legaus-form-etiqueta-perfil").addEventListener("submit", legausEnviarNovaEtiqueta);
+  document.getElementById("legaus-form-mensagem-agendada").addEventListener("submit", legausCriarMensagemAgendada);
+  document.getElementById("legaus-form-calendario").addEventListener("submit", legausAdicionarEventoCalendario);
 
-  document.getElementById("legaus-ferramenta-agenda").addEventListener("click", legausAgendarReuniao);
+  document.getElementById("legaus-ferramenta-respostas").addEventListener("click", () => legausIrPara("respostas"));
+  document.getElementById("legaus-ferramenta-etiquetas").addEventListener("click", () => legausIrPara("etiquetas"));
   document.getElementById("legaus-ferramenta-massa").addEventListener("click", () => legausAlternarSubMassa(true));
   document.getElementById("legaus-voltar-massa").addEventListener("click", () => legausAlternarSubMassa(false));
   document.getElementById("legaus-massa-enviar").addEventListener("click", legausEnviarEmMassa);
@@ -294,7 +351,7 @@ function legausMostrarTela(nome) {
   });
 }
 
-function legausIrPara(tela) {
+async function legausIrPara(tela) {
   legausAplicarEstadoPainel(true);
   chrome.storage.local.set({ legausPainelAberto: true });
   legausMostrarTela(tela);
@@ -302,6 +359,15 @@ function legausIrPara(tela) {
   if (tela === "respostas") legausCarregarRespostas();
   if (tela === "etiquetas") legausCarregarEtiquetas();
   if (tela === "ferramentas") legausAlternarSubMassa(false);
+  if (tela === "catalogos") legausCarregarCatalogos();
+  if (tela === "mensagens-agendadas") legausCarregarMensagensAgendadas();
+  if (tela === "calendario") {
+    const nome = ((await nomeDaConversaAtual()) || legausUltimoTelefonePainel || "").trim();
+    document.getElementById("legaus-calendario-titulo").value = nome ? `Reunião — ${nome}` : "";
+    document.getElementById("legaus-calendario-data").value = "";
+    document.getElementById("legaus-calendario-hora").value = "";
+    document.getElementById("legaus-calendario-descricao").value = "";
+  }
 }
 
 /**
@@ -319,12 +385,13 @@ function legausInjetarIconesFlutuantes() {
   const barra = document.createElement("div");
   barra.id = "legaus-icones-flutuantes";
   barra.innerHTML = `
-    <button type="button" class="legaus-icone-flutuante" data-tela="resumo" title="Resumo">🏠</button>
-    <button type="button" class="legaus-icone-flutuante" data-tela="notas" title="Notas">📝</button>
-    <button type="button" class="legaus-icone-flutuante" data-tela="lembretes" title="Lembretes">⏰</button>
-    <button type="button" class="legaus-icone-flutuante" data-tela="respostas" title="Respostas rápidas">⚡</button>
-    <button type="button" class="legaus-icone-flutuante" data-tela="etiquetas" title="Etiquetas">🏷️</button>
-    <button type="button" class="legaus-icone-flutuante" data-tela="ferramentas" title="Ferramentas">🧰</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="catalogos" title="Catálogos">📦</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="resumo" title="Perfil">👤</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="mensagens-agendadas" title="Mensagens agendadas">🕐</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="calendario" title="Calendário">📅</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="notas" title="Anotações">📝</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="lembretes" title="Lembrete">⏰</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="ferramentas" title="Mais">⋯</button>
   `;
   document.body.appendChild(barra);
 
@@ -470,6 +537,7 @@ async function legausAtualizarConversaNoPainel() {
   legausAlternarFormNegocio(false);
   legausAlternarSubMassa(false);
   document.getElementById("legaus-lista-notas").innerHTML = "";
+  document.getElementById("legaus-lista-mensagens-agendadas").innerHTML = "";
   legausRenderizarEtiquetas(info?.contato?.tags ?? []);
   legausMostrarTela("resumo");
 }
@@ -699,8 +767,14 @@ function legausCarregarEtiquetas() {
   legausRenderizarEtiquetas(legausContatoAtual?.contato?.tags ?? []);
 }
 
+/** Etiquetas aparecem em dois lugares (tela Perfil e tela Etiquetas) — renderiza nos dois. */
 function legausRenderizarEtiquetas(tags) {
-  const chips = document.getElementById("legaus-chips-etiquetas");
+  legausRenderizarChipsEm("legaus-chips-etiquetas", tags);
+  legausRenderizarChipsEm("legaus-chips-etiquetas-perfil", tags);
+}
+
+function legausRenderizarChipsEm(containerId, tags) {
+  const chips = document.getElementById(containerId);
   if (!chips) return;
   if (!tags || tags.length === 0) {
     chips.innerHTML = `<div class="legaus-sem-negocios">Nenhuma etiqueta ainda.</div>`;
@@ -740,7 +814,7 @@ async function legausSalvarEtiquetas(novasTags) {
 
 function legausEnviarNovaEtiqueta(evento) {
   evento.preventDefault();
-  const input = document.getElementById("legaus-etiqueta-nova");
+  const input = evento.target.querySelector('input[type="text"]');
   const nova = input.value.trim();
   if (!nova) return;
   const atuais = legausContatoAtual?.contato?.tags ?? [];
@@ -749,14 +823,141 @@ function legausEnviarNovaEtiqueta(evento) {
   legausSalvarEtiquetas([...atuais, nova]);
 }
 
-// ---------- Ferramentas ----------
+// ---------- Catálogos ----------
 
-function legausAgendarReuniao() {
-  const nome = document.getElementById("legaus-contato-nome")?.textContent || "";
-  const titulo = encodeURIComponent(`Reunião — ${nome}`);
-  const detalhes = encodeURIComponent(`Reunião com ${nome} (agendada via Legaus Kids CRM)`);
-  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titulo}&details=${detalhes}`;
-  window.open(url, "_blank", "noopener");
+async function legausCarregarCatalogos() {
+  const lista = document.getElementById("legaus-lista-catalogos");
+  lista.innerHTML = `<div class="legaus-sem-negocios">Carregando...</div>`;
+  try {
+    const dados = await legausChamarApi("/api/integracoes/whatsapp/catalogos");
+    legausRenderizarCatalogos(dados.catalogos);
+  } catch (erro) {
+    lista.innerHTML = `<div class="legaus-status legaus-status-erro">${legausEscaparHtml(erro.message)}</div>`;
+  }
+}
+
+function legausRenderizarCatalogos(catalogos) {
+  const lista = document.getElementById("legaus-lista-catalogos");
+  if (!catalogos || catalogos.length === 0) {
+    lista.innerHTML = `<div class="legaus-sem-negocios">Nenhum catálogo cadastrado ainda.</div>`;
+    return;
+  }
+  lista.innerHTML = catalogos
+    .map(
+      (c) => `
+      <div class="legaus-negocio-card" data-url="${legausEscaparHtml(c.url)}">
+        <div class="legaus-negocio-titulo">${legausEscaparHtml(c.nome)}</div>
+      </div>`,
+    )
+    .join("");
+  lista.querySelectorAll(".legaus-negocio-card").forEach((card) => {
+    card.addEventListener("click", () => window.open(card.dataset.url, "_blank", "noopener"));
+  });
+}
+
+// ---------- Mensagens agendadas ----------
+
+async function legausCarregarMensagensAgendadas() {
+  const telefone = legausUltimoTelefonePainel;
+  const lista = document.getElementById("legaus-lista-mensagens-agendadas");
+  if (!telefone) return;
+  lista.innerHTML = `<div class="legaus-sem-negocios">Carregando...</div>`;
+  try {
+    const dados = await legausChamarApi(`/api/integracoes/whatsapp/mensagens-agendadas?telefone=${encodeURIComponent(telefone)}`);
+    legausRenderizarMensagensAgendadas(dados.agendadas);
+  } catch (erro) {
+    lista.innerHTML = `<div class="legaus-status legaus-status-erro">${legausEscaparHtml(erro.message)}</div>`;
+  }
+}
+
+function legausRenderizarMensagensAgendadas(agendadas) {
+  const lista = document.getElementById("legaus-lista-mensagens-agendadas");
+  if (!agendadas || agendadas.length === 0) {
+    lista.innerHTML = `<div class="legaus-sem-negocios">Nenhuma mensagem agendada.</div>`;
+    return;
+  }
+  lista.innerHTML = agendadas
+    .map(
+      (a) => `
+      <div class="legaus-nota-card">
+        <div class="legaus-nota-texto">${legausEscaparHtml(a.texto)}</div>
+        <div class="legaus-nota-meta">Envia em ${new Date(a.agendadaPara).toLocaleString("pt-BR")}</div>
+        <button type="button" class="legaus-agendada-cancelar" data-id="${a.id}">Cancelar</button>
+      </div>`,
+    )
+    .join("");
+  lista.querySelectorAll(".legaus-agendada-cancelar").forEach((btn) => {
+    btn.addEventListener("click", () => legausCancelarMensagemAgendada(btn.dataset.id));
+  });
+}
+
+async function legausCriarMensagemAgendada(evento) {
+  evento.preventDefault();
+  const telefone = legausUltimoTelefonePainel;
+  const texto = document.getElementById("legaus-agendada-texto").value.trim();
+  const dataValor = document.getElementById("legaus-agendada-data").value;
+  const status = document.getElementById("legaus-status-agendada");
+  if (!telefone || !texto || !dataValor) {
+    status.textContent = "Preencha a mensagem e a data/hora.";
+    status.className = "legaus-status legaus-status-erro";
+    return;
+  }
+
+  status.textContent = "Agendando...";
+  status.className = "legaus-status";
+  try {
+    await legausChamarApi("/api/integracoes/whatsapp/mensagens-agendadas", {
+      method: "POST",
+      body: JSON.stringify({
+        telefone,
+        nomeContato: await nomeDaConversaAtual(),
+        texto,
+        agendadaPara: new Date(dataValor).toISOString(),
+      }),
+    });
+    document.getElementById("legaus-agendada-texto").value = "";
+    document.getElementById("legaus-agendada-data").value = "";
+    status.textContent = "";
+    await legausCarregarMensagensAgendadas();
+  } catch (erro) {
+    status.textContent = erro.message;
+    status.className = "legaus-status legaus-status-erro";
+  }
+}
+
+async function legausCancelarMensagemAgendada(id) {
+  try {
+    await legausChamarApi("/api/integracoes/whatsapp/mensagens-agendadas", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    });
+    await legausCarregarMensagensAgendadas();
+  } catch (erro) {
+    log("Falha ao cancelar mensagem agendada:", erro.message);
+  }
+}
+
+// ---------- Calendário ----------
+
+function legausAdicionarEventoCalendario(evento) {
+  evento.preventDefault();
+  const titulo = document.getElementById("legaus-calendario-titulo").value.trim();
+  const data = document.getElementById("legaus-calendario-data").value;
+  const hora = document.getElementById("legaus-calendario-hora").value || "09:00";
+  const descricao = document.getElementById("legaus-calendario-descricao").value.trim();
+  if (!titulo || !data) return;
+
+  const inicio = new Date(`${data}T${hora}`);
+  const fim = new Date(inicio.getTime() + 60 * 60 * 1000);
+  const formatar = (d) => d.toISOString().replace(/[-:]|\.\d{3}/g, "");
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: titulo,
+    dates: `${formatar(inicio)}/${formatar(fim)}`,
+    details: descricao,
+  });
+  window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener");
 }
 
 function legausAlternarSubMassa(mostrar) {
