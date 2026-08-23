@@ -8,7 +8,6 @@ import {
   endOfMonth,
   endOfWeek,
   format,
-  isSameDay,
   isSameMonth,
   isToday,
   startOfMonth,
@@ -19,7 +18,7 @@ import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { corPrazoData } from "@/lib/utils/dates";
+import { corPrazoData, isMesmoDiaCalendario } from "@/lib/utils/dates";
 import type { EmProducaoVM, InstalacaoVM } from "@/app/(app)/producao/types";
 
 type Evento = { id: string; titulo: string; icone: string; data: Date };
@@ -82,7 +81,7 @@ export function CalendarioProducaoView({
           </div>
         ))}
         {dias.map((dia) => {
-          const eventosDoDia = eventos.filter((e) => isSameDay(e.data, dia));
+          const eventosDoDia = eventos.filter((e) => isMesmoDiaCalendario(e.data, dia));
           return (
             <div
               key={dia.toISOString()}

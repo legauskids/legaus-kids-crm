@@ -46,11 +46,37 @@ export function colunaKanbanTarefa(prazo: Date, status: string): ColunaTarefa {
 
 export type CorPrazoData = "atrasada" | "hoje" | "normal";
 
-/** Mesma lógica de cor usada nas tarefas, mas só pela data — sem status de conclusão
- * (as listas de produção/instalação já só trazem itens pendentes). */
+/**
+ * Campos de "só data" (previsão de produção, data de instalação) vêm de
+ * <input type="date"> — `new Date("2026-08-28")` grava isso como meia-noite
+ * UTC. Ler essa data com getters locais (toLocaleDateString, isSameDay do
+ * date-fns, isHoje) desloca um dia pra trás em fusos atrás de UTC como o do
+ * Brasil (28/08 vira 27/08 às 21h). Os getters UTC decodificam de volta a
+ * data-calendário pretendida; "hoje"/o dia do calendário continuam locais,
+ * porque isso É o que importa pro usuário.
+ */
+function partesDataCalendario(data: Date): { ano: number; mes: number; dia: number } {
+  return { ano: data.getUTCFullYear(), mes: data.getUTCMonth(), dia: data.getUTCDate() };
+}
+
+export function formatarDataCalendario(data: Date): string {
+  const { ano, mes, dia } = partesDataCalendario(data);
+  return `${String(dia).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${ano}`;
+}
+
+/** `diaLocal` é um dia de calendário (ex. vindo de eachDayOfInterval), não uma data-só-dia salva. */
+export function isMesmoDiaCalendario(dataSalva: Date, diaLocal: Date): boolean {
+  const p = partesDataCalendario(dataSalva);
+  return p.ano === diaLocal.getFullYear() && p.mes === diaLocal.getMonth() && p.dia === diaLocal.getDate();
+}
+
 export function corPrazoData(data: Date): CorPrazoData {
-  if (isHoje(data)) return "hoje";
-  if (data.getTime() < Date.now()) return "atrasada";
+  const p = partesDataCalendario(data);
+  const hoje = new Date();
+  const dataNum = p.ano * 10000 + p.mes * 100 + p.dia;
+  const hojeNum = hoje.getFullYear() * 10000 + hoje.getMonth() * 100 + hoje.getDate();
+  if (dataNum === hojeNum) return "hoje";
+  if (dataNum < hojeNum) return "atrasada";
   return "normal";
 }
 

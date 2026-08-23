@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { corPrazoData } from "@/lib/utils/dates";
+import { corPrazoData, formatarDataCalendario } from "@/lib/utils/dates";
 import type { EmProducaoVM, InstalacaoVM } from "@/app/(app)/producao/types";
 
 const COR_CARD_PRAZO: Record<string, string> = {
@@ -42,7 +42,7 @@ export function PainelView({
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>{n.progressoProducao ?? 0}% concluído</span>
                     {n.previsaoProducao && (
-                      <span>Previsão: {new Date(n.previsaoProducao).toLocaleDateString("pt-BR")}</span>
+                      <span>Previsão: {formatarDataCalendario(new Date(n.previsaoProducao))}</span>
                     )}
                   </div>
                 </CardContent>
@@ -67,7 +67,7 @@ export function PainelView({
                   </div>
                   <p className="text-xs text-muted-foreground">{n.contatoNome}</p>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">{new Date(n.dataInstalacao).toLocaleDateString("pt-BR")}</span>
+                    <span className="font-medium">{formatarDataCalendario(new Date(n.dataInstalacao))}</span>
                     <span className="text-muted-foreground">{n.equipeInstalacao ?? "Equipe não definida"}</span>
                   </div>
                 </CardContent>
