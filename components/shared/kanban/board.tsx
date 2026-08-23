@@ -14,7 +14,7 @@ import { KanbanColumnComponent } from "@/components/shared/kanban/column";
 
 export type KanbanColumnDef = {
   id: string;
-  label: string;
+  label: ReactNode;
   accent?: "default" | "danger";
   droppable?: boolean; // default true
 };

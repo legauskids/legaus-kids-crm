@@ -10,6 +10,7 @@ import { KanbanBoard, type KanbanItemDef } from "@/components/shared/kanban/boar
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { moverNegocioAction, marcarPerdidoAction } from "@/app/(app)/negocios/actions";
+import { atualizarEtapaAction } from "@/app/(app)/negocios/funis/actions";
 import { NovoNegocioDialog } from "@/app/(app)/negocios/novo-negocio-dialog";
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
 
@@ -106,7 +107,7 @@ export function NegociosBoardShell({
           id={`negocios-${funilSelecionado.id}`}
           columns={etapasOrdenadas.map((e) => ({
             id: e.id,
-            label: e.slaDias != null ? `${e.nome} · SLA ${e.slaDias}d` : e.nome,
+            label: <EtapaColunaLabel key={e.id} etapa={e} onSlaChange={() => router.refresh()} />,
             accent: e.tipo === "PERDIDO" ? "danger" : "default",
           }))}
           items={items}
@@ -168,4 +169,42 @@ export function NegociosBoardShell({
 
 function toItems(negocios: NegocioCard[]): KanbanItemDef<NegocioCard>[] {
   return negocios.map((n) => ({ id: n.id, columnId: n.etapaId, data: n }));
+}
+
+function EtapaColunaLabel({ etapa, onSlaChange }: { etapa: Etapa; onSlaChange: () => void }) {
+  const [, startTransition] = useTransition();
+
+  return (
+    <span className="flex items-center gap-1 text-sm font-medium">
+      {etapa.nome}
+      <span
+        className="flex items-center gap-0.5 text-xs font-normal text-muted-foreground"
+        onClick={(e) => e.stopPropagation()}
+      >
+        · SLA
+        <input
+          type="number"
+          min={0}
+          // key força o input (não controlado) a refletir o valor do servidor
+          // se ele mudar por fora, ex. editado em /negocios/funis.
+          key={etapa.slaDias}
+          defaultValue={etapa.slaDias ?? ""}
+          placeholder="–"
+          onBlur={(e) => {
+            const value = e.target.value.trim();
+            const slaDias = value ? Number(value) : null;
+            if (slaDias !== etapa.slaDias) {
+              startTransition(async () => {
+                await atualizarEtapaAction(etapa.id, { slaDias });
+                onSlaChange();
+              });
+            }
+          }}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          className="w-8 rounded border bg-transparent px-0.5 text-center outline-none focus:ring-1 focus:ring-primary"
+        />
+        d
+      </span>
+    </span>
+  );
 }
