@@ -40,27 +40,18 @@ function legausCriarPainel() {
       <div id="legaus-sem-conversa">Abra uma conversa para ver as opções do CRM.</div>
 
       <div id="legaus-com-conversa" style="display:none">
-        <!-- Tela 1: contato ainda não salvo no CRM -->
-        <div id="legaus-tela-novo" class="legaus-tela">
+        <!-- Tela 1: resumo do contato — sempre com opção de salvar/atualizar -->
+        <div id="legaus-tela-resumo" class="legaus-tela">
           <div class="legaus-contato-card">
             <div>
-              <div class="legaus-contato-nome" id="legaus-nome-novo"></div>
-              <div class="legaus-contato-telefone" id="legaus-telefone-novo"></div>
+              <div class="legaus-contato-nome" id="legaus-contato-nome"></div>
+              <div class="legaus-contato-telefone" id="legaus-contato-telefone"></div>
             </div>
-            <span class="legaus-badge-novo">NOVO</span>
+            <span class="legaus-badge-novo" id="legaus-badge-sem-nome" style="display:none">SEM NOME</span>
           </div>
           <button id="legaus-salvar-contato" class="legaus-btn-primario">Salvar contato no CRM</button>
           <div id="legaus-status-contato" class="legaus-status"></div>
-        </div>
 
-        <!-- Tela 2: contato já salvo — resumo + ações rápidas -->
-        <div id="legaus-tela-resumo" class="legaus-tela" style="display:none">
-          <div class="legaus-contato-card">
-            <div>
-              <div class="legaus-contato-nome" id="legaus-nome-resumo"></div>
-              <div class="legaus-contato-telefone" id="legaus-telefone-resumo"></div>
-            </div>
-          </div>
           <div class="legaus-secao-titulo">Ações rápidas</div>
           <button id="legaus-ir-negocios" class="legaus-card-acao">
             <span>
@@ -71,7 +62,7 @@ function legausCriarPainel() {
           </button>
         </div>
 
-        <!-- Tela 3: negócios do contato (lista de cards + criar) -->
+        <!-- Tela 2: negócios do contato (lista de cards + criar) -->
         <div id="legaus-tela-negocios" class="legaus-tela" style="display:none">
           <button id="legaus-voltar-negocios" class="legaus-breadcrumb">‹ Voltar</button>
           <div id="legaus-lista-negocios"></div>
@@ -122,7 +113,7 @@ function legausAlternarPainel() {
 }
 
 function legausMostrarTela(nome) {
-  for (const id of ["novo", "resumo", "negocios"]) {
+  for (const id of ["resumo", "negocios"]) {
     const tela = document.getElementById(`legaus-tela-${id}`);
     if (tela) tela.style.display = id === nome ? "block" : "none";
   }
@@ -218,20 +209,20 @@ async function legausAtualizarConversaNoPainel() {
   semConversa.style.display = "none";
   comConversa.style.display = "block";
 
-  const nome = (cabecalhoAtualTexto || telefone).trim();
+  const nomeDaConversa = (cabecalhoAtualTexto || telefone).trim();
   const info = await legausBuscarContato(telefone);
 
-  if (!info?.existe) {
-    document.getElementById("legaus-nome-novo").textContent = nome;
-    document.getElementById("legaus-telefone-novo").textContent = telefone;
-    document.getElementById("legaus-status-contato").textContent = "";
-    legausMostrarTela("novo");
-    return;
-  }
+  const semNomeSalvo = !info?.existe || info.contato.nome === info.contato.telefone;
+  // Enquanto não tem nome salvo no CRM, mostra o nome que já vem do próprio
+  // WhatsApp (é o que vai ser gravado ao clicar em "Salvar contato").
+  const nomeExibido = semNomeSalvo ? nomeDaConversa : info.contato.nome;
 
-  document.getElementById("legaus-nome-resumo").textContent = info.contato.nome;
-  document.getElementById("legaus-telefone-resumo").textContent = info.contato.telefone;
-  legausRenderizarNegocios(info.negocios);
+  document.getElementById("legaus-contato-nome").textContent = nomeExibido;
+  document.getElementById("legaus-contato-telefone").textContent = telefone;
+  document.getElementById("legaus-badge-sem-nome").style.display = semNomeSalvo ? "inline-flex" : "none";
+  document.getElementById("legaus-status-contato").textContent = "";
+
+  legausRenderizarNegocios(info?.negocios ?? []);
   legausAtualizarResumoNegocios();
   document.getElementById("legaus-status-negocio").textContent = "";
   legausAlternarFormNegocio(false);
