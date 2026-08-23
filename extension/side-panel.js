@@ -70,14 +70,8 @@ function legausCriarPainel() {
       <div id="legaus-sem-conversa">Abra uma conversa para ver as opções do CRM.</div>
 
       <div id="legaus-com-conversa" style="display:none">
-        <div class="legaus-nav-rail">
-          <button type="button" class="legaus-nav-btn" data-tela="resumo" title="Resumo">🏠</button>
-          <button type="button" class="legaus-nav-btn" data-tela="notas" title="Notas">📝</button>
-          <button type="button" class="legaus-nav-btn" data-tela="lembretes" title="Lembretes">⏰</button>
-          <button type="button" class="legaus-nav-btn" data-tela="respostas" title="Respostas rápidas">⚡</button>
-          <button type="button" class="legaus-nav-btn" data-tela="etiquetas" title="Etiquetas">🏷️</button>
-          <button type="button" class="legaus-nav-btn" data-tela="ferramentas" title="Ferramentas">🧰</button>
-        </div>
+        <!-- A navegação entre telas fica numa barra flutuante sobre a conversa
+             (estilo Waseller), não aqui dentro — ver legausInjetarIconesFlutuantes(). -->
 
         <!-- Tela: resumo do contato — sempre com opção de salvar/atualizar -->
         <div id="legaus-tela-resumo" class="legaus-tela">
@@ -246,9 +240,6 @@ function legausCriarPainel() {
   document.body.appendChild(painel);
 
   document.getElementById("legaus-toggle").addEventListener("click", legausAlternarPainel);
-  document.querySelectorAll(".legaus-nav-btn").forEach((btn) => {
-    btn.addEventListener("click", () => legausIrPara(btn.dataset.tela));
-  });
 
   document.getElementById("legaus-salvar-contato").addEventListener("click", legausAbrirFormContato);
   document.getElementById("legaus-voltar-salvar-contato").addEventListener("click", () => legausMostrarTela("resumo"));
@@ -298,17 +289,67 @@ function legausMostrarTela(nome) {
     const tela = document.getElementById(`legaus-tela-${id}`);
     if (tela) tela.style.display = id === nome ? "block" : "none";
   }
-  document.querySelectorAll(".legaus-nav-btn").forEach((btn) => {
-    btn.classList.toggle("legaus-nav-btn-ativo", btn.dataset.tela === nome);
+  document.querySelectorAll(".legaus-icone-flutuante").forEach((btn) => {
+    btn.classList.toggle("legaus-icone-flutuante-ativo", btn.dataset.tela === nome);
   });
 }
 
 function legausIrPara(tela) {
+  legausAplicarEstadoPainel(true);
+  chrome.storage.local.set({ legausPainelAberto: true });
   legausMostrarTela(tela);
   if (tela === "notas") legausCarregarNotas();
   if (tela === "respostas") legausCarregarRespostas();
   if (tela === "etiquetas") legausCarregarEtiquetas();
   if (tela === "ferramentas") legausAlternarSubMassa(false);
+}
+
+/**
+ * Barra de ícones flutuante sobre a conversa aberta (estilo Waseller) —
+ * clicar num ícone abre o painel lateral já na tela certa. Fica ancorada
+ * pela posição real da lista de conversas (getBoundingClientRect), não por
+ * um valor fixo, pra continuar alinhada se a janela for redimensionada.
+ */
+function legausInjetarIconesFlutuantes() {
+  if (document.getElementById("legaus-icones-flutuantes")) {
+    legausReposicionarIconesFlutuantes();
+    return;
+  }
+
+  const barra = document.createElement("div");
+  barra.id = "legaus-icones-flutuantes";
+  barra.innerHTML = `
+    <button type="button" class="legaus-icone-flutuante" data-tela="resumo" title="Resumo">🏠</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="notas" title="Notas">📝</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="lembretes" title="Lembretes">⏰</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="respostas" title="Respostas rápidas">⚡</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="etiquetas" title="Etiquetas">🏷️</button>
+    <button type="button" class="legaus-icone-flutuante" data-tela="ferramentas" title="Ferramentas">🧰</button>
+  `;
+  document.body.appendChild(barra);
+
+  barra.querySelectorAll(".legaus-icone-flutuante").forEach((btn) => {
+    btn.addEventListener("click", () => legausIrPara(btn.dataset.tela));
+  });
+
+  legausReposicionarIconesFlutuantes();
+}
+
+function legausReposicionarIconesFlutuantes() {
+  const barra = document.getElementById("legaus-icones-flutuantes");
+  const listaConversas = primeiroElemento(LEGAUS_SELECTORS.listaConversas);
+  if (!barra || !listaConversas) return;
+
+  const cabecalho = primeiroElemento(LEGAUS_SELECTORS.cabecalhoConversa);
+  const rectLista = listaConversas.getBoundingClientRect();
+  const rectCabecalho = cabecalho?.getBoundingClientRect();
+
+  barra.style.left = `${Math.round(rectLista.right + 8)}px`;
+  barra.style.top = `${Math.round((rectCabecalho?.bottom ?? 60) + 12)}px`;
+}
+
+function legausRemoverIconesFlutuantes() {
+  document.getElementById("legaus-icones-flutuantes")?.remove();
 }
 
 async function legausAlternarFormNegocio(mostrar) {
@@ -392,8 +433,11 @@ async function legausAtualizarConversaNoPainel() {
     semConversa.style.display = "block";
     comConversa.style.display = "none";
     legausUltimoTelefonePainel = null;
+    legausRemoverIconesFlutuantes();
     return;
   }
+
+  legausInjetarIconesFlutuantes();
 
   if (telefone === legausUltimoTelefonePainel) return;
   legausUltimoTelefonePainel = telefone;
