@@ -12,32 +12,40 @@ const ARQUIVO_QR = "ultimo-qr.png";
 const logger = pino({ level: "warn" });
 const PASTA_AUTH = "auth";
 
-let jaConectouUmaVez = false;
+// Se preenchido no .env, pareia por código de 8 dígitos (digitado no
+// WhatsApp) em vez de QR code — mais tolerante a atraso do que escanear,
+// já que não depende de câmera nem de a imagem chegar a tempo antes do
+// código expirar. Só dígitos, com DDI (ex.: 5555999999999).
+const TELEFONE_PAREAMENTO = process.env.WHATSAPP_PAREAMENTO_TELEFONE || "";
+
+let credsAtuais = null;
 let reconexaoAgendada = false;
 
 /**
- * Se a conexão cair/travar ANTES de terminar de parear (nunca chegou a
- * "open" nesta execução), o estado salvo em auth/ pode ter ficado num
- * meio-termo inconsistente do handshake — reconectar reaproveitando esse
- * estado corrompido é o que gera o crash "Unsupported state or unable to
- * authenticate data" (visto ao vivo em 2026-08-24: o QR caiu no meio do
- * pareamento e a reconexão automática travou o processo inteiro). Mais
- * seguro apagar e começar do zero (gera um QR code novo) do que insistir
- * num estado que já provou estar quebrado. Depois que parear de verdade
- * (connection: open ao menos uma vez), reconexões normais reaproveitam
- * auth/ sem problema.
+ * Só apaga auth/ se as credenciais NUNCA chegaram a se registrar de
+ * verdade (`creds.registered`) — checagem pelo próprio estado persistido,
+ * não por uma flag "cheguei a abrir a conexão nesta execução". Isso importa
+ * porque, logo depois de um pareamento bem-sucedido (QR escaneado ou código
+ * digitado), o WhatsApp fecha a conexão de propósito com stream-error 515
+ * pra forçar reconectar com a sessão nova — ANTES do "connection: open"
+ * disparar. Apagar auth/ nesse momento (visto ao vivo em 2026-08-24)
+ * destrói um pareamento que tinha acabado de dar certo, empurrando o
+ * serviço pra um loop de "parear de novo, apagar nossa própria sessão boa,
+ * parear de novo...". Só é seguro apagar quando `registered` continua
+ * false — aí sim é um handshake que nunca terminou (QR nunca escaneado,
+ * ou dados realmente corrompidos no meio do processo).
  */
-function limparAuthSeNuncaPareou() {
-  if (!jaConectouUmaVez && fs.existsSync(PASTA_AUTH)) {
+function limparAuthSeNaoRegistrado() {
+  if (credsAtuais && !credsAtuais.registered && fs.existsSync(PASTA_AUTH)) {
     fs.rmSync(PASTA_AUTH, { recursive: true, force: true });
-    console.warn("[whatsapp-service] Estado de pareamento incompleto — apagando e gerando um QR code novo.");
+    console.warn("[whatsapp-service] Pareamento nunca completou — apagando e gerando um QR code/código novo.");
   }
 }
 
 function agendarReconexao() {
   if (reconexaoAgendada) return;
   reconexaoAgendada = true;
-  limparAuthSeNuncaPareou();
+  limparAuthSeNaoRegistrado();
   console.warn("[whatsapp-service] Reconectando em instantes...");
   setTimeout(() => {
     reconexaoAgendada = false;
@@ -47,6 +55,7 @@ function agendarReconexao() {
 
 async function conectar() {
   const { state, saveCreds } = await useMultiFileAuthState(PASTA_AUTH);
+  credsAtuais = state.creds;
   // Busca a versão mais recente do protocolo do WhatsApp Web em vez de usar
   // a que veio empacotada no Baileys — versão desatualizada é uma causa
   // comum de "não foi possível conectar" ao escanear o QR.
@@ -56,10 +65,29 @@ async function conectar() {
 
   sock.ev.on("creds.update", saveCreds);
 
+  // Pareamento por código (alternativa ao QR) — pedido uma vez só, assim
+  // que o socket existe. NÃO testado ao vivo ainda (não tive como escanear
+  // nem digitar código de verdade nesta sessão) — se `requestPairingCode`
+  // der erro aqui, o fallback é usar o QR normal (não preencher
+  // WHATSAPP_PAREAMENTO_TELEFONE no .env).
+  if (TELEFONE_PAREAMENTO && !state.creds.registered) {
+    setTimeout(async () => {
+      try {
+        const codigo = await sock.requestPairingCode(TELEFONE_PAREAMENTO);
+        console.log(`\n[whatsapp-service] Código de pareamento: ${codigo}`);
+        console.log(
+          'No celular: WhatsApp Business > três pontinhos (ou Configurações) > Aparelhos conectados > Conectar um aparelho > "Conectar com número de telefone" > digite esse código.\n',
+        );
+      } catch (erro) {
+        console.error("[whatsapp-service] Falha ao pedir código de pareamento:", erro.message);
+      }
+    }, 3000);
+  }
+
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
+    if (qr && !TELEFONE_PAREAMENTO) {
       console.log(
         "\nEscaneie esse QR code pelo WhatsApp Business do celular (Aparelhos conectados > Conectar um aparelho):\n",
       );
@@ -73,7 +101,6 @@ async function conectar() {
     }
 
     if (connection === "open") {
-      jaConectouUmaVez = true;
       console.log("[whatsapp-service] Conectado! Sincronizando com o CRM.");
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);

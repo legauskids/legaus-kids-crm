@@ -45,8 +45,5 @@ next-env.d.ts
 /prisma/*.db
 /prisma/*.db-journal
 
-.vercel
-.env*
-
 # claude code (config pessoal, não é pra ir pro repo)
 .claude/settings.local.json

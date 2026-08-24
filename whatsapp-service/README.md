@@ -33,7 +33,14 @@ npm start
 
 Na primeira vez, aparece um QR code no terminal. No WhatsApp Business do
 celular: **Configurações → Aparelhos conectados → Conectar um aparelho** e
-escaneia. Depois disso a sessão fica salva em `auth/` (criada
+escaneia.
+
+**QR expirando antes de dar tempo de escanear?** Preencha
+`WHATSAPP_PAREAMENTO_TELEFONE` no `.env` com o número do WhatsApp Business
+(só dígitos, com DDI) e rode `npm start` de novo — em vez de QR, aparece um
+**código de 8 dígitos** no terminal pra digitar no celular em
+"Conectar com número de telefone" (mesma tela de "Aparelhos conectados").
+Não precisa de câmera nem de escanear nada. Depois disso a sessão fica salva em `auth/` (criada
 automaticamente, **não** commitar essa pasta — já está no `.gitignore`) e
 não precisa escanear de novo nos próximos `npm start`, a não ser que
 desconecte pelo celular.
