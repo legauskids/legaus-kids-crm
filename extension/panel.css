@@ -485,6 +485,25 @@
   padding: 6px 12px !important;
 }
 
+/* Botão discreto tipo link (ex.: "Sincronizar com WhatsApp Business") */
+.legaus-link-acao {
+  width: auto !important;
+  border: none !important;
+  background: transparent !important;
+  color: #111827 !important;
+  padding: 4px 0 !important;
+  margin: 8px 0 0 !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.legaus-link-acao:hover {
+  color: #374151 !important;
+  background: transparent !important;
+}
+
 /* Mensagens agendadas */
 .legaus-agendada-cancelar {
   width: auto !important;

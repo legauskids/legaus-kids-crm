@@ -92,6 +92,49 @@ function nomeDaConversaAtual() {
   return elNome?.textContent?.trim() || textoCabecalho;
 }
 
+/**
+ * Lê as etiquetas nativas do WhatsApp Business atribuídas ao contato da
+ * conversa aberta. SÓ funciona se o painel "Dados do contato" já estiver
+ * aberto — não abrimos ele automaticamente aqui: já tentamos isso pra ler o
+ * nome (ver aviso em obterTelefoneDaConversaAberta acima) e fechava a
+ * conversa de verdade em teste ao vivo, então essa mesma cautela vale aqui.
+ * Sem confirmação ao vivo dos testids reais de etiquetas do WhatsApp
+ * Business — por isso o fallback por texto abaixo, que acha o título
+ * "Etiquetas"/"Labels" na tela e lê os elementos vizinhos como candidatos a
+ * nome de etiqueta. Se retornar painelAberto:true e etiquetas:[] mesmo com
+ * etiquetas visíveis no WhatsApp, esse fallback (ou os testids em
+ * selectors.js) é o que precisa de ajuste — window.__legausDebug() mostra a
+ * contagem de cada seletor candidato.
+ */
+function obterEtiquetasWhatsAppDaConversaAberta() {
+  // section-about-and-phone-number é um seletor confirmado ao vivo — serve
+  // de sinal de que o painel "Dados do contato" está aberto agora.
+  const painelAberto = !!primeiroElemento(LEGAUS_SELECTORS.secaoTelefoneContato);
+  if (!painelAberto) return { painelAberto: false, etiquetas: [] };
+
+  const secao = primeiroElemento(LEGAUS_SELECTORS.secaoEtiquetasWhatsApp);
+  if (secao) {
+    const chips = todosElementos(LEGAUS_SELECTORS.chipEtiquetaWhatsApp, secao);
+    const nomes = chips.map((c) => c.textContent?.trim()).filter(Boolean);
+    if (nomes.length > 0) return { painelAberto: true, etiquetas: [...new Set(nomes)] };
+  }
+
+  const titulo = Array.from(document.querySelectorAll("span, div, h2, h3")).find(
+    (el) => el.children.length === 0 && ["etiquetas", "labels"].includes((el.textContent || "").trim().toLowerCase()),
+  );
+  if (!titulo) return { painelAberto: true, etiquetas: [] };
+
+  const container = titulo.closest("section") || titulo.parentElement?.parentElement || titulo.parentElement;
+  if (!container) return { painelAberto: true, etiquetas: [] };
+
+  const candidatos = Array.from(container.querySelectorAll("span"))
+    .filter((el) => el.children.length === 0)
+    .map((el) => el.textContent?.trim())
+    .filter((texto) => texto && texto.length > 0 && texto.length < 30 && !["etiquetas", "labels"].includes(texto.toLowerCase()));
+
+  return { painelAberto: true, etiquetas: [...new Set(candidatos)] };
+}
+
 function extrairTextoMensagem(bolha) {
   const textoEl = primeiroElemento(LEGAUS_SELECTORS.textoMensagem, bolha);
   return textoEl?.textContent?.trim() ?? "";

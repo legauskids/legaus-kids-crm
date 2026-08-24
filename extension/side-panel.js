@@ -93,6 +93,9 @@ function legausCriarPainel() {
             <input id="legaus-etiqueta-nova-perfil" type="text" placeholder="Nova etiqueta" />
             <button type="submit" class="legaus-btn-secundario">+</button>
           </form>
+          <button type="button" id="legaus-sincronizar-etiquetas-perfil" class="legaus-link-acao">
+            🔄 Sincronizar com WhatsApp Business
+          </button>
 
           <div class="legaus-secao-titulo">Ações rápidas</div>
           <button id="legaus-ir-negocios" class="legaus-card-acao">
@@ -236,6 +239,12 @@ function legausCriarPainel() {
             <input id="legaus-etiqueta-nova" type="text" placeholder="Nova etiqueta" />
             <button type="submit" class="legaus-btn-secundario">+</button>
           </form>
+          <button type="button" id="legaus-sincronizar-etiquetas" class="legaus-link-acao">
+            🔄 Sincronizar com WhatsApp Business
+          </button>
+          <p class="legaus-texto-ajuda">
+            Abra "Dados do contato" no WhatsApp (clique no nome/foto no topo da conversa) antes de sincronizar.
+          </p>
           <div id="legaus-status-etiqueta" class="legaus-status"></div>
         </div>
 
@@ -327,6 +336,8 @@ function legausCriarPainel() {
   document.getElementById("legaus-cancelar-lembrete").addEventListener("click", () => legausMostrarTela("resumo"));
   document.getElementById("legaus-form-etiqueta").addEventListener("submit", legausEnviarNovaEtiqueta);
   document.getElementById("legaus-form-etiqueta-perfil").addEventListener("submit", legausEnviarNovaEtiqueta);
+  document.getElementById("legaus-sincronizar-etiquetas").addEventListener("click", legausSincronizarEtiquetasWhatsApp);
+  document.getElementById("legaus-sincronizar-etiquetas-perfil").addEventListener("click", legausSincronizarEtiquetasWhatsApp);
   document.getElementById("legaus-form-mensagem-agendada").addEventListener("submit", legausCriarMensagemAgendada);
   document.getElementById("legaus-form-calendario").addEventListener("submit", legausAdicionarEventoCalendario);
 
@@ -859,6 +870,43 @@ function legausEnviarNovaEtiqueta(evento) {
   input.value = "";
   if (atuais.includes(nova)) return;
   legausSalvarEtiquetas([...atuais, nova]);
+}
+
+/**
+ * Lê as etiquetas nativas do WhatsApp Business (via obterEtiquetasWhatsAppDaConversaAberta,
+ * em content-script.js) e faz um merge aditivo com as etiquetas já salvas no
+ * CRM — nunca remove etiqueta nenhuma, só acrescenta as que vierem do
+ * WhatsApp e ainda não existirem aqui. Só funciona com o painel "Dados do
+ * contato" do WhatsApp já aberto (não abrimos ele automaticamente, é um
+ * comportamento que já causou bug — ver aviso na função em content-script.js).
+ */
+async function legausSincronizarEtiquetasWhatsApp() {
+  const status = document.getElementById("legaus-status-etiqueta");
+  if (!legausUltimoTelefonePainel) return;
+
+  const resultado = obterEtiquetasWhatsAppDaConversaAberta();
+  if (!resultado.painelAberto) {
+    status.textContent = 'Abra "Dados do contato" no WhatsApp (clique no nome/foto no topo da conversa) e tente de novo.';
+    status.className = "legaus-status legaus-status-erro";
+    return;
+  }
+  if (resultado.etiquetas.length === 0) {
+    status.textContent = "Não achei etiquetas do WhatsApp Business atribuídas a esse contato.";
+    status.className = "legaus-status legaus-status-erro";
+    return;
+  }
+
+  const atuais = legausContatoAtual?.contato?.tags ?? [];
+  const novasDoWhatsapp = resultado.etiquetas.filter((t) => !atuais.includes(t));
+  if (novasDoWhatsapp.length === 0) {
+    status.textContent = "Etiquetas do WhatsApp já estavam sincronizadas.";
+    status.className = "legaus-status legaus-status-ok";
+    return;
+  }
+
+  await legausSalvarEtiquetas([...atuais, ...novasDoWhatsapp]);
+  status.textContent = `${novasDoWhatsapp.length} etiqueta(s) do WhatsApp sincronizada(s): ${novasDoWhatsapp.join(", ")}.`;
+  status.className = "legaus-status legaus-status-ok";
 }
 
 // ---------- Catálogos ----------

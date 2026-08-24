@@ -77,6 +77,26 @@ const LEGAUS_SELECTORS = {
   campoNomeNovoContato: ['div[data-testid="text-input"][aria-label="Nome"]'],
   campoTelefoneNovoContato: ['input[data-testid="phone-number-input"]'],
   toggleSincronizarNovoContato: ['input[data-testid="save-contact-drawer"]'],
+
+  // Etiquetas nativas do WhatsApp Business (só existe em contas Business),
+  // dentro do painel "Dados do contato" — SEM CONFIRMAÇÃO AO VIVO ainda
+  // (não deu pra inspecionar o DOM real numa conta Business com etiquetas
+  // cadastradas). Os testids abaixo são um chute educado seguindo o padrão
+  // dos outros testids do WhatsApp Web. Se vier zero em window.__legausDebug(),
+  // esse é o primeiro lugar a corrigir — o fallback por texto em
+  // obterEtiquetasWhatsAppDaConversaAberta() (content-script.js) cobre o
+  // caso desses testids terem mudado ou nunca terem sido esses.
+  secaoEtiquetasWhatsApp: [
+    '[data-testid="section-chat-labels"]',
+    '[data-testid="section-labels"]',
+    '[data-testid="labels-section"]',
+  ],
+  chipEtiquetaWhatsApp: [
+    '[data-testid="chat-label"]',
+    '[data-testid="label-pill"]',
+    '[data-testid="label-chip"]',
+    '[data-testid="label-item"]',
+  ],
 };
 
 function contarCandidatos(seletores) {
