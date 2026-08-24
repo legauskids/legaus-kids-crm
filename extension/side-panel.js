@@ -96,6 +96,7 @@ function legausCriarPainel() {
           <button type="button" id="legaus-sincronizar-etiquetas-perfil" class="legaus-link-acao">
             🔄 Sincronizar com WhatsApp Business
           </button>
+          <div id="legaus-status-etiqueta-perfil" class="legaus-status"></div>
 
           <div class="legaus-secao-titulo">Ações rápidas</div>
           <button id="legaus-ir-negocios" class="legaus-card-acao">
@@ -822,6 +823,11 @@ function legausRenderizarEtiquetas(tags) {
   legausRenderizarChipsEm("legaus-chips-etiquetas-perfil", tags);
 }
 
+/** Etiquetas têm dois conjuntos de elementos (Perfil e tela Etiquetas) — decide qual status usar pelo sufixo do id que originou a ação. */
+function legausStatusIdEtiquetas(idOrigem) {
+  return idOrigem && idOrigem.endsWith("-perfil") ? "legaus-status-etiqueta-perfil" : "legaus-status-etiqueta";
+}
+
 function legausRenderizarChipsEm(containerId, tags) {
   const chips = document.getElementById(containerId);
   if (!chips) return;
@@ -835,17 +841,18 @@ function legausRenderizarChipsEm(containerId, tags) {
       <span class="legaus-chip">${legausEscaparHtml(t)} <button type="button" class="legaus-chip-remover" data-indice="${i}">×</button></span>`,
     )
     .join("");
+  const statusId = legausStatusIdEtiquetas(containerId);
   chips.querySelectorAll(".legaus-chip-remover").forEach((btn) => {
     btn.addEventListener("click", () => {
       const restantes = tags.filter((_, i) => i !== Number(btn.dataset.indice));
-      legausSalvarEtiquetas(restantes);
+      legausSalvarEtiquetas(restantes, statusId);
     });
   });
 }
 
-async function legausSalvarEtiquetas(novasTags) {
+async function legausSalvarEtiquetas(novasTags, statusId = "legaus-status-etiqueta") {
   const telefone = legausUltimoTelefonePainel;
-  const status = document.getElementById("legaus-status-etiqueta");
+  const status = document.getElementById(statusId);
   if (!telefone) return;
   try {
     const resultado = await legausChamarApi("/api/integracoes/whatsapp/contatos/tags", {
@@ -869,7 +876,7 @@ function legausEnviarNovaEtiqueta(evento) {
   const atuais = legausContatoAtual?.contato?.tags ?? [];
   input.value = "";
   if (atuais.includes(nova)) return;
-  legausSalvarEtiquetas([...atuais, nova]);
+  legausSalvarEtiquetas([...atuais, nova], legausStatusIdEtiquetas(evento.target.id));
 }
 
 /**
@@ -880,8 +887,9 @@ function legausEnviarNovaEtiqueta(evento) {
  * contato" do WhatsApp já aberto (não abrimos ele automaticamente, é um
  * comportamento que já causou bug — ver aviso na função em content-script.js).
  */
-async function legausSincronizarEtiquetasWhatsApp() {
-  const status = document.getElementById("legaus-status-etiqueta");
+async function legausSincronizarEtiquetasWhatsApp(evento) {
+  const statusId = legausStatusIdEtiquetas(evento?.target?.id);
+  const status = document.getElementById(statusId);
   if (!legausUltimoTelefonePainel) return;
 
   const resultado = obterEtiquetasWhatsAppDaConversaAberta();
@@ -904,7 +912,7 @@ async function legausSincronizarEtiquetasWhatsApp() {
     return;
   }
 
-  await legausSalvarEtiquetas([...atuais, ...novasDoWhatsapp]);
+  await legausSalvarEtiquetas([...atuais, ...novasDoWhatsapp], statusId);
   status.textContent = `${novasDoWhatsapp.length} etiqueta(s) do WhatsApp sincronizada(s): ${novasDoWhatsapp.join(", ")}.`;
   status.className = "legaus-status legaus-status-ok";
 }
