@@ -108,8 +108,16 @@ async function processarFilaDeEnvio() {
       });
       if (resultado?.ok) {
         await confirmarEnvio(item.mensagemId, resultado.externalId);
+        continue;
       }
-      // se `resultado.motivo === "navegando"`, a próxima rodada do alarme tenta de novo
+      if (resultado?.motivo === "navegando") {
+        // Precisou recarregar a página pra trocar de conversa — para por aqui
+        // nesta rodada em vez de mandar o próximo item da fila também, senão
+        // um item pra outro número dispara um SEGUNDO recarregamento em cima
+        // do primeiro, antes da conversa nova nem ter terminado de carregar.
+        // A próxima rodada do alarme (1 min) já continua a fila a partir daqui.
+        break;
+      }
     } catch (erro) {
       console.error("[Legaus] Falha ao repassar mensagem pro content script:", erro);
     }

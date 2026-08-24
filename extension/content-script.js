@@ -261,7 +261,14 @@ async function abrirNovoContatoNativoPreenchido(nome, telefoneComDDI) {
 }
 
 async function enviarMensagemReal({ telefone, texto, mensagemId }) {
-  if (!location.href.includes(`phone=${telefone}`)) {
+  // NÃO usar location.href.includes("phone=...") aqui: o WhatsApp Web reescreve
+  // a URL de volta pro normal assim que a conversa termina de abrir, então essa
+  // checagem nunca batia depois do primeiro recarregamento — o resultado era um
+  // loop infinito de reload a cada rodada do alarme (1 min), pra sempre, mesmo
+  // com a conversa certa já aberta. telefoneDaConversaAtual() lê o cabeçalho de
+  // verdade, então funciona independente de como a conversa foi aberta.
+  const telefoneAberto = await telefoneDaConversaAtual();
+  if (telefoneAberto !== telefone) {
     location.href = `https://web.whatsapp.com/send?phone=${telefone}`;
     // a navegação recarrega o content script; o background reencaminha o comando
     // de novo na próxima rodada do alarme (1 min) — ver background.js.
