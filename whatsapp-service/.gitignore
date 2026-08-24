@@ -2,3 +2,4 @@ node_modules/
 auth/
 .env
 *.log
+ultimo-qr.png
