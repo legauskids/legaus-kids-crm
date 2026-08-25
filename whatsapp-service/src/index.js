@@ -65,13 +65,15 @@ async function conectar() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  // Pareamento por código (alternativa ao QR) — pedido uma vez só, assim
-  // que o socket existe. NÃO testado ao vivo ainda (não tive como escanear
-  // nem digitar código de verdade nesta sessão) — se `requestPairingCode`
-  // der erro aqui, o fallback é usar o QR normal (não preencher
-  // WHATSAPP_PAREAMENTO_TELEFONE no .env).
+  // Pareamento por código (alternativa ao QR). Diferente do QR — que o
+  // próprio Baileys renova sozinho a cada conexão.update —, um código pedido
+  // uma vez só ficava velho (~60s) e exigia reiniciar o processo à mão pra
+  // gerar outro (visto ao vivo em 2026-08-24, foi preciso reiniciar várias
+  // vezes manualmente). Agora pede um novo periodicamente até conectar de
+  // verdade, sem precisar reiniciar nada.
+  let intervaloCodigo = null;
   if (TELEFONE_PAREAMENTO && !state.creds.registered) {
-    setTimeout(async () => {
+    const pedirCodigo = async () => {
       try {
         const codigo = await sock.requestPairingCode(TELEFONE_PAREAMENTO);
         console.log(`\n[whatsapp-service] Código de pareamento: ${codigo}`);
@@ -81,7 +83,9 @@ async function conectar() {
       } catch (erro) {
         console.error("[whatsapp-service] Falha ao pedir código de pareamento:", erro.message);
       }
-    }, 3000);
+    };
+    setTimeout(pedirCodigo, 3000);
+    intervaloCodigo = setInterval(pedirCodigo, 50000);
   }
 
   sock.ev.on("connection.update", (update) => {
@@ -101,12 +105,14 @@ async function conectar() {
     }
 
     if (connection === "open") {
+      if (intervaloCodigo) clearInterval(intervaloCodigo);
       console.log("[whatsapp-service] Conectado! Sincronizando com o CRM.");
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);
     }
 
     if (connection === "close") {
+      if (intervaloCodigo) clearInterval(intervaloCodigo);
       const codigo = lastDisconnect?.error?.output?.statusCode;
       const deslogado = codigo === DisconnectReason.loggedOut;
       if (deslogado) {

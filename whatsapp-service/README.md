@@ -40,7 +40,22 @@ escaneia.
 (só dígitos, com DDI) e rode `npm start` de novo — em vez de QR, aparece um
 **código de 8 dígitos** no terminal pra digitar no celular em
 "Conectar com número de telefone" (mesma tela de "Aparelhos conectados").
-Não precisa de câmera nem de escanear nada. Depois disso a sessão fica salva em `auth/` (criada
+Não precisa de câmera nem de escanear nada. O código se renova sozinho a
+cada ~50s enquanto não parear — não precisa reiniciar o processo pra pegar
+um novo.
+
+**Muitas tentativas seguidas e continua dizendo "não foi possível
+conectar"?** O WhatsApp aplica um limite temporário depois de várias
+tentativas de pareamento num intervalo curto — se isso acontecer, dá uma
+pausa de 10-15 minutos antes de tentar de novo, em vez de ficar gerando
+código atrás de código.
+
+**Terminal travado e `Ctrl+C` não fechou o processo?** No Windows, o
+processo `node.exe` às vezes fica "fantasma" rodando em segundo plano
+mesmo depois de fechar a janela do terminal — abra o Gerenciador de Tarefas,
+procure por `node.exe` e finalize manualmente antes de rodar `npm start`
+de novo (dois processos rodando ao mesmo tempo com a mesma sessão causam
+erros estranhos de conexão). Depois disso a sessão fica salva em `auth/` (criada
 automaticamente, **não** commitar essa pasta — já está no `.gitignore`) e
 não precisa escanear de novo nos próximos `npm start`, a não ser que
 desconecte pelo celular.
