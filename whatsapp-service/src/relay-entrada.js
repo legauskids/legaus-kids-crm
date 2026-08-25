@@ -11,9 +11,21 @@ function extrairTexto(msg) {
   return msg.message?.conversation || msg.message?.extendedTextMessage?.text || null;
 }
 
-function extrairTelefone(remoteJid) {
-  if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") return null;
-  return remoteJid.split("@")[0];
+/**
+ * Contas WhatsApp mais novas às vezes identificam o contato por um "LID"
+ * (Linked ID, identificador interno de privacidade que o WhatsApp foi
+ * introduzindo aos poucos) em vez do número de telefone real no
+ * `remoteJid` — foi isso que causou mensagens chegando com um número
+ * completamente diferente do de quem mandou (visto ao vivo em 2026-08-24).
+ * `key.senderPn` é o campo que o próprio Baileys expõe com o número de
+ * telefone de verdade nesse caso (ver WAMessageKey em
+ * node_modules/@whiskeysockets/baileys/lib/Types/Message.d.ts); cai pro
+ * `remoteJid` quando ele não vem preenchido (contas mais antigas, sem LID).
+ */
+function extrairTelefone(key) {
+  const jid = key?.senderPn || key?.remoteJid;
+  if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return null;
+  return jid.split("@")[0];
 }
 
 /**
@@ -31,7 +43,7 @@ export function ligarRelayDeEntrada(sock) {
 
     for (const msg of messages) {
       try {
-        const telefone = extrairTelefone(msg.key?.remoteJid);
+        const telefone = extrairTelefone(msg.key);
         const texto = extrairTexto(msg);
         if (!telefone || !texto || !msg.key?.id) continue;
 

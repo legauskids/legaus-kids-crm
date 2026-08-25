@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PanelRightOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConversationList } from "@/app/(app)/atendimento/conversation-list";
@@ -40,6 +41,17 @@ export function AtendimentoShell({
   negociosDoContato: NegocioLinkVM[];
 }) {
   const [painelAberto, setPainelAberto] = useState(true);
+  const router = useRouter();
+
+  // A página é toda renderizada no servidor (props vêm de page.tsx) — sem
+  // isso, uma mensagem chegando pelo whatsapp-service só aparecia depois de
+  // navegar ou fazer alguma ação manual, nunca sozinha. router.refresh()
+  // busca os dados de novo sem recarregar a página inteira (mantém o
+  // estado local, tipo o painelAberto).
+  useEffect(() => {
+    const intervalo = setInterval(() => router.refresh(), 4000);
+    return () => clearInterval(intervalo);
+  }, [router]);
 
   return (
     <div className="flex h-full">
