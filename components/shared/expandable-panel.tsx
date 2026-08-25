@@ -18,10 +18,16 @@ export function ExpandablePanel({
   const [open, setOpen] = useState(false);
 
   return (
-    <Card className="h-full">
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm font-semibold text-muted-foreground">{title}</CardTitle>
-        <Button variant="ghost" size="icon-sm" onClick={() => setOpen(true)} title="Expandir">
+    <Card className="h-full transition-shadow hover:shadow-md">
+      <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-border/60">
+        <CardTitle className="text-sm font-bold text-foreground">{title}</CardTitle>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setOpen(true)}
+          title="Expandir"
+          className="text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        >
           <Maximize2 className="size-3.5" />
         </Button>
       </CardHeader>
