@@ -79,17 +79,17 @@ export function NegociosBoardShell({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
-        <div className="flex flex-wrap gap-1">
+      <div className="flex items-center justify-between gap-2 border-b bg-card px-4 py-3 shadow-xs">
+        <div className="flex flex-wrap gap-1.5">
           {funis.map((f) => (
             <Link
               key={f.id}
               href={`/negocios?funil=${f.id}`}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "rounded-lg px-3 py-1.5 text-sm font-medium transition-all",
                 f.id === funilSelecionado.id
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted",
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {f.nome}
@@ -122,18 +122,18 @@ export function NegociosBoardShell({
               <Link
                 href={`/negocios/${item.id}`}
                 className={cn(
-                  "block space-y-1 rounded-md p-3 text-sm",
-                  atrasado && "border-2 border-destructive bg-destructive/10",
+                  "block space-y-1.5 rounded-lg p-3 text-sm",
+                  atrasado && "border-2 border-destructive bg-destructive/5",
                 )}
               >
-                <p className="font-medium leading-snug">{item.data.titulo}</p>
+                <p className="font-semibold leading-snug text-foreground">{item.data.titulo}</p>
                 <p className="text-xs text-muted-foreground">{item.data.contatoNome}</p>
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs font-medium">{centavosParaReais(item.data.valorCentavos)}</span>
+                  <span className="text-xs font-bold text-success">{centavosParaReais(item.data.valorCentavos)}</span>
                   <span className="text-xs text-muted-foreground">{item.data.responsavelNome}</span>
                 </div>
                 {atrasado && (
-                  <p className="text-xs font-medium text-destructive">Parado além do prazo</p>
+                  <p className="text-xs font-semibold text-destructive">Parado além do prazo</p>
                 )}
               </Link>
             );

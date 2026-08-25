@@ -13,7 +13,7 @@ export function KanbanCard({ id, children }: { id: string; children: ReactNode }
       {...listeners}
       {...attributes}
       className={cn(
-        "cursor-grab touch-none rounded-md border bg-background shadow-sm transition-opacity active:cursor-grabbing",
+        "cursor-grab touch-none rounded-lg border bg-card shadow-sm transition-all hover:shadow-md active:cursor-grabbing",
         isDragging && "opacity-40 shadow-lg",
       )}
     >

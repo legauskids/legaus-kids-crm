@@ -13,8 +13,11 @@ export default async function DashboardPage() {
   const data = await getDashboardData();
 
   return (
-    <div className="space-y-4 p-6">
-      <h1 className="text-2xl font-semibold">Olá, {user.nome}</h1>
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Olá, {user.nome.split(" ")[0]}</h1>
+        <p className="text-sm text-muted-foreground">Aqui está o resumo do seu dia.</p>
+      </div>
 
       <KpiCards kpis={data.kpis} />
 

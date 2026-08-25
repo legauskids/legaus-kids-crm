@@ -19,15 +19,25 @@ export function KanbanColumnComponent<T>({
   const { setNodeRef, isOver } = useDroppable({ id: column.id, disabled: !droppable });
 
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-lg border bg-muted/30">
+    <div className="flex w-72 shrink-0 flex-col rounded-xl border bg-muted/40">
       <div
         className={cn(
-          "flex items-center justify-between border-b px-3 py-2",
+          "flex items-center justify-between border-b border-border/60 px-3 py-2.5",
           column.accent === "danger" && "text-destructive",
         )}
       >
-        <span className="text-sm font-medium">{column.label}</span>
-        <span className="text-xs text-muted-foreground">{items.length}</span>
+        <span className="flex items-center gap-2 text-sm font-semibold">
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              column.accent === "danger" ? "bg-destructive" : "bg-primary",
+            )}
+          />
+          {column.label}
+        </span>
+        <span className="rounded-full bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground shadow-xs">
+          {items.length}
+        </span>
       </div>
       <div
         ref={setNodeRef}
