@@ -45,10 +45,10 @@ export function EtapaBreadcrumb({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3.5 shadow-sm">
       <div className="flex flex-wrap items-center gap-1 text-sm">
         {etapaAtual && etapaAtual.tipo !== "NORMAL" ? (
-          <Badge variant={etapaAtual.tipo === "GANHO" ? "default" : "destructive"}>{etapaAtual.nome}</Badge>
+          <Badge variant={etapaAtual.tipo === "GANHO" ? "success" : "destructive"}>{etapaAtual.nome}</Badge>
         ) : (
           etapasNormais.map((etapa, idx) => (
             <span key={etapa.id} className="flex items-center gap-1">
@@ -56,10 +56,10 @@ export function EtapaBreadcrumb({
               <button
                 onClick={() => mover(etapa.id)}
                 className={cn(
-                  "rounded px-2 py-1 transition-colors",
+                  "rounded-lg px-2.5 py-1.5 font-medium transition-all",
                   etapa.id === etapaAtualId
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted",
+                    ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                 )}
               >
                 {etapa.nome}
@@ -91,7 +91,11 @@ export function EtapaBreadcrumb({
               <XCircle className="size-4" />
               Perdido
             </Button>
-            <Button size="sm" onClick={() => etapaGanho && mover(etapaGanho.id)}>
+            <Button
+              size="sm"
+              className="bg-success text-success-foreground shadow-sm shadow-success/20 hover:bg-success/90"
+              onClick={() => etapaGanho && mover(etapaGanho.id)}
+            >
               <Trophy className="size-4" />
               Ganho
             </Button>

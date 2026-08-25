@@ -13,7 +13,7 @@ export default async function ExtensaoPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <div>
-        <h1 className="text-xl font-semibold">Extensão de WhatsApp</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Extensão de WhatsApp</h1>
         <p className="text-sm text-muted-foreground">
           Conecte a extensão de Chrome ao seu usuário para sincronizar conversas reais do WhatsApp Web.
         </p>

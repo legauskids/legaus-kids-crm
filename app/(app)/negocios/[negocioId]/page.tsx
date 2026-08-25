@@ -38,9 +38,9 @@ export default async function NegocioDetalhePage({
           </Link>
         </Button>
         <div>
-          <h1 className="text-xl font-semibold">{negocio.titulo}</h1>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">{negocio.titulo}</h1>
           <p className="text-sm text-muted-foreground">
-            {negocio.contato.nome} · {centavosParaReais(negocio.valorCentavos)}
+            {negocio.contato.nome} · <span className="font-semibold text-success">{centavosParaReais(negocio.valorCentavos)}</span>
           </p>
         </div>
       </div>
