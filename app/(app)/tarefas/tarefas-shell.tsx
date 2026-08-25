@@ -75,15 +75,17 @@ export function TarefasShell({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
-        <div className="flex gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-card px-4 py-3 shadow-xs">
+        <div className="flex gap-1.5">
           {VIEWS.map((v) => (
             <button
               key={v.id}
               onClick={() => setView(v.id)}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                view === v.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                "rounded-lg px-3 py-1.5 text-sm font-medium transition-all",
+                view === v.id
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {v.label}
@@ -159,12 +161,12 @@ export function TarefasShell({
           </SelectContent>
         </Select>
 
-        <div className="ml-auto flex flex-wrap gap-1">
+        <div className="ml-auto flex flex-wrap gap-1.5">
           <button
             onClick={() => setStatus(TODOS)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-              status === TODOS ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70",
+              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              status === TODOS ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
             Todas ({filtradasSemStatus.length})
@@ -174,8 +176,8 @@ export function TarefasShell({
               key={s}
               onClick={() => setStatus(s)}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                status === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70",
+                "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                status === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {STATUS_LABEL[s]} ({contagens[s]})

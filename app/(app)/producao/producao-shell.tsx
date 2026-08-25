@@ -22,16 +22,18 @@ export function ProducaoShell({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-6 py-3">
-        <h1 className="text-xl font-semibold">Produção &amp; Instalações</h1>
-        <div className="flex gap-1">
+      <div className="flex items-center justify-between border-b bg-card px-6 py-3.5 shadow-xs">
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Produção &amp; Instalações</h1>
+        <div className="flex gap-1.5">
           {VIEWS.map((v) => (
             <button
               key={v.id}
               onClick={() => setView(v.id)}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                view === v.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+                "rounded-lg px-3 py-1.5 text-sm font-medium transition-all",
+                view === v.id
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {v.label}

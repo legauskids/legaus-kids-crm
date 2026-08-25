@@ -53,10 +53,10 @@ export function ConversationView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <Avatar className="size-8">
-            <AvatarFallback>{initials(conversa.contatoNome)}</AvatarFallback>
+      <div className="flex items-center justify-between border-b bg-card px-4 py-3 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <Avatar className="size-9">
+            <AvatarFallback className="bg-primary/10 font-semibold text-primary">{initials(conversa.contatoNome)}</AvatarFallback>
           </Avatar>
           <div>
             <p className="text-sm font-medium">{conversa.contatoNome}</p>
@@ -86,14 +86,16 @@ export function ConversationView({
         </div>
       </div>
 
-      <div className="flex gap-1 border-b px-4 py-1.5">
+      <div className="flex gap-1 border-b bg-card px-4 py-2">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-              tab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+              "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all",
+              tab === t.id
+                ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
             {t.label}

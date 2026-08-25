@@ -11,9 +11,9 @@ import { moverTarefaAction, aprovarTarefaAction } from "@/app/(app)/tarefas/acti
 import { STATUS_LABEL, type TarefaVM } from "@/app/(app)/tarefas/types";
 
 const COR_CLASSES: Record<string, string> = {
-  atrasada: "border-destructive/60 bg-destructive/10",
+  atrasada: "border-destructive/60 bg-destructive/5",
   hoje: "border-sky-400/60 bg-sky-50 dark:bg-sky-950/30",
-  normal: "border-border bg-background",
+  normal: "border-border bg-card",
 };
 
 export function TaskCard({
@@ -33,7 +33,7 @@ export function TaskCard({
   });
 
   return (
-    <div className={cn("space-y-1.5 rounded-md border p-3 text-sm", COR_CLASSES[cor])}>
+    <div className={cn("space-y-1.5 rounded-lg border p-3 text-sm shadow-sm transition-shadow hover:shadow-md", COR_CLASSES[cor])}>
       <div className="flex items-start justify-between gap-2">
         <p className="font-medium leading-snug">{tarefa.titulo}</p>
         {tarefa.automatica && (

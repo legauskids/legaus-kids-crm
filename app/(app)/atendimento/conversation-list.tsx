@@ -54,8 +54,10 @@ export function ConversationList({
               key={e}
               onClick={() => updateParam("escopo", e)}
               className={cn(
-                "flex-1 rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors",
-                escopo === e ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70",
+                "flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-all",
+                escopo === e
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                  : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
             >
               {e}
@@ -86,12 +88,12 @@ export function ConversationList({
             <button
               onClick={() => selecionar(c.id)}
               className={cn(
-                "flex w-full items-start gap-2 border-b p-3 text-left transition-colors hover:bg-muted/50",
-                c.id === conversaSelecionadaId && "bg-muted",
+                "flex w-full items-start gap-2.5 border-b border-l-2 border-l-transparent p-3 text-left transition-colors hover:bg-accent/60",
+                c.id === conversaSelecionadaId && "border-l-primary bg-accent",
               )}
             >
               <Avatar className="size-9 shrink-0">
-                <AvatarFallback>{initials(c.contatoNome)}</AvatarFallback>
+                <AvatarFallback className="bg-primary/10 font-semibold text-primary">{initials(c.contatoNome)}</AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
