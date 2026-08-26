@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useRef, useTransition } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -28,10 +28,19 @@ export function TaskCard({
 }) {
   const [pending, startTransition] = useTransition();
   const cor = corPrazoTarefa(new Date(tarefa.prazo), tarefa.status);
+  const dataRef = useRef<HTMLInputElement>(null);
+  const horaRef = useRef<HTMLInputElement>(null);
 
-  function salvarPrazo(valor: string) {
-    if (!valor) return;
-    startTransition(() => atualizarPrazoTarefaAction(tarefa.id, valor));
+  // Um <input type="datetime-local"> só (usado antes) perdia a hora ao
+  // editar: o navegador trata data e hora como "segmentos" do mesmo campo,
+  // e digitar só a hora podia disparar blur com o valor ainda incompleto,
+  // então o hora acabava não sendo salva. Dois campos separados (date +
+  // time) são bem mais confiáveis, principalmente no celular.
+  function salvarPrazo() {
+    const data = dataRef.current?.value;
+    const hora = horaRef.current?.value;
+    if (!data || !hora) return;
+    startTransition(() => atualizarPrazoTarefaAction(tarefa.id, `${data}T${hora}`));
   }
 
   return (
@@ -68,24 +77,42 @@ export function TaskCard({
 
       {tarefa.descricao && <p className="text-xs text-muted-foreground">{tarefa.descricao}</p>}
 
-      <div className="flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-1 pt-1 text-xs text-muted-foreground">
         <span>{tarefa.responsavelNome}</span>
-        <input
-          type="datetime-local"
-          // key força o input (não controlado) a refletir o prazo do servidor
-          // se ele mudar por fora (ex. editado pelo diálogo completo).
-          key={tarefa.prazo}
-          defaultValue={format(new Date(tarefa.prazo), "yyyy-MM-dd'T'HH:mm")}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          onBlur={(e) => salvarPrazo(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          disabled={pending}
-          className={cn(
-            "rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono text-[11px] tabular-nums transition-colors hover:border-border focus:border-primary focus:bg-background focus:outline-none",
-            cor === "atrasada" && "font-semibold text-destructive",
-          )}
-        />
+        <div className="flex items-center gap-0.5">
+          <input
+            ref={dataRef}
+            type="date"
+            // key força os inputs (não controlados) a refletirem o prazo do
+            // servidor se ele mudar por fora (ex. editado pelo diálogo completo).
+            key={`d-${tarefa.prazo}`}
+            defaultValue={format(new Date(tarefa.prazo), "yyyy-MM-dd")}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={salvarPrazo}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            disabled={pending}
+            className={cn(
+              "rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums transition-colors hover:border-border focus:border-primary focus:bg-background focus:outline-none",
+              cor === "atrasada" && "font-semibold text-destructive",
+            )}
+          />
+          <input
+            ref={horaRef}
+            type="time"
+            key={`h-${tarefa.prazo}`}
+            defaultValue={format(new Date(tarefa.prazo), "HH:mm")}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={salvarPrazo}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            disabled={pending}
+            className={cn(
+              "rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums transition-colors hover:border-border focus:border-primary focus:bg-background focus:outline-none",
+              cor === "atrasada" && "font-semibold text-destructive",
+            )}
+          />
+        </div>
       </div>
 
       <div className="flex items-center gap-2 pt-1">

@@ -18,19 +18,27 @@ export function KanbanColumnComponent<T>({
   const droppable = column.droppable !== false;
   const { setNodeRef, isOver } = useDroppable({ id: column.id, disabled: !droppable });
 
+  const cor = column.accent !== "danger" ? column.cor : undefined;
+
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-xl border bg-muted/40">
+    <div
+      className={cn(
+        "flex w-72 shrink-0 flex-col rounded-xl border-t-4 border bg-muted/40",
+        cor ? cor.borderTop : "border-t-transparent",
+      )}
+    >
       <div
         className={cn(
           "flex items-center justify-between border-b border-border/60 px-3 py-2.5",
           column.accent === "danger" && "text-destructive",
+          cor && cor.bg,
         )}
       >
         <span className="flex items-center gap-2 text-sm font-semibold">
           <span
             className={cn(
               "size-1.5 rounded-full",
-              column.accent === "danger" ? "bg-destructive" : "bg-primary",
+              column.accent === "danger" ? "bg-destructive" : cor ? cor.dot : "bg-primary",
             )}
           />
           {column.label}

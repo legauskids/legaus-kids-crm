@@ -1,4 +1,5 @@
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
+import { corDoIndice } from "@/lib/utils/colors";
 import { centavosParaReais } from "@/lib/utils/money";
 
 type EquipeItem = {
@@ -38,5 +39,9 @@ export function EquipePanel({ equipe }: { equipe: EquipeItem[] }) {
     </table>
   );
 
-  return <ExpandablePanel title="Equipe">{conteudo}</ExpandablePanel>;
+  return (
+    <ExpandablePanel title="Equipe" cor={corDoIndice(5)}>
+      {conteudo}
+    </ExpandablePanel>
+  );
 }

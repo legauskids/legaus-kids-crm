@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { centavosParaReais } from "@/lib/utils/money";
 import { cn } from "@/lib/utils";
+import { corDoIndice } from "@/lib/utils/colors";
 import {
   Handshake,
   TrendingUp,
@@ -24,35 +25,35 @@ type Kpis = {
 };
 
 export function KpiCards({ kpis }: { kpis: Kpis }) {
-  const items: { label: string; value: string; icon: LucideIcon; tone: "primary" | "success" | "neutral" | "alerta"; alerta?: boolean }[] = [
-    { label: "Em negociação", value: centavosParaReais(kpis.valorEmNegociacaoCentavos), icon: Handshake, tone: "primary" },
+  const items: { label: string; value: string; icon: LucideIcon; corIndice: number; alerta?: boolean }[] = [
+    { label: "Em negociação", value: centavosParaReais(kpis.valorEmNegociacaoCentavos), icon: Handshake, corIndice: 0 },
     {
       label: "Ganhos no mês",
       value: `${centavosParaReais(kpis.valorGanhoMesCentavos)} (${kpis.qtdGanhoMes})`,
       icon: TrendingUp,
-      tone: "success",
+      corIndice: 1,
     },
-    { label: "Taxa de conversão", value: `${Math.round(kpis.taxaConversao * 100)}%`, icon: Percent, tone: "success" },
-    { label: "Ticket médio", value: centavosParaReais(kpis.ticketMedioCentavos), icon: Target, tone: "neutral" },
+    { label: "Taxa de conversão", value: `${Math.round(kpis.taxaConversao * 100)}%`, icon: Percent, corIndice: 2 },
+    { label: "Ticket médio", value: centavosParaReais(kpis.ticketMedioCentavos), icon: Target, corIndice: 3 },
     {
       label: "Negócios parados",
       value: String(kpis.negociosParadosQtd),
       icon: PauseCircle,
-      tone: kpis.negociosParadosQtd > 0 ? "alerta" : "neutral",
+      corIndice: 4,
       alerta: kpis.negociosParadosQtd > 0,
     },
     {
       label: "Tarefas atrasadas",
       value: String(kpis.tarefasAtrasadasQtd),
       icon: ClockAlert,
-      tone: kpis.tarefasAtrasadasQtd > 0 ? "alerta" : "neutral",
+      corIndice: 5,
       alerta: kpis.tarefasAtrasadasQtd > 0,
     },
     {
       label: "Aprovações pendentes",
       value: String(kpis.aprovacoesPendentesQtd),
       icon: ShieldAlert,
-      tone: kpis.aprovacoesPendentesQtd > 0 ? "alerta" : "neutral",
+      corIndice: 6,
       alerta: kpis.aprovacoesPendentesQtd > 0,
     },
   ];
@@ -61,16 +62,20 @@ export function KpiCards({ kpis }: { kpis: Kpis }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
       {items.map((item) => {
         const Icon = item.icon;
+        const cor = corDoIndice(item.corIndice);
         return (
-          <Card key={item.label} className="transition-shadow hover:shadow-md">
+          <Card
+            key={item.label}
+            className={cn(
+              "gap-0 overflow-hidden border-t-4 py-0 transition-shadow hover:shadow-md",
+              item.alerta ? "border-t-destructive" : cor.borderTop,
+            )}
+          >
             <CardContent className="flex flex-col gap-2 py-3">
               <div
                 className={cn(
                   "flex size-8 items-center justify-center rounded-lg",
-                  item.tone === "primary" && "bg-accent text-accent-foreground",
-                  item.tone === "success" && "bg-success/15 text-success",
-                  item.tone === "neutral" && "bg-muted text-muted-foreground",
-                  item.tone === "alerta" && "bg-destructive/10 text-destructive",
+                  item.alerta ? "bg-destructive/10 text-destructive" : cn(cor.iconBg, cor.icon),
                 )}
               >
                 <Icon className="size-4" />

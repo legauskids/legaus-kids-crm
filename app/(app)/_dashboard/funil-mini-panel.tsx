@@ -1,4 +1,5 @@
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
+import { corDoIndice } from "@/lib/utils/colors";
 import { centavosParaReais } from "@/lib/utils/money";
 
 type EtapaResumo = { etapaId: string; nome: string; quantidade: number; valorCentavos: number };
@@ -27,5 +28,9 @@ export function FunilMiniPanel({ etapas }: { etapas: EtapaResumo[] }) {
     </div>
   );
 
-  return <ExpandablePanel title="Funil de vendas">{conteudo}</ExpandablePanel>;
+  return (
+    <ExpandablePanel title="Funil de vendas" cor={corDoIndice(1)}>
+      {conteudo}
+    </ExpandablePanel>
+  );
 }

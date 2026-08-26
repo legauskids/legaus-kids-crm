@@ -53,88 +53,90 @@
 }
 
 /*
- * Paleta corporativa clara (estilo Salesforce/HubSpot) — escolhida em
- * 2026-08-25 no lugar do cinza/preto padrão do shadcn (que deixava o CRM
- * com cara de bloco de notas). Azul como cor de marca/interação, fundo
- * levemente acinzentado por trás de cards brancos (dá profundidade sem
- * precisar de sombra pesada em tudo), verde reservado pra dinheiro/sucesso.
+ * Paleta com a cara da Legaus Kids — atualizada em 2026-08-25 (madrugada),
+ * a pedido do Marcos, pra usar as cores reais da marca em vez de um azul
+ * corporativo genérico. Verde/petróleo (#00A99D) e laranja (#F15A24)
+ * extraídos direto do logo oficial (Logo verde Legaus.png). Verde como cor
+ * principal/interação; laranja e o resto da paleta lúdica (chart-2..5)
+ * usados pra colorir cards/etapas de forma diferenciada (dashboard,
+ * colunas do funil de negócios) — ver lib/utils/colors.ts.
  */
 :root {
   --font-sans: var(--font-geist-sans);
-  --background: oklch(0.984 0.003 247.86);
-  --foreground: oklch(0.208 0.042 265.75);
+  --background: oklch(0.984 0.005 175);
+  --foreground: oklch(0.216 0.03 200);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.208 0.042 265.75);
+  --card-foreground: oklch(0.216 0.03 200);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.208 0.042 265.75);
-  --primary: oklch(0.511 0.234 262.7);
-  --primary-foreground: oklch(0.984 0.003 247.86);
-  --secondary: oklch(0.968 0.007 247.9);
-  --secondary-foreground: oklch(0.279 0.041 260.03);
-  --muted: oklch(0.968 0.007 247.9);
-  --muted-foreground: oklch(0.554 0.041 257.42);
-  --accent: oklch(0.932 0.032 255.59);
-  --accent-foreground: oklch(0.379 0.146 265.52);
+  --popover-foreground: oklch(0.216 0.03 200);
+  --primary: #00a99d;
+  --primary-foreground: #ffffff;
+  --secondary: oklch(0.965 0.012 175);
+  --secondary-foreground: oklch(0.28 0.04 195);
+  --muted: oklch(0.965 0.012 175);
+  --muted-foreground: oklch(0.545 0.03 205);
+  --accent: #d9f2ef;
+  --accent-foreground: #00655c;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.928 0.013 255.51);
-  --input: oklch(0.928 0.013 255.51);
-  --ring: oklch(0.623 0.188 259.81);
-  --success: oklch(0.723 0.192 149.58);
+  --border: oklch(0.922 0.015 190);
+  --input: oklch(0.922 0.015 190);
+  --ring: #00a99d;
+  --success: oklch(0.63 0.17 149);
   --success-foreground: oklch(0.984 0.003 247.86);
-  --warning: oklch(0.769 0.188 70.08);
-  --warning-foreground: oklch(0.279 0.041 260.03);
-  --chart-1: oklch(0.511 0.234 262.7);
-  --chart-2: oklch(0.723 0.192 149.58);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.606 0.219 292.72);
-  --chart-5: oklch(0.645 0.246 16.44);
+  --warning: #f15a24;
+  --warning-foreground: #ffffff;
+  --chart-1: #00a99d;
+  --chart-2: #f15a24;
+  --chart-3: oklch(0.6 0.19 264);
+  --chart-4: oklch(0.58 0.22 302);
+  --chart-5: oklch(0.72 0.18 65);
   --radius: 0.75rem;
   --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.336 0.037 259.73);
-  --sidebar-primary: oklch(0.511 0.234 262.7);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.86);
-  --sidebar-accent: oklch(0.932 0.032 255.59);
-  --sidebar-accent-foreground: oklch(0.379 0.146 265.52);
-  --sidebar-border: oklch(0.928 0.013 255.51);
-  --sidebar-ring: oklch(0.623 0.188 259.81);
+  --sidebar-foreground: oklch(0.32 0.03 200);
+  --sidebar-primary: #00a99d;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d9f2ef;
+  --sidebar-accent-foreground: #00655c;
+  --sidebar-border: oklch(0.922 0.015 190);
+  --sidebar-ring: #00a99d;
 }
 
 .dark {
-  --background: oklch(0.208 0.042 265.75);
+  --background: oklch(0.19 0.025 205);
   --foreground: oklch(0.968 0.007 247.9);
-  --card: oklch(0.264 0.043 264.5);
+  --card: oklch(0.25 0.03 200);
   --card-foreground: oklch(0.968 0.007 247.9);
-  --popover: oklch(0.264 0.043 264.5);
+  --popover: oklch(0.25 0.03 200);
   --popover-foreground: oklch(0.968 0.007 247.9);
-  --primary: oklch(0.673 0.182 260.6);
-  --primary-foreground: oklch(0.208 0.042 265.75);
-  --secondary: oklch(0.336 0.037 259.73);
+  --primary: #2dd4c5;
+  --primary-foreground: oklch(0.19 0.025 205);
+  --secondary: oklch(0.32 0.03 200);
   --secondary-foreground: oklch(0.968 0.007 247.9);
-  --muted: oklch(0.336 0.037 259.73);
-  --muted-foreground: oklch(0.706 0.037 256.79);
-  --accent: oklch(0.336 0.037 259.73);
-  --accent-foreground: oklch(0.868 0.06 253.4);
+  --muted: oklch(0.32 0.03 200);
+  --muted-foreground: oklch(0.72 0.03 200);
+  --accent: oklch(0.32 0.05 195);
+  --accent-foreground: #6fe4d8;
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.673 0.182 260.6);
-  --success: oklch(0.696 0.17 149.58);
-  --success-foreground: oklch(0.208 0.042 265.75);
-  --warning: oklch(0.769 0.188 70.08);
-  --warning-foreground: oklch(0.208 0.042 265.75);
-  --chart-1: oklch(0.673 0.182 260.6);
-  --chart-2: oklch(0.696 0.17 149.58);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.673 0.182 292.72);
-  --chart-5: oklch(0.688 0.204 16.44);
-  --sidebar: oklch(0.244 0.041 264.98);
-  --sidebar-foreground: oklch(0.928 0.013 255.51);
-  --sidebar-primary: oklch(0.673 0.182 260.6);
-  --sidebar-primary-foreground: oklch(0.208 0.042 265.75);
-  --sidebar-accent: oklch(0.336 0.037 259.73);
-  --sidebar-accent-foreground: oklch(0.868 0.06 253.4);
+  --ring: #2dd4c5;
+  --success: oklch(0.7 0.17 149);
+  --success-foreground: oklch(0.19 0.025 205);
+  --warning: #ff7a47;
+  --warning-foreground: oklch(0.19 0.025 205);
+  --chart-1: #2dd4c5;
+  --chart-2: #ff7a47;
+  --chart-3: oklch(0.68 0.18 264);
+  --chart-4: oklch(0.66 0.21 302);
+  --chart-5: oklch(0.76 0.17 65);
+  --sidebar: oklch(0.23 0.03 202);
+  --sidebar-foreground: oklch(0.9 0.02 200);
+  --sidebar-primary: #2dd4c5;
+  --sidebar-primary-foreground: oklch(0.19 0.025 205);
+  --sidebar-accent: oklch(0.32 0.05 195);
+  --sidebar-accent-foreground: #6fe4d8;
   --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.673 0.182 260.6);
+  --sidebar-ring: #2dd4c5;
 }
 
 @layer base {

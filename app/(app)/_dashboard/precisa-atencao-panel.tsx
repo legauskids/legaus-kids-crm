@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
+import { corDoIndice } from "@/lib/utils/colors";
 import { Badge } from "@/components/ui/badge";
 
 type Item = {
@@ -48,7 +49,7 @@ function Lista({ itens }: { itens: Item[] }) {
 
 export function PrecisaAtencaoPanel({ itens }: { itens: Item[] }) {
   return (
-    <ExpandablePanel title="Precisa da sua atenção" expandedChildren={<Lista itens={itens} />}>
+    <ExpandablePanel title="Precisa da sua atenção" expandedChildren={<Lista itens={itens} />} cor={corDoIndice(3)}>
       <Lista itens={itens.slice(0, 5)} />
     </ExpandablePanel>
   );

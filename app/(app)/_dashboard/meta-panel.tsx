@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
+import { corDoIndice } from "@/lib/utils/colors";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { centavosParaReais } from "@/lib/utils/money";
@@ -105,7 +106,7 @@ export function MetaPanel({ meta, equipe }: { meta: Meta; equipe: EquipeItem[] }
   );
 
   return (
-    <ExpandablePanel title="Meta do mês" expandedChildren={expandido}>
+    <ExpandablePanel title="Meta do mês" expandedChildren={expandido} cor={corDoIndice(0)}>
       {resumo}
     </ExpandablePanel>
   );

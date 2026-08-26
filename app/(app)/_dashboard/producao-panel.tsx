@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
+import { corDoIndice } from "@/lib/utils/colors";
 
 type Producao = { emProducaoQtd: number; progressoMedio: number; instalacoesSemanaQtd: number };
 
@@ -24,5 +25,9 @@ export function ProducaoPanel({ producao }: { producao: Producao }) {
     </div>
   );
 
-  return <ExpandablePanel title="Produção">{conteudo}</ExpandablePanel>;
+  return (
+    <ExpandablePanel title="Produção" cor={corDoIndice(4)}>
+      {conteudo}
+    </ExpandablePanel>
+  );
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
+import { corDoIndice } from "@/lib/utils/colors";
 
 type Agenda = {
   tarefas: { id: string; titulo: string; negocioTitulo: string | null }[];
@@ -41,5 +42,9 @@ export function AgendaHojePanel({ agenda }: { agenda: Agenda }) {
     </div>
   );
 
-  return <ExpandablePanel title="Agenda de hoje">{conteudo}</ExpandablePanel>;
+  return (
+    <ExpandablePanel title="Agenda de hoje" cor={corDoIndice(2)}>
+      {conteudo}
+    </ExpandablePanel>
+  );
 }

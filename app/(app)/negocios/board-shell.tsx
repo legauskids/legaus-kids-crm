@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
 import { negocioParadoAlemDoPrazo } from "@/lib/utils/dates";
 import { KanbanBoard, type KanbanItemDef } from "@/components/shared/kanban/board";
+import { corDoIndice } from "@/lib/utils/colors";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { moverNegocioAction, marcarPerdidoAction } from "@/app/(app)/negocios/actions";
@@ -105,10 +106,11 @@ export function NegociosBoardShell({
       <div className="flex-1 overflow-hidden">
         <KanbanBoard
           id={`negocios-${funilSelecionado.id}`}
-          columns={etapasOrdenadas.map((e) => ({
+          columns={etapasOrdenadas.map((e, indice) => ({
             id: e.id,
             label: <EtapaColunaLabel key={e.id} etapa={e} onSlaChange={() => router.refresh()} />,
             accent: e.tipo === "PERDIDO" ? "danger" : "default",
+            cor: corDoIndice(indice),
           }))}
           items={items}
           onDrop={handleDrop}

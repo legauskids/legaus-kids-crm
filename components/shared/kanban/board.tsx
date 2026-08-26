@@ -11,11 +11,14 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { KanbanColumnComponent } from "@/components/shared/kanban/column";
+import type { CorPaleta } from "@/lib/utils/colors";
 
 export type KanbanColumnDef = {
   id: string;
   label: ReactNode;
   accent?: "default" | "danger";
+  /** Cor da paleta lúdica (ver lib/utils/colors.ts) pra diferenciar cada coluna visualmente — opcional, se ausente usa o visual neutro de sempre. */
+  cor?: CorPaleta;
   droppable?: boolean; // default true
 };
 
