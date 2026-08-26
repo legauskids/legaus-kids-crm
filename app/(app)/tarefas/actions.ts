@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
-import { criarTarefa, moverTarefaStatus, aprovarTarefa, atualizarTarefa } from "@/lib/server/tarefas";
+import { criarTarefa, moverTarefaStatus, aprovarTarefa, atualizarTarefa, atualizarPrazoTarefa } from "@/lib/server/tarefas";
 import { criarTarefaSchema } from "@/lib/validators/tarefa";
 
 export type CriarTarefaState = { error?: string; success?: boolean };
@@ -59,6 +59,12 @@ export async function atualizarTarefaAction(
 
   revalidatePath("/tarefas");
   return { success: true };
+}
+
+export async function atualizarPrazoTarefaAction(tarefaId: string, prazo: string): Promise<void> {
+  await requireUser();
+  await atualizarPrazoTarefa(tarefaId, new Date(prazo));
+  revalidatePath("/tarefas");
 }
 
 export async function moverTarefaAction(

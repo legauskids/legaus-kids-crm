@@ -47,6 +47,10 @@ export type AtualizarTarefaInput = {
   status: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA";
 };
 
+export async function atualizarPrazoTarefa(tarefaId: string, prazo: Date): Promise<void> {
+  await prisma.tarefa.update({ where: { id: tarefaId }, data: { prazo } });
+}
+
 export async function atualizarTarefa(tarefaId: string, input: AtualizarTarefaInput): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const anterior = await tx.tarefa.findUniqueOrThrow({ where: { id: tarefaId } });

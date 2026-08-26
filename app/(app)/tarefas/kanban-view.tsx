@@ -16,7 +16,7 @@ const COLUMNS = [
   { id: "CONCLUIDA", label: STATUS_LABEL.CONCLUIDA },
 ];
 
-export function KanbanView({ tarefas }: { tarefas: TarefaVM[] }) {
+export function KanbanView({ tarefas, onEditar }: { tarefas: TarefaVM[]; onEditar?: (tarefa: TarefaVM) => void }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
@@ -31,7 +31,7 @@ export function KanbanView({ tarefas }: { tarefas: TarefaVM[] }) {
       id="tarefas-board"
       columns={COLUMNS}
       items={items}
-      renderCard={(item) => <TaskCard tarefa={item.data} />}
+      renderCard={(item) => <TaskCard tarefa={item.data} onEditar={onEditar} />}
       onDrop={(itemId, toColumnId) => {
         if (toColumnId === "ATRASADA") return;
         startTransition(async () => {

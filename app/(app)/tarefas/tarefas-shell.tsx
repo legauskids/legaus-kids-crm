@@ -17,6 +17,7 @@ import { KanbanView } from "@/app/(app)/tarefas/kanban-view";
 import { ListaView } from "@/app/(app)/tarefas/lista-view";
 import { CalendarioView } from "@/app/(app)/tarefas/calendario-view";
 import { NovaTarefaDialog } from "@/app/(app)/tarefas/nova-tarefa-dialog";
+import { EditarTarefaDialog } from "@/app/(app)/tarefas/editar-tarefa-dialog";
 
 type Funil = { id: string; nome: string; etapas: { id: string; nome: string }[] };
 
@@ -47,6 +48,7 @@ export function TarefasShell({
   const [status, setStatus] = useState<string>(TODOS);
   const [periodo, setPeriodo] = useState<Periodo | typeof TODOS>(TODOS);
   const [novaAberta, setNovaAberta] = useState(false);
+  const [tarefaEditando, setTarefaEditando] = useState<TarefaVM | null>(null);
 
   const etapasDoFunil = funis.find((f) => f.id === funilId)?.etapas ?? [];
 
@@ -187,10 +189,10 @@ export function TarefasShell({
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {view === "kanban" && <KanbanView tarefas={tarefasFiltradas} />}
+        {view === "kanban" && <KanbanView tarefas={tarefasFiltradas} onEditar={setTarefaEditando} />}
         {view === "lista" && (
           <div className="h-full overflow-auto">
-            <ListaView tarefas={tarefasFiltradas} />
+            <ListaView tarefas={tarefasFiltradas} onEditar={setTarefaEditando} />
           </div>
         )}
         {view === "calendario" && (
@@ -201,6 +203,12 @@ export function TarefasShell({
       </div>
 
       <NovaTarefaDialog open={novaAberta} onOpenChange={setNovaAberta} usuarios={usuarios} negocios={negocios} />
+      <EditarTarefaDialog
+        tarefa={tarefaEditando}
+        onOpenChange={(open) => !open && setTarefaEditando(null)}
+        usuarios={usuarios}
+        negocios={negocios}
+      />
     </div>
   );
 }
