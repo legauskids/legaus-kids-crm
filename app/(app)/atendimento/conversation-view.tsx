@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PanelRightClose } from "lucide-react";
+import { ArrowLeft, PanelRightClose } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { assumirConversaAction } from "@/app/(app)/atendimento/actions";
 import { TransferirPopover } from "@/app/(app)/atendimento/transferir-popover";
@@ -35,6 +35,7 @@ export function ConversationView({
   negociosDoContato,
   painelAberto,
   onTogglePainel,
+  onVoltar,
 }: {
   conversa: ConversaDetalhada;
   currentUserId: string;
@@ -45,6 +46,7 @@ export function ConversationView({
   negociosDoContato: NegocioLinkVM[];
   painelAberto: boolean;
   onTogglePainel: () => void;
+  onVoltar?: () => void;
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("mensagens");
   const [pending, startTransition] = useTransition();
@@ -53,8 +55,13 @@ export function ConversationView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b bg-card px-4 py-3 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 border-b bg-card px-4 py-3 shadow-xs">
         <div className="flex items-center gap-2.5">
+          {onVoltar && (
+            <Button variant="ghost" size="icon-sm" onClick={onVoltar} title="Voltar" className="-ml-1 sm:hidden">
+              <ArrowLeft className="size-4" />
+            </Button>
+          )}
           <Avatar className="size-9">
             <AvatarFallback className="bg-primary/10 font-semibold text-primary">{initials(conversa.contatoNome)}</AvatarFallback>
           </Avatar>

@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const NAV_ITEMS = [
+export const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/atendimento", label: "Atendimento", icon: MessageCircle },
   { href: "/negocios", label: "Negócios", icon: Handshake },
