@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { listFunisComEtapas } from "@/lib/server/negocios";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { FunisEditor } from "@/app/(app)/negocios/funis/funis-editor";
 
 export default async function FunisPage() {
-  await requireUser();
+  await requireModulo("negocios");
   const funis = await listFunisComEtapas();
 
   return (

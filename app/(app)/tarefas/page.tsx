@@ -1,11 +1,11 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { listTarefas } from "@/lib/server/tarefas";
 import { listFunisComEtapas } from "@/lib/server/negocios";
 import { prisma } from "@/lib/db";
 import { TarefasShell } from "@/app/(app)/tarefas/tarefas-shell";
 
 export default async function TarefasPage() {
-  await requireUser();
+  await requireModulo("tarefas");
 
   const [tarefas, funis, usuarios, negocios] = await Promise.all([
     listTarefas(),

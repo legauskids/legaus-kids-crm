@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { getNegocioDetalhado } from "@/lib/server/negocios";
 import { prisma } from "@/lib/db";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ export default async function NegocioDetalhePage({
   params: Promise<{ negocioId: string }>;
   searchParams: Promise<{ abrirTarefa?: string }>;
 }) {
-  await requireUser();
+  await requireModulo("negocios");
   const { negocioId } = await params;
   const { abrirTarefa } = await searchParams;
   const negocio = await getNegocioDetalhado(negocioId);

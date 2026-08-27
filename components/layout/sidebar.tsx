@@ -10,20 +10,23 @@ import {
   ListChecks,
   Factory,
   Puzzle,
-  Sparkles,
 } from "lucide-react";
+import { LogoMark } from "@/components/layout/logo-mark";
+import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
 
-export const NAV_ITEMS = [
+export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; modulo?: ModuloKey }[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/atendimento", label: "Atendimento", icon: MessageCircle },
-  { href: "/negocios", label: "Negócios", icon: Handshake },
-  { href: "/tarefas", label: "Tarefas", icon: ListChecks },
-  { href: "/producao", label: "Produção", icon: Factory },
+  { href: "/atendimento", label: "Atendimento", icon: MessageCircle, modulo: "atendimento" },
+  { href: "/negocios", label: "Negócios", icon: Handshake, modulo: "negocios" },
+  { href: "/tarefas", label: "Tarefas", icon: ListChecks, modulo: "tarefas" },
+  { href: "/producao", label: "Produção", icon: Factory, modulo: "producao" },
 ];
 
-const NAV_ITEMS_SECUNDARIOS = [
-  { href: "/extensao", label: "Extensão", icon: Puzzle },
+const NAV_ITEMS_SECUNDARIOS: typeof NAV_ITEMS = [
+  { href: "/extensao", label: "Extensão", icon: Puzzle, modulo: "extensao" },
 ];
+
+type UsuarioComPermissoes = { isAdmin: boolean; permissoes: unknown };
 
 function NavLink({ href, label, icon: Icon, active }: { href: string; label: string; icon: typeof LayoutDashboard; active: boolean }) {
   return (
@@ -47,15 +50,15 @@ function NavLink({ href, label, icon: Icon, active }: { href: string; label: str
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ user }: { user: UsuarioComPermissoes }) {
   const pathname = usePathname();
+  const itensPrincipais = NAV_ITEMS.filter((item) => !item.modulo || moduloPermitido(user, item.modulo));
+  const itensSecundarios = NAV_ITEMS_SECUNDARIOS.filter((item) => !item.modulo || moduloPermitido(user, item.modulo));
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar sm:flex">
       <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-5">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-          <Sparkles className="size-4" />
-        </div>
+        <LogoMark className="size-8 shrink-0" />
         <div className="leading-tight">
           <p className="text-sm font-bold tracking-tight text-sidebar-foreground">Legaus Kids</p>
           <p className="text-[11px] font-medium text-muted-foreground">CRM</p>
@@ -66,18 +69,20 @@ export function Sidebar() {
         <p className="px-3 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Principal
         </p>
-        {NAV_ITEMS.map((item) => {
+        {itensPrincipais.map((item) => {
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
           return <NavLink key={item.href} {...item} active={active} />;
         })}
       </nav>
 
-      <nav className="space-y-1 border-t border-sidebar-border p-3">
-        {NAV_ITEMS_SECUNDARIOS.map((item) => {
-          const active = pathname.startsWith(item.href);
-          return <NavLink key={item.href} {...item} active={active} />;
-        })}
-      </nav>
+      {itensSecundarios.length > 0 && (
+        <nav className="space-y-1 border-t border-sidebar-border p-3">
+          {itensSecundarios.map((item) => {
+            const active = pathname.startsWith(item.href);
+            return <NavLink key={item.href} {...item} active={active} />;
+          })}
+        </nav>
+      )}
     </aside>
   );
 }

@@ -63,6 +63,11 @@ model User {
   papel        String
   passwordHash String
   apiToken     String?  @unique
+  isAdmin      Boolean  @default(false)
+  // Chaves ausentes = módulo visível (default aberto). Só entra aqui quando
+  // um admin desmarca algo pra alguém — assim usuários existentes não
+  // "perdem" acesso por causa da migração.
+  permissoes   Json     @default("{}")
   createdAt    DateTime @default(now())
 
   conversasAtendidas  Conversa[]         @relation("AtendenteConversa")

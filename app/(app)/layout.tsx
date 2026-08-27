@@ -8,11 +8,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <Sidebar />
+      <Sidebar user={user} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar user={user} />
         <main className="flex-1 overflow-auto">{children}</main>
-        <MobileNav />
+        <MobileNav user={user} />
       </div>
     </div>
   );

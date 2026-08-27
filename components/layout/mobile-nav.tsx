@@ -4,13 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "@/components/layout/sidebar";
+import { moduloPermitido } from "@/lib/auth/permissoes";
 
-export function MobileNav() {
+export function MobileNav({ user }: { user: { isAdmin: boolean; permissoes: unknown } }) {
   const pathname = usePathname();
+  const itens = NAV_ITEMS.filter((item) => !item.modulo || moduloPermitido(user, item.modulo));
 
   return (
     <nav className="flex shrink-0 items-stretch border-t border-sidebar-border bg-sidebar sm:hidden">
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      {itens.map(({ href, label, icon: Icon }) => {
         const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
         return (
           <Link

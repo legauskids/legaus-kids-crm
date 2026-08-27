@@ -1,11 +1,11 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { gerarApiToken } from "@/lib/auth/api-token";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TokenDisplay } from "@/app/(app)/extensao/token-display";
 
 export default async function ExtensaoPage() {
-  const sessionUser = await requireUser();
+  const sessionUser = await requireModulo("extensao");
 
   const usuario = await prisma.user.findUniqueOrThrow({ where: { id: sessionUser.id } });
   const token = usuario.apiToken ?? (await gerarApiToken(usuario.id));

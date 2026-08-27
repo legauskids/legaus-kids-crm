@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import { listFunisComEtapas, listNegociosPorFunil } from "@/lib/server/negocios";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ export default async function NegociosPage({
 }: {
   searchParams: Promise<{ funil?: string }>;
 }) {
-  await requireUser();
+  await requireModulo("negocios");
   const { funil: funilIdParam } = await searchParams;
 
   const funis = await listFunisComEtapas();

@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
 import {
   listConversas,
@@ -15,7 +15,7 @@ export default async function AtendimentoPage({
 }: {
   searchParams: Promise<{ conversaId?: string; escopo?: string; setor?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requireModulo("atendimento");
   const { conversaId, escopo: escopoParam, setor: setorId } = await searchParams;
   const escopo: EscopoConversa =
     escopoParam === "minhas" || escopoParam === "fila" ? escopoParam : "todas";

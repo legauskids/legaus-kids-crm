@@ -1,9 +1,9 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo } from "@/lib/auth/guards";
 import { listEmProducao, listInstalacoes } from "@/lib/server/producao";
 import { ProducaoShell } from "@/app/(app)/producao/producao-shell";
 
 export default async function ProducaoPage() {
-  await requireUser();
+  await requireModulo("producao");
 
   const [emProducao, instalacoes] = await Promise.all([listEmProducao(), listInstalacoes()]);
 
