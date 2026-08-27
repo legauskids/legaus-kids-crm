@@ -12,7 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -29,7 +31,7 @@ type Funil = { id: string; nome: string; etapas: { id: string; nome: string }[] 
 
 const initialState: NegocioMiniFormState = {};
 
-export function NegocioMiniForm({
+export function PromoverNegocioDialog({
   open,
   onOpenChange,
   conversaId,
@@ -51,25 +53,22 @@ export function NegocioMiniForm({
   const router = useRouter();
   const [state, formAction, pending] = useActionState(criarNegocioMiniFormAction, initialState);
   const [funilId, setFunilId] = useState(funis[0]?.id ?? "");
+  const [criarTarefa, setCriarTarefa] = useState(true);
   const funilEscolhido = funis.find((f) => f.id === funilId);
 
   useEffect(() => {
     if (state.negocioId) {
       onOpenChange(false);
-      if (state.abrirTarefa) {
-        router.push(`/negocios/${state.negocioId}?abrirTarefa=1`);
-      } else {
-        router.refresh();
-      }
+      router.refresh();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.negocioId]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Criar negócio a partir da conversa</DialogTitle>
+          <DialogTitle>Promover a negócio</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="conversaId" value={conversaId} />
@@ -78,6 +77,22 @@ export function NegocioMiniForm({
           <div className="space-y-2">
             <Label htmlFor="titulo-negocio">Título</Label>
             <Input id="titulo-negocio" name="titulo" defaultValue={`Negócio — ${contatoNome}`} required />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="produto">Produto</Label>
+              <Input id="produto" name="produto" placeholder="Ex: Playground modelo X" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="origem">Origem</Label>
+              <Input id="origem" name="origem" placeholder="Instagram, indicação..." />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="descricao-negocio">Descrição</Label>
+            <Textarea id="descricao-negocio" name="descricao" rows={2} placeholder="O que o cliente pediu, contexto da negociação..." />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -135,18 +150,70 @@ export function NegocioMiniForm({
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="previsaoFechamento">Previsão de fechamento</Label>
+            <Input id="previsaoFechamento" name="previsaoFechamento" type="date" />
+          </div>
+
+          <Separator />
+
           <div className="flex items-center gap-2">
-            <Checkbox id="criarTarefaFollowUp" name="criarTarefaFollowUp" value="true" />
-            <Label htmlFor="criarTarefaFollowUp" className="font-normal">
-              Criar tarefa de follow-up após salvar
+            <Checkbox
+              id="criarTarefa"
+              name="criarTarefa"
+              value="true"
+              checked={criarTarefa}
+              onCheckedChange={(v) => setCriarTarefa(v === true)}
+            />
+            <Label htmlFor="criarTarefa" className="font-normal">
+              Já criar uma tarefa de follow-up
             </Label>
           </div>
+
+          {criarTarefa && (
+            <div className="space-y-4 rounded-lg border p-3">
+              <div className="space-y-2">
+                <Label htmlFor="tarefaTitulo">Título da tarefa</Label>
+                <Input
+                  id="tarefaTitulo"
+                  name="tarefaTitulo"
+                  defaultValue={`Follow-up — ${contatoNome}`}
+                  required={criarTarefa}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tarefaPrazo">Prazo</Label>
+                  <Input id="tarefaPrazo" name="tarefaPrazo" type="datetime-local" required={criarTarefa} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tarefaResponsavelId">Responsável pela tarefa</Label>
+                  <Select name="tarefaResponsavelId" defaultValue={responsavelSugeridoId}>
+                    <SelectTrigger id="tarefaResponsavelId" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {usuarios.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tarefaDescricao">Descrição da tarefa</Label>
+                <Textarea id="tarefaDescricao" name="tarefaDescricao" rows={2} placeholder="O que precisa ser feito..." />
+              </div>
+            </div>
+          )}
 
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {pending ? "Criando..." : "Criar negócio"}
+              {pending ? "Criando..." : "Promover a negócio"}
             </Button>
           </DialogFooter>
         </form>

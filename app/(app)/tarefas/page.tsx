@@ -41,7 +41,7 @@ export default async function TarefasPage() {
         etapas: f.etapas.map((e) => ({ id: e.id, nome: e.nome })),
       }))}
       usuarios={usuarios.map((u) => ({ id: u.id, nome: u.nome }))}
-      negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato.nome }))}
+      negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? "Sem contato" }))}
     />
   );
 }

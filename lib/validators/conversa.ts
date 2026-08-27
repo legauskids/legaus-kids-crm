@@ -26,11 +26,19 @@ export const negocioMiniFormSchema = z.object({
   conversaId: z.string().min(1),
   contatoId: z.string().min(1),
   titulo: z.string().min(1, "Informe um título"),
+  produto: z.string().optional(),
+  descricao: z.string().optional(),
   funilId: z.string().min(1),
   etapaId: z.string().min(1),
   valorReais: z.coerce.number().min(0).default(0),
   responsavelId: z.string().min(1, "Selecione um responsável"),
-  criarTarefaFollowUp: z.coerce.boolean().default(false),
+  previsaoFechamento: z.string().optional(),
+  origem: z.string().optional(),
+  criarTarefa: z.coerce.boolean().default(false),
+  tarefaTitulo: z.string().optional(),
+  tarefaPrazo: z.string().optional(),
+  tarefaResponsavelId: z.string().optional(),
+  tarefaDescricao: z.string().optional(),
 });
 
 export const tarefaMiniFormSchema = z.object({

@@ -40,7 +40,7 @@ export default async function NegocioDetalhePage({
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground">{negocio.titulo}</h1>
           <p className="text-sm text-muted-foreground">
-            {negocio.contato.nome} · <span className="font-semibold text-success">{centavosParaReais(negocio.valorCentavos)}</span>
+            {negocio.contato?.nome ?? "Sem contato"} · <span className="font-semibold text-success">{centavosParaReais(negocio.valorCentavos)}</span>
           </p>
         </div>
       </div>

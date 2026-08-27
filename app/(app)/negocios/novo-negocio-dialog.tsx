@@ -63,11 +63,12 @@ export function NovoNegocioDialog({
 
           <div className="space-y-2">
             <Label htmlFor="contatoId">Contato</Label>
-            <Select name="contatoId" required>
+            <Select name="contatoId" defaultValue="__nenhum__">
               <SelectTrigger id="contatoId" className="w-full">
                 <SelectValue placeholder="Selecione um contato" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__nenhum__">Sem contato</SelectItem>
                 {contatos.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.nome}

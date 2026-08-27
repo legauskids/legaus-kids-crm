@@ -10,7 +10,7 @@ import { enviarMensagemAction } from "@/app/(app)/atendimento/actions";
 import { QuickRepliesPopover } from "@/app/(app)/atendimento/quick-replies-popover";
 import { AgendarDialog } from "@/app/(app)/atendimento/agendar-dialog";
 import { SlashCommandMenu, type SlashCommand } from "@/app/(app)/atendimento/slash-command-menu";
-import { NegocioMiniForm } from "@/app/(app)/atendimento/negocio-mini-form";
+import { PromoverNegocioDialog } from "@/app/(app)/atendimento/promover-negocio-dialog";
 import { TarefaMiniForm } from "@/app/(app)/atendimento/tarefa-mini-form";
 import { MoverMiniForm } from "@/app/(app)/atendimento/mover-mini-form";
 import type { RespostaRapidaVM, NegocioLinkVM } from "@/app/(app)/atendimento/types";
@@ -128,7 +128,7 @@ export function Composer({
         }}
       />
 
-      <NegocioMiniForm
+      <PromoverNegocioDialog
         open={comandoAberto === "negocio"}
         onOpenChange={(open) => !open && setComandoAberto(null)}
         conversaId={conversaId}

@@ -51,6 +51,12 @@ export function ligarRelayDeEntrada(sock) {
           method: "POST",
           body: JSON.stringify({
             telefone,
+            // Nome que a própria pessoa configurou no perfil dela do
+            // WhatsApp — o Baileys já manda isso em toda mensagem recebida
+            // (msg.pushName), só usamos em mensagem de entrada porque em
+            // mensagens que o próprio usuário do CRM manda (fromMe) o
+            // pushName é o nome do Marcos/Dani, não do contato.
+            nomeContato: !msg.key.fromMe ? msg.pushName || undefined : undefined,
             texto,
             direcao: msg.key.fromMe ? "SAIDA" : "ENTRADA",
             externalId: msg.key.id,

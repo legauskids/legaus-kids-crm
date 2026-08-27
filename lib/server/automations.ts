@@ -53,7 +53,7 @@ export async function onNegocioEtapaChanged(tx: Tx, negocioId: string, novaEtapa
 
 async function handleNegocioGanho(
   tx: Tx,
-  negocioOriginal: { id: string; titulo: string; contatoId: string; valorCentavos: number; responsavelId: string; origem: string | null },
+  negocioOriginal: { id: string; titulo: string; contatoId: string | null; valorCentavos: number; responsavelId: string; origem: string | null },
 ): Promise<void> {
   const funilPosVenda = await tx.funil.findFirstOrThrow({ where: { nome: "Funil de pós-venda" } });
   const etapaContrato = await tx.etapa.findFirstOrThrow({ where: { funilId: funilPosVenda.id, nome: "Contrato" } });
@@ -94,7 +94,7 @@ async function handleNegocioGanho(
 
 async function criarTarefaAutomatica(
   tx: Tx,
-  input: { titulo: string; negocioId: string; contatoId: string; solicitanteId: string; prazoEmHoras: number },
+  input: { titulo: string; negocioId: string; contatoId: string | null; solicitanteId: string; prazoEmHoras: number },
 ): Promise<void> {
   const responsavelAutomatico = await getResponsavelAutomatico(tx);
   await tx.tarefa.create({

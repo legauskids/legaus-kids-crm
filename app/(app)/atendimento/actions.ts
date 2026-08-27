@@ -112,28 +112,51 @@ export async function excluirRespostaRapidaAction(id: string): Promise<void> {
   revalidateAtendimento();
 }
 
-export type NegocioMiniFormState = { error?: string; negocioId?: string; abrirTarefa?: boolean };
+export type NegocioMiniFormState = { error?: string; negocioId?: string };
 
 export async function criarNegocioMiniFormAction(
   _prevState: NegocioMiniFormState,
   formData: FormData,
 ): Promise<NegocioMiniFormState> {
-  await requireUser();
+  const user = await requireUser();
   const parsed = negocioMiniFormSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
+  if (parsed.data.criarTarefa && (!parsed.data.tarefaTitulo || !parsed.data.tarefaPrazo)) {
+    return { error: "Preencha o título e o prazo da tarefa." };
+  }
+
   const negocio = await criarNegocio({
     titulo: parsed.data.titulo,
+    produto: parsed.data.produto || null,
+    descricao: parsed.data.descricao || null,
     contatoId: parsed.data.contatoId,
     funilId: parsed.data.funilId,
     etapaId: parsed.data.etapaId,
     valorCentavos: reaisParaCentavos(parsed.data.valorReais),
     responsavelId: parsed.data.responsavelId,
+    previsaoFechamento: parsed.data.previsaoFechamento ? new Date(parsed.data.previsaoFechamento) : null,
+    origem: parsed.data.origem || null,
     origemConversaId: parsed.data.conversaId,
   });
+
+  if (parsed.data.criarTarefa && parsed.data.tarefaTitulo && parsed.data.tarefaPrazo) {
+    await criarTarefa({
+      titulo: parsed.data.tarefaTitulo,
+      negocioId: negocio.id,
+      contatoId: parsed.data.contatoId,
+      conversaId: parsed.data.conversaId,
+      responsavelId: parsed.data.tarefaResponsavelId || parsed.data.responsavelId,
+      solicitanteId: user.id,
+      prazo: new Date(parsed.data.tarefaPrazo),
+      descricao: parsed.data.tarefaDescricao || null,
+    });
+  }
+
   revalidateAtendimento();
-  return { negocioId: negocio.id, abrirTarefa: parsed.data.criarTarefaFollowUp };
+  revalidatePath("/negocios");
+  return { negocioId: negocio.id };
 }
 
 export type TarefaMiniFormState = { error?: string; success?: boolean };

@@ -48,7 +48,7 @@ export default async function NegociosPage({
             etapaId: n.etapaId,
             valorCentavos: n.valorCentavos,
             dataEntradaNaEtapa: n.dataEntradaNaEtapa.toISOString(),
-            contatoNome: n.contato.nome,
+            contatoNome: n.contato?.nome ?? "Sem contato",
             responsavelNome: n.responsavel.nome,
           }))}
           contatos={contatos.map((c) => ({ id: c.id, nome: c.nome }))}

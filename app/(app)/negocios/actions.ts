@@ -31,14 +31,16 @@ export async function criarNegocioAction(
   formData: FormData,
 ): Promise<CriarNegocioState> {
   await requireUser();
-  const parsed = criarNegocioSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData);
+  if (raw.contatoId === "__nenhum__") delete raw.contatoId;
+  const parsed = criarNegocioSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
   await criarNegocio({
     titulo: parsed.data.titulo,
-    contatoId: parsed.data.contatoId,
+    contatoId: parsed.data.contatoId || null,
     funilId: parsed.data.funilId,
     etapaId: parsed.data.etapaId,
     valorCentavos: reaisParaCentavos(parsed.data.valorReais),
@@ -81,6 +83,8 @@ export async function atualizarDadosNegocioAction(
 
   await atualizarDadosNegocio(parsed.data.negocioId, {
     valorCentavos: parsed.data.valorReais != null ? reaisParaCentavos(parsed.data.valorReais) : undefined,
+    produto: parsed.data.produto || undefined,
+    descricao: parsed.data.descricao || undefined,
     previsaoFechamento: parsed.data.previsaoFechamento ? new Date(parsed.data.previsaoFechamento) : undefined,
     origem: parsed.data.origem || undefined,
     progressoProducao: parsed.data.progressoProducao,

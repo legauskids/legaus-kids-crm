@@ -58,7 +58,9 @@ export async function moverNegocio(negocioId: string, novaEtapaId: string): Prom
 
 export type CriarNegocioInput = {
   titulo: string;
-  contatoId: string;
+  produto?: string | null;
+  descricao?: string | null;
+  contatoId?: string | null;
   funilId: string;
   etapaId: string;
   valorCentavos: number;
@@ -84,6 +86,8 @@ export async function criarNegocio(input: CriarNegocioInput) {
 
 export type AtualizarDadosNegocioInput = {
   valorCentavos?: number;
+  produto?: string | null;
+  descricao?: string | null;
   previsaoFechamento?: Date | null;
   origem?: string | null;
   progressoProducao?: number | null;

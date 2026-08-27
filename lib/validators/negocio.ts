@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const criarNegocioSchema = z.object({
   titulo: z.string().min(1, "Informe um título"),
-  contatoId: z.string().min(1, "Selecione um contato"),
+  contatoId: z.string().optional(),
   funilId: z.string().min(1),
   etapaId: z.string().min(1),
   valorReais: z.coerce.number().min(0).default(0),
@@ -19,6 +19,8 @@ export const marcarPerdidoSchema = z.object({
 export const atualizarDadosNegocioSchema = z.object({
   negocioId: z.string().min(1),
   valorReais: z.coerce.number().min(0).optional(),
+  produto: z.string().optional(),
+  descricao: z.string().optional(),
   previsaoFechamento: z.string().optional(),
   origem: z.string().optional(),
   progressoProducao: z.coerce.number().min(0).max(100).optional(),

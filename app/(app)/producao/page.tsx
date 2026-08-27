@@ -12,7 +12,7 @@ export default async function ProducaoPage() {
       emProducao={emProducao.map((n) => ({
         id: n.id,
         titulo: n.titulo,
-        contatoNome: n.contato.nome,
+        contatoNome: n.contato?.nome ?? "Sem contato",
         responsavelNome: n.responsavel.nome,
         progressoProducao: n.progressoProducao,
         previsaoProducao: n.previsaoProducao?.toISOString() ?? null,
@@ -20,7 +20,7 @@ export default async function ProducaoPage() {
       instalacoes={instalacoes.map((n) => ({
         id: n.id,
         titulo: n.titulo,
-        contatoNome: n.contato.nome,
+        contatoNome: n.contato?.nome ?? "Sem contato",
         responsavelNome: n.responsavel.nome,
         dataInstalacao: n.dataInstalacao!.toISOString(),
         equipeInstalacao: n.equipeInstalacao,

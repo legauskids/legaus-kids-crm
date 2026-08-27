@@ -4,12 +4,15 @@ import { useActionState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { atualizarDadosNegocioAction, type AtualizarDadosState } from "@/app/(app)/negocios/actions";
 
 type Negocio = {
   id: string;
   valorCentavos: number;
+  produto: string | null;
+  descricao: string | null;
   dataInicio: Date;
   previsaoFechamento: Date | null;
   origem: string | null;
@@ -78,9 +81,20 @@ export function DadosTab({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="produto">Produto</Label>
+              <Input id="produto" name="produto" defaultValue={negocio.produto ?? ""} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="origem">Origem</Label>
+              <Input id="origem" name="origem" defaultValue={negocio.origem ?? ""} />
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label htmlFor="origem">Origem</Label>
-            <Input id="origem" name="origem" defaultValue={negocio.origem ?? ""} />
+            <Label htmlFor="descricao">Descrição</Label>
+            <Textarea id="descricao" name="descricao" rows={3} defaultValue={negocio.descricao ?? ""} />
           </div>
 
           {isFunilPosVenda && (

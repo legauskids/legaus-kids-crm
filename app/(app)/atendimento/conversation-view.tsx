@@ -4,10 +4,11 @@ import { useState, useTransition } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, PanelRightClose } from "lucide-react";
+import { ArrowLeft, Handshake, PanelRightClose } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { assumirConversaAction } from "@/app/(app)/atendimento/actions";
 import { TransferirPopover } from "@/app/(app)/atendimento/transferir-popover";
+import { PromoverNegocioDialog } from "@/app/(app)/atendimento/promover-negocio-dialog";
 import { MessagesTab } from "@/app/(app)/atendimento/messages-tab";
 import { NotesTab } from "@/app/(app)/atendimento/notes-tab";
 import { ScheduledTab } from "@/app/(app)/atendimento/scheduled-tab";
@@ -50,6 +51,7 @@ export function ConversationView({
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("mensagens");
   const [pending, startTransition] = useTransition();
+  const [promoverAberto, setPromoverAberto] = useState(false);
 
   const agendadasPendentes = conversa.agendadas.filter((a) => a.status === "PENDENTE").length;
 
@@ -84,6 +86,10 @@ export function ConversationView({
               Assumir conversa
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => setPromoverAberto(true)}>
+            <Handshake className="size-4" />
+            Promover a negócio
+          </Button>
           <TransferirPopover conversa={conversa} setores={setores} usuarios={usuarios} />
           {!painelAberto && (
             <Button variant="ghost" size="icon-sm" onClick={onTogglePainel} title="Ocultar/mostrar painel">
@@ -125,6 +131,17 @@ export function ConversationView({
         {tab === "notas" && <NotesTab conversaId={conversa.id} notas={conversa.notas} />}
         {tab === "agendadas" && <ScheduledTab conversaId={conversa.id} agendadas={conversa.agendadas} />}
       </div>
+
+      <PromoverNegocioDialog
+        open={promoverAberto}
+        onOpenChange={setPromoverAberto}
+        conversaId={conversa.id}
+        contatoId={conversa.contatoId}
+        contatoNome={conversa.contatoNome}
+        funis={funis}
+        usuarios={usuarios}
+        responsavelSugeridoId={conversa.atendenteId ?? currentUserId}
+      />
     </div>
   );
 }

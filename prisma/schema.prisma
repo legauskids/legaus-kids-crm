@@ -175,8 +175,10 @@ model Etapa {
 model Negocio {
   id                 String    @id @default(cuid())
   titulo             String
-  contatoId          String
-  contato            Contato   @relation(fields: [contatoId], references: [id])
+  produto            String?
+  descricao          String?
+  contatoId          String?
+  contato            Contato?  @relation(fields: [contatoId], references: [id])
   funilId            String
   funil              Funil     @relation(fields: [funilId], references: [id])
   etapaId            String

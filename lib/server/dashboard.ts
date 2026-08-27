@@ -82,7 +82,7 @@ export async function getDashboardData() {
       tipo: "negocio_parado" as const,
       id: n.id,
       titulo: n.titulo,
-      subtitulo: n.contato.nome,
+      subtitulo: n.contato?.nome ?? "Sem contato",
     })),
     ...aprovacoesPendentes.map((t) => ({
       tipo: "aprovacao" as const,
@@ -155,7 +155,7 @@ export async function getDashboardData() {
       negociosGanhos: ganhosMes.map((n) => ({
         id: n.id,
         titulo: n.titulo,
-        contatoNome: n.contato.nome,
+        contatoNome: n.contato?.nome ?? "Sem contato",
         valorCentavos: n.valorCentavos,
       })),
     },
