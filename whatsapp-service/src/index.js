@@ -21,6 +21,49 @@ const TELEFONE_PAREAMENTO = process.env.WHATSAPP_PAREAMENTO_TELEFONE || "";
 let credsAtuais = null;
 let reconexaoAgendada = false;
 
+// Visto ao vivo em 2026-08-27: a conexão às vezes fica "zumbi" — o processo
+// continua rodando, o WebSocket nem sempre dispara connection.update:"close"
+// (o Baileys engole o erro internamente, ex. "unexpected error in 'init
+// queries'" / timeout de fetchProps), e nada mais chega dali pra frente.
+// Sem isso o serviço parecia "ligado" por horas sem sincronizar nada. Uma
+// prova de vida periódica (pedido leve e real pro WhatsApp, com timeout
+// próprio) detecta esse travamento e força a reconexão.
+const INTERVALO_PROVA_DE_VIDA_MS = 3 * 60 * 1000;
+const TIMEOUT_PROVA_DE_VIDA_MS = 20 * 1000;
+let watchdogInterval = null;
+
+function pararWatchdog() {
+  if (watchdogInterval) {
+    clearInterval(watchdogInterval);
+    watchdogInterval = null;
+  }
+}
+
+function iniciarWatchdog(sock) {
+  pararWatchdog();
+  watchdogInterval = setInterval(async () => {
+    try {
+      await Promise.race([
+        sock.sendPresenceUpdate("available"),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("sem resposta do WhatsApp")), TIMEOUT_PROVA_DE_VIDA_MS),
+        ),
+      ]);
+    } catch (erro) {
+      console.error(
+        `[whatsapp-service] Watchdog: conexão travada (${erro.message}) — forçando reconexão.`,
+      );
+      try {
+        sock.ev.removeAllListeners();
+        sock.end(new Error("watchdog: conexão travada"));
+      } catch {
+        // sock já pode estar inutilizável nesse ponto — segue pra reconectar de qualquer jeito.
+      }
+      agendarReconexao();
+    }
+  }, INTERVALO_PROVA_DE_VIDA_MS);
+}
+
 /**
  * Só apaga auth/ se as credenciais NUNCA chegaram a se registrar de
  * verdade (`creds.registered`) — checagem pelo próprio estado persistido,
@@ -43,6 +86,7 @@ function limparAuthSeNaoRegistrado() {
 }
 
 function agendarReconexao() {
+  pararWatchdog();
   if (reconexaoAgendada) return;
   reconexaoAgendada = true;
   limparAuthSeNaoRegistrado();
@@ -109,6 +153,7 @@ async function conectar() {
       console.log("[whatsapp-service] Conectado! Sincronizando com o CRM.");
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);
+      iniciarWatchdog(sock);
     }
 
     if (connection === "close") {
