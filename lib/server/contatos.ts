@@ -116,6 +116,7 @@ export type AtualizarContatoInput = {
   cidade?: string | null;
   uf?: string | null;
   cep?: string | null;
+  email?: string | null;
   telefone?: string | null;
 };
 
@@ -138,6 +139,7 @@ export type CriarContatoInput = {
   cidade?: string | null;
   uf?: string | null;
   cep?: string | null;
+  email?: string | null;
 };
 
 export function criarContato(input: CriarContatoInput) {
@@ -153,6 +155,7 @@ export function criarContato(input: CriarContatoInput) {
       cidade: input.cidade || null,
       uf: input.uf || null,
       cep: input.cep || null,
+      email: input.email || null,
     },
   });
 }

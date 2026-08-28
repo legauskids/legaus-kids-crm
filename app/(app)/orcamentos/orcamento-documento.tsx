@@ -19,7 +19,7 @@ export type OrcamentoDocumentoVM = {
   descontoCentavos: number;
   contato: { nome: string; razaoSocial: string | null; cnpj: string | null; telefone: string | null; endereco: string | null; cidade: string | null; uf: string | null } | null;
   responsavel: { nome: string };
-  itens: { nome: string; quantidade: number; valorUnitarioCentavos: number }[];
+  itens: { nome: string; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
 };
 
 function formatarData(data: Date): string {
@@ -91,7 +91,17 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
         <tbody>
           {orcamento.itens.map((item, i) => (
             <tr key={i} className="border-b border-neutral-100">
-              <td className="py-2">{item.nome}</td>
+              <td className="py-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100">
+                    {item.imagemUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.imagemUrl} alt="" className="h-full w-full object-contain" />
+                    ) : null}
+                  </div>
+                  <span>{item.nome}</span>
+                </div>
+              </td>
               <td className="py-2 text-right tabular-nums">{item.quantidade}</td>
               <td className="py-2 text-right tabular-nums">{centavosParaReais(item.valorUnitarioCentavos)}</td>
               <td className="py-2 text-right tabular-nums">{centavosParaReais(item.quantidade * item.valorUnitarioCentavos)}</td>

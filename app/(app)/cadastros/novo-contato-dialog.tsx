@@ -120,7 +120,12 @@ export function NovoContatoDialog({
               <Label htmlFor="telefone-novo">Telefone</Label>
               <Input id="telefone-novo" name="telefone" defaultValue={dadosCnpj?.telefone ?? ""} placeholder="55999999999" />
             </div>
-            {!ehEmpresa && (
+            {ehEmpresa ? (
+              <div className="space-y-2">
+                <Label htmlFor="email-novo">E-mail</Label>
+                <Input id="email-novo" name="email" type="email" placeholder="contato@empresa.com.br" />
+              </div>
+            ) : (
               <div className="space-y-2">
                 <Label htmlFor="empresa-novo">Empresa</Label>
                 <Input id="empresa-novo" name="empresa" />

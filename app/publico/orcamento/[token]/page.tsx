@@ -1,17 +1,15 @@
 import { notFound } from "next/navigation";
-import { requireModulo } from "@/lib/auth/guards";
-import { buscarOrcamentoPorId } from "@/lib/server/orcamentos";
+import { buscarOrcamentoPorTokenPublico } from "@/lib/server/orcamentos";
 import { OrcamentoDocumento } from "@/app/(app)/orcamentos/orcamento-documento";
 import { BotaoImprimir } from "@/app/(app)/orcamentos/[orcamentoId]/imprimir/botao-imprimir";
 
-export default async function ImprimirOrcamentoPage({
+export default async function OrcamentoPublicoPage({
   params,
 }: {
-  params: Promise<{ orcamentoId: string }>;
+  params: Promise<{ token: string }>;
 }) {
-  await requireModulo("orcamentos");
-  const { orcamentoId } = await params;
-  const orcamento = await buscarOrcamentoPorId(orcamentoId);
+  const { token } = await params;
+  const orcamento = await buscarOrcamentoPorTokenPublico(token);
   if (!orcamento) notFound();
 
   return (

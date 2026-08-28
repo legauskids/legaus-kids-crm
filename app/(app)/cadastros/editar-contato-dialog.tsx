@@ -93,7 +93,12 @@ export function EditarContatoDialog({
                 <Label htmlFor="telefone-editar">Telefone</Label>
                 <Input id="telefone-editar" name="telefone" defaultValue={contato.telefone ?? ""} />
               </div>
-              {!ehEmpresa && (
+              {ehEmpresa ? (
+                <div className="space-y-2">
+                  <Label htmlFor="email-editar">E-mail</Label>
+                  <Input id="email-editar" name="email" type="email" defaultValue={contato.email ?? ""} placeholder="contato@empresa.com.br" />
+                </div>
+              ) : (
                 <div className="space-y-2">
                   <Label htmlFor="empresa-editar">Empresa</Label>
                   <Input id="empresa-editar" name="empresa" defaultValue={contato.empresa ?? ""} />

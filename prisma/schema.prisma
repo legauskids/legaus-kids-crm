@@ -120,6 +120,7 @@ model Contato {
   cidade            String?
   uf                String?
   cep               String?
+  email             String?
 
   createdAt DateTime @default(now())
 
@@ -333,6 +334,7 @@ model Orcamento {
   validadeDias     Int             @default(15)
   observacoes      String?
   descontoCentavos Int             @default(0)
+  tokenPublico     String?         @unique
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 

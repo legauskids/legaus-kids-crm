@@ -1,6 +1,12 @@
 import "server-only";
+import crypto from "node:crypto";
 import { prisma } from "@/lib/db";
 import type { StatusOrcamento } from "@prisma/client";
+
+const ITENS_COM_IMAGEM = {
+  orderBy: { ordem: "asc" as const },
+  include: { produto: { select: { imagemUrl: true } } },
+};
 
 export function listarOrcamentos() {
   return prisma.orcamento.findMany({
@@ -19,9 +25,30 @@ export function buscarOrcamentoPorId(id: string) {
     include: {
       contato: true,
       responsavel: true,
-      itens: { orderBy: { ordem: "asc" } },
+      itens: ITENS_COM_IMAGEM,
     },
   });
+}
+
+export function buscarOrcamentoPorTokenPublico(token: string) {
+  return prisma.orcamento.findUnique({
+    where: { tokenPublico: token },
+    include: {
+      contato: true,
+      responsavel: true,
+      itens: ITENS_COM_IMAGEM,
+    },
+  });
+}
+
+/** Gera (se ainda não existir) e retorna o token de acesso público do orçamento. */
+export async function garantirTokenPublico(id: string): Promise<string> {
+  const orcamento = await prisma.orcamento.findUniqueOrThrow({ where: { id }, select: { tokenPublico: true } });
+  if (orcamento.tokenPublico) return orcamento.tokenPublico;
+
+  const token = crypto.randomBytes(16).toString("hex");
+  await prisma.orcamento.update({ where: { id }, data: { tokenPublico: token } });
+  return token;
 }
 
 export type ItemOrcamentoInput = {

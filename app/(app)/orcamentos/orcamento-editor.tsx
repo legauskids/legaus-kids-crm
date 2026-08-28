@@ -31,6 +31,7 @@ type ItemEditavel = {
   nome: string;
   quantidade: number;
   valorUnitarioReais: number;
+  imagemUrl: string | null;
 };
 
 export type ContatoParaEscolha = { id: string; nome: string; empresa: string | null; razaoSocial: string | null };
@@ -41,7 +42,7 @@ export type OrcamentoParaEditar = {
   observacoes: string | null;
   descontoCentavos: number;
   validadeDias: number;
-  itens: { produtoId: string | null; nome: string; quantidade: number; valorUnitarioCentavos: number }[];
+  itens: { produtoId: string | null; nome: string; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
 };
 
 let contador = 0;
@@ -72,6 +73,7 @@ export function OrcamentoEditor({
       nome: i.nome,
       quantidade: i.quantidade,
       valorUnitarioReais: i.valorUnitarioCentavos / 100,
+      imagemUrl: i.imagemUrl,
     })) ?? [],
   );
   const [descontoReais, setDescontoReais] = useState(orcamento ? orcamento.descontoCentavos / 100 : 0);
@@ -99,12 +101,16 @@ export function OrcamentoEditor({
         nome: produto.nome,
         quantidade: 1,
         valorUnitarioReais: produto.valorCentavos != null ? produto.valorCentavos / 100 : 0,
+        imagemUrl: produto.imagemUrl,
       },
     ]);
   }
 
   function adicionarItemPersonalizado() {
-    setItens((atual) => [...atual, { chave: novaChave(), produtoId: null, nome: "", quantidade: 1, valorUnitarioReais: 0 }]);
+    setItens((atual) => [
+      ...atual,
+      { chave: novaChave(), produtoId: null, nome: "", quantidade: 1, valorUnitarioReais: 0, imagemUrl: null },
+    ]);
   }
 
   function atualizarItem(chave: string, patch: Partial<ItemEditavel>) {
@@ -231,12 +237,20 @@ export function OrcamentoEditor({
                 {itens.map((item) => (
                   <tr key={item.chave} className="border-t">
                     <td className="px-3 py-2">
-                      <Input
-                        value={item.nome}
-                        onChange={(e) => atualizarItem(item.chave, { nome: e.target.value })}
-                        placeholder="Nome do item"
-                        className="h-8"
-                      />
+                      <div className="flex items-center gap-2">
+                        <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded bg-muted/40">
+                          {item.imagemUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.imagemUrl} alt="" className="h-full w-full object-contain" />
+                          ) : null}
+                        </div>
+                        <Input
+                          value={item.nome}
+                          onChange={(e) => atualizarItem(item.chave, { nome: e.target.value })}
+                          placeholder="Nome do item"
+                          className="h-8"
+                        />
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <Input

@@ -22,6 +22,7 @@ export type ContatoVM = {
   cidade: string | null;
   uf: string | null;
   cep: string | null;
+  email: string | null;
   negociosCount: number;
   conversasCount: number;
 };

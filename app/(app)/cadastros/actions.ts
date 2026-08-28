@@ -30,6 +30,7 @@ export async function criarContatoAction(
       cidade: parsed.data.cidade || null,
       uf: parsed.data.uf || null,
       cep: parsed.data.cep || null,
+      email: parsed.data.email || null,
     });
   } catch {
     return { error: "Já existe um cadastro com esse telefone." };
@@ -64,6 +65,7 @@ export async function atualizarContatoAction(
     cidade: parsed.data.cidade || null,
     uf: parsed.data.uf || null,
     cep: parsed.data.cep || null,
+    email: parsed.data.email || null,
   });
 
   revalidatePath("/cadastros");
