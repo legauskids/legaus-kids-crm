@@ -97,6 +97,45 @@ export async function atualizarPrecoProduto(produtoId: string, campo: CampoPreco
   });
 }
 
+/**
+ * Aplica um valor a um campo pra todos os produtos de uma categoria de uma
+ * vez ("aplicar a todos" da Lista de preços). Feito num único request com
+ * updateMany + uma transação — chamar atualizarPrecoProduto em loop pra cada
+ * item (uma linha, um request) estourava o pool de conexões do Neon com
+ * categorias grandes (Linha Rotomoldados tem 88 produtos) e travava
+ * silenciosamente no meio.
+ */
+export async function aplicarPrecoEmMassa(categoria: string, campo: CampoPrecoProduto, valor: number | null): Promise<number> {
+  await prisma.produto.updateMany({ where: { categoria }, data: { [campo]: valor } });
+
+  const produtos = await prisma.produto.findMany({
+    where: { categoria },
+    select: {
+      id: true,
+      custoCompraCentavos: true,
+      freteCustoCentavos: true,
+      ipiCustoCentavos: true,
+      outrosCustoCentavos: true,
+      quantidadeReferencia: true,
+      markupPercentual: true,
+      impostoPercentual: true,
+      instalacaoCentavos: true,
+    },
+  });
+
+  const atualizacoes = produtos
+    .map((p) => ({ id: p.id, ...calcularPrecificacao(p) }))
+    .filter((p) => p.custoTotalUnitCentavos > 0);
+
+  if (atualizacoes.length > 0) {
+    await prisma.$transaction(
+      atualizacoes.map((a) => prisma.produto.update({ where: { id: a.id }, data: { valorCentavos: a.precoVendaCentavos } })),
+    );
+  }
+
+  return produtos.length;
+}
+
 export async function listarCategorias(): Promise<string[]> {
   const categorias = await prisma.produto.findMany({
     select: { categoria: true },

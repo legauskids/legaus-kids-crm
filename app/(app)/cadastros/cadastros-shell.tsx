@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ListaContatos, type ContatoVM } from "@/app/(app)/cadastros/lista-contatos";
 import { ListaPrecos } from "@/app/(app)/cadastros/lista-precos";
@@ -18,6 +19,21 @@ export function CadastrosShell({
   produtos: ProdutoVM[];
   categoriasFixas: string[];
 }) {
+  // Patches locais por produto (id -> campos alterados), aplicados por cima
+  // do que veio do servidor. Assim a guia Produtos reflete na hora uma
+  // edição feita na Lista de preços (e vice-versa), sem precisar de reload
+  // — as duas guias leem o mesmo estado compartilhado aqui.
+  const [ajustes, setAjustes] = useState<Record<string, Partial<ProdutoVM>>>({});
+
+  const produtosAtuais = useMemo(
+    () => produtos.map((p) => (ajustes[p.id] ? { ...p, ...ajustes[p.id] } : p)),
+    [produtos, ajustes],
+  );
+
+  function aplicarAjusteProduto(id: string, patch: Partial<ProdutoVM>) {
+    setAjustes((atual) => ({ ...atual, [id]: { ...atual[id], ...patch } }));
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b bg-card px-6 py-3.5 shadow-xs">
@@ -45,10 +61,10 @@ export function CadastrosShell({
           <ListaContatos tipo="FORNECEDOR" contatos={fornecedores} />
         </TabsContent>
         <TabsContent value="produtos" className="flex-1 overflow-hidden">
-          <ProdutosShell produtos={produtos} categoriasFixas={categoriasFixas} />
+          <ProdutosShell produtos={produtosAtuais} categoriasFixas={categoriasFixas} />
         </TabsContent>
         <TabsContent value="lista-precos" className="flex-1 overflow-hidden">
-          <ListaPrecos produtos={produtos} categoriasFixas={categoriasFixas} />
+          <ListaPrecos produtos={produtosAtuais} categoriasFixas={categoriasFixas} onAtualizarProduto={aplicarAjusteProduto} />
         </TabsContent>
       </Tabs>
     </div>

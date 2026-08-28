@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { corDoIndice } from "@/lib/utils/colors";
 import { centavosParaReais } from "@/lib/utils/money";
 import { calcularPrecificacao } from "@/lib/utils/precificacao";
-import { atualizarPrecoProdutoAction } from "@/app/(app)/produtos/actions";
+import { atualizarPrecoProdutoAction, aplicarPrecoEmMassaAction } from "@/app/(app)/produtos/actions";
 import type { ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 import type { CampoPrecoProduto } from "@/lib/server/produtos";
 
@@ -38,6 +38,9 @@ function CelulaEditavel({
       step="0.01"
       value={texto}
       onChange={(e) => setTexto(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
       onBlur={() => {
         const bruto = texto.trim() === "" ? null : Number(texto);
         if (bruto != null && Number.isNaN(bruto)) {
@@ -55,6 +58,44 @@ function CelulaEditavel({
         largura,
         "h-7 rounded border border-transparent bg-transparent px-1.5 text-right text-xs tabular-nums outline-none transition-colors hover:border-input focus:border-ring focus:bg-background",
         pending && "opacity-50",
+      )}
+    />
+  );
+}
+
+/** Campo vazio no cabeçalho da categoria — aplica o valor digitado a todos os itens dessa categoria (Enter ou blur) e volta a ficar vazio. */
+function CelulaAplicarMassa({
+  tipo,
+  largura = "w-16",
+  onAplicar,
+}: {
+  tipo: "reais" | "numero";
+  largura?: string;
+  onAplicar: (valor: number) => void;
+}) {
+  const [texto, setTexto] = useState("");
+
+  function commit() {
+    const bruto = texto.trim() === "" ? null : Number(texto);
+    setTexto("");
+    if (bruto == null || Number.isNaN(bruto)) return;
+    onAplicar(tipo === "reais" ? Math.round(bruto * 100) : bruto);
+  }
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      value={texto}
+      placeholder="todos"
+      onChange={(e) => setTexto(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      onBlur={commit}
+      className={cn(
+        largura,
+        "h-6 rounded border border-dashed border-input bg-transparent px-1.5 text-right text-[10px] italic tabular-nums outline-none placeholder:text-muted-foreground/50 focus:border-ring focus:bg-background focus:not-italic",
       )}
     />
   );
@@ -85,37 +126,57 @@ function LinhaProduto({ produto, onAtualizar }: { produto: ProdutoVM; onAtualiza
         {produto.codigo && <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{produto.codigo}</span>}
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.custoCompraCentavos} onSalvar={salvar("custoCompraCentavos")} tipo="reais" />
+        <CelulaEditavel
+          key={produto.custoCompraCentavos}
+          valor={produto.custoCompraCentavos}
+          onSalvar={salvar("custoCompraCentavos")}
+          tipo="reais"
+        />
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.freteCustoCentavos} onSalvar={salvar("freteCustoCentavos")} tipo="reais" />
+        <CelulaEditavel
+          key={produto.freteCustoCentavos}
+          valor={produto.freteCustoCentavos}
+          onSalvar={salvar("freteCustoCentavos")}
+          tipo="reais"
+        />
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.ipiCustoCentavos} onSalvar={salvar("ipiCustoCentavos")} tipo="reais" />
+        <CelulaEditavel key={produto.ipiCustoCentavos} valor={produto.ipiCustoCentavos} onSalvar={salvar("ipiCustoCentavos")} tipo="reais" />
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.outrosCustoCentavos} onSalvar={salvar("outrosCustoCentavos")} tipo="reais" />
+        <CelulaEditavel
+          key={produto.outrosCustoCentavos}
+          valor={produto.outrosCustoCentavos}
+          onSalvar={salvar("outrosCustoCentavos")}
+          tipo="reais"
+        />
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
         {centavosParaReais(calc.custoTotalUnitCentavos)}
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.quantidadeReferencia} onSalvar={salvar("quantidadeReferencia")} largura="w-14" />
+        <CelulaEditavel
+          key={produto.quantidadeReferencia}
+          valor={produto.quantidadeReferencia}
+          onSalvar={salvar("quantidadeReferencia")}
+          largura="w-14"
+        />
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
         {centavosParaReais(calc.totalCompraCentavos)}
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.markupPercentual} onSalvar={salvar("markupPercentual")} largura="w-16" />
+        <CelulaEditavel key={produto.markupPercentual} valor={produto.markupPercentual} onSalvar={salvar("markupPercentual")} largura="w-16" />
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-right text-xs font-semibold tabular-nums text-success">
         {centavosParaReais(calc.precoVendaCentavos)}
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.impostoPercentual} onSalvar={salvar("impostoPercentual")} largura="w-16" />
+        <CelulaEditavel key={produto.impostoPercentual} valor={produto.impostoPercentual} onSalvar={salvar("impostoPercentual")} largura="w-16" />
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel valor={produto.instalacaoCentavos} onSalvar={salvar("instalacaoCentavos")} tipo="reais" />
+        <CelulaEditavel key={produto.instalacaoCentavos} valor={produto.instalacaoCentavos} onSalvar={salvar("instalacaoCentavos")} tipo="reais" />
       </td>
       <td
         className={cn(
@@ -154,6 +215,14 @@ const CABECALHO = [
   "% Lucro",
 ];
 
+// Colunas que aceitam aplicar o mesmo valor pra todos os itens da categoria.
+const COLUNAS_EM_MASSA: Record<number, { campo: CampoPrecoProduto; tipo: "reais" | "numero" }> = {
+  3: { campo: "ipiCustoCentavos", tipo: "reais" },
+  4: { campo: "outrosCustoCentavos", tipo: "reais" },
+  8: { campo: "markupPercentual", tipo: "numero" },
+  10: { campo: "impostoPercentual", tipo: "numero" },
+};
+
 function CategoriaPrecos({
   categoria,
   produtos,
@@ -161,6 +230,7 @@ function CategoriaPrecos({
   aberta,
   onToggle,
   onAtualizar,
+  onAplicarEmMassa,
 }: {
   categoria: string;
   produtos: ProdutoVM[];
@@ -168,6 +238,7 @@ function CategoriaPrecos({
   aberta: boolean;
   onToggle: () => void;
   onAtualizar: (id: string, campo: CampoPrecoProduto, valor: number | null) => void;
+  onAplicarEmMassa: (categoria: string, campo: CampoPrecoProduto, valor: number) => void;
 }) {
   return (
     <div className={cn("overflow-hidden rounded-lg border", cor.border)}>
@@ -202,6 +273,25 @@ function CategoriaPrecos({
                   </th>
                 ))}
               </tr>
+              <tr className="border-t bg-muted/10">
+                <th className="sticky left-0 z-10 bg-muted/10 px-2 py-1 text-left text-[10px] italic text-muted-foreground/70">
+                  Aplicar a todos ↓
+                </th>
+                {CABECALHO.slice(1).map((_, indice) => {
+                  const coluna = COLUNAS_EM_MASSA[indice + 1];
+                  return (
+                    <th key={indice} className="px-1 py-1 text-right">
+                      {coluna && (
+                        <CelulaAplicarMassa
+                          tipo={coluna.tipo}
+                          largura={coluna.tipo === "reais" ? "w-20" : "w-16"}
+                          onAplicar={(valor) => onAplicarEmMassa(categoria, coluna.campo, valor)}
+                        />
+                      )}
+                    </th>
+                  );
+                })}
+              </tr>
             </thead>
             <tbody>
               {produtos.map((p) => (
@@ -215,18 +305,25 @@ function CategoriaPrecos({
   );
 }
 
-export function ListaPrecos({ produtos, categoriasFixas }: { produtos: ProdutoVM[]; categoriasFixas: string[] }) {
+export function ListaPrecos({
+  produtos,
+  categoriasFixas,
+  onAtualizarProduto,
+}: {
+  produtos: ProdutoVM[];
+  categoriasFixas: string[];
+  onAtualizarProduto: (id: string, patch: Partial<ProdutoVM>) => void;
+}) {
   const [busca, setBusca] = useState("");
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
-  const [dados, setDados] = useState(produtos);
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    if (!termo) return dados;
-    return dados.filter(
+    if (!termo) return produtos;
+    return produtos.filter(
       (p) => p.nome.toLowerCase().includes(termo) || (p.codigo?.toLowerCase().includes(termo) ?? false) || p.categoria.toLowerCase().includes(termo),
     );
-  }, [dados, busca]);
+  }, [produtos, busca]);
 
   const categorias = useMemo(() => {
     const mapa = new Map<string, ProdutoVM[]>();
@@ -251,11 +348,28 @@ export function ListaPrecos({ produtos, categoriasFixas }: { produtos: ProdutoVM
   }
 
   function atualizar(id: string, campo: CampoPrecoProduto, valor: number | null) {
-    setDados((atual) => atual.map((p) => (p.id === id ? { ...p, [campo]: valor } : p)));
+    onAtualizarProduto(id, { [campo]: valor } as Partial<ProdutoVM>);
     atualizarPrecoProdutoAction(id, campo, valor).then((resultado) => {
       if ("error" in resultado) return;
-      setDados((atual) => atual.map((p) => (p.id === id ? { ...p, valorCentavos: resultado.valorCentavos } : p)));
+      onAtualizarProduto(id, { valorCentavos: resultado.valorCentavos });
     });
+  }
+
+  function aplicarEmMassa(categoria: string, campo: CampoPrecoProduto, valor: number) {
+    // Atualiza a UI de todo mundo na hora (mesmo cálculo isomórfico do
+    // servidor) e manda UM request só pro backend — chamar a action de
+    // linha única em loop pra cada item estourava o pool de conexões em
+    // categorias grandes.
+    for (const p of produtos) {
+      if (p.categoria !== categoria) continue;
+      const atualizado = { ...p, [campo]: valor };
+      const { custoTotalUnitCentavos, precoVendaCentavos } = calcularPrecificacao(atualizado);
+      onAtualizarProduto(p.id, {
+        [campo]: valor,
+        ...(custoTotalUnitCentavos > 0 ? { valorCentavos: precoVendaCentavos } : {}),
+      } as Partial<ProdutoVM>);
+    }
+    aplicarPrecoEmMassaAction(categoria, campo, valor);
   }
 
   return (
@@ -272,7 +386,8 @@ export function ListaPrecos({ produtos, categoriasFixas }: { produtos: ProdutoVM
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           Valores de custo em R$ por unidade. Preço de venda é calculado a partir do custo total + markup (e some junto com o
-          cadastro do produto).
+          cadastro do produto). Enter confirma a célula. A linha pontilhada no topo de cada categoria aplica o valor pra todos
+          os itens dela.
         </p>
       </div>
 
@@ -289,6 +404,7 @@ export function ListaPrecos({ produtos, categoriasFixas }: { produtos: ProdutoVM
               aberta={buscando || abertas.has(categoria)}
               onToggle={() => toggle(categoria)}
               onAtualizar={atualizar}
+              onAplicarEmMassa={aplicarEmMassa}
             />
           ))
         )}
