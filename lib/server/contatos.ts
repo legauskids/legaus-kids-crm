@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import type { TipoContato } from "@prisma/client";
 
 export function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
@@ -72,18 +73,23 @@ export function listTodosContatosParaExportar() {
   });
 }
 
-/** Lista para a aba Contatos do CRM, com busca por nome/telefone/empresa e contagem de negócios/tarefas vinculados. */
-export function listarContatosParaPainel(busca?: string) {
+/** Lista para a aba Cadastros, com busca e filtro por tipo (contato/cliente/fornecedor). */
+export function listarContatosParaPainel(tipo: TipoContato, busca?: string) {
   return prisma.contato.findMany({
-    where: busca
-      ? {
-          OR: [
-            { nome: { contains: busca, mode: "insensitive" } },
-            { telefone: { contains: busca } },
-            { empresa: { contains: busca, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
+    where: {
+      tipo,
+      ...(busca
+        ? {
+            OR: [
+              { nome: { contains: busca, mode: "insensitive" } },
+              { telefone: { contains: busca } },
+              { empresa: { contains: busca, mode: "insensitive" } },
+              { razaoSocial: { contains: busca, mode: "insensitive" } },
+              { cnpj: { contains: busca } },
+            ],
+          }
+        : {}),
+    },
     include: { _count: { select: { negocios: true, conversas: true } } },
     orderBy: { nome: "asc" },
   });
@@ -103,14 +109,71 @@ export type AtualizarContatoInput = {
   nome?: string;
   empresa?: string | null;
   tags?: string[];
+  cnpj?: string | null;
+  razaoSocial?: string | null;
+  inscricaoEstadual?: string | null;
+  endereco?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  cep?: string | null;
+  telefone?: string | null;
 };
 
 export function atualizarContato(contatoId: string, input: AtualizarContatoInput) {
-  return prisma.contato.update({ where: { id: contatoId }, data: input });
+  const { telefone, ...resto } = input;
+  return prisma.contato.update({
+    where: { id: contatoId },
+    data: { ...resto, telefone: telefone ? normalizarTelefone(telefone) : telefone },
+  });
 }
 
-export function criarContato(input: { nome: string; telefone: string; empresa?: string | null }) {
+export type CriarContatoInput = {
+  nome: string;
+  telefone?: string | null;
+  empresa?: string | null;
+  tipo: TipoContato;
+  cnpj?: string | null;
+  razaoSocial?: string | null;
+  endereco?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  cep?: string | null;
+};
+
+export function criarContato(input: CriarContatoInput) {
   return prisma.contato.create({
-    data: { nome: input.nome, telefone: normalizarTelefone(input.telefone), empresa: input.empresa || null },
+    data: {
+      nome: input.nome,
+      telefone: input.telefone ? normalizarTelefone(input.telefone) : null,
+      empresa: input.empresa || null,
+      tipo: input.tipo,
+      cnpj: input.cnpj || null,
+      razaoSocial: input.razaoSocial || null,
+      endereco: input.endereco || null,
+      cidade: input.cidade || null,
+      uf: input.uf || null,
+      cep: input.cep || null,
+    },
+  });
+}
+
+export function excluirContato(contatoId: string) {
+  return prisma.contato.delete({ where: { id: contatoId } });
+}
+
+/** Pra combo "cliente" em telas como Orçamento — todos os tipos, busca leve. */
+export function listarContatosParaCombo(busca?: string) {
+  return prisma.contato.findMany({
+    where: busca
+      ? {
+          OR: [
+            { nome: { contains: busca, mode: "insensitive" } },
+            { razaoSocial: { contains: busca, mode: "insensitive" } },
+          ],
+        }
+      : undefined,
+    select: { id: true, nome: true, empresa: true, razaoSocial: true, tipo: true },
+    orderBy: { nome: "asc" },
+    take: 50,
   });
 }

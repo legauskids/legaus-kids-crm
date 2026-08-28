@@ -1,6 +1,24 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 
+// Categorias que sempre aparecem na aba Produtos, mesmo sem nenhum item
+// cadastrado ainda — assim dá pra criar produto ali direto. As 10 primeiras
+// vêm do catálogo público (legauskids.com.br); Pedagógicos foi pedida à
+// parte, pra itens que não estão no site.
+export const CATEGORIAS_FIXAS = [
+  "Playground",
+  "Parque Infantil",
+  "Parque Infantil Baby",
+  "Parque Infantil PNE",
+  "Kidplay",
+  "Pisos",
+  "Academia Aberta",
+  "Mobiliário",
+  "Outros Produtos",
+  "Linha Rotomoldados",
+  "Pedagógicos",
+];
+
 export function listarProdutosAgrupados() {
   return prisma.produto.findMany({ orderBy: [{ categoria: "asc" }, { nome: "asc" }] });
 }
@@ -10,6 +28,7 @@ export type CriarProdutoInput = {
   codigo?: string | null;
   categoria: string;
   descricao?: string | null;
+  imagemUrl?: string | null;
   valorCentavos?: number | null;
 };
 
@@ -22,6 +41,7 @@ export type AtualizarProdutoInput = {
   codigo?: string | null;
   categoria?: string;
   descricao?: string | null;
+  imagemUrl?: string | null;
   valorCentavos?: number | null;
   ativo?: boolean;
 };

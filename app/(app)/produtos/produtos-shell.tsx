@@ -1,17 +1,14 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ImageOff, Plus, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { corDoIndice } from "@/lib/utils/colors";
-import {
-  atualizarDescricaoProdutoAction,
-  atualizarValorProdutoAction,
-  excluirProdutoAction,
-} from "@/app/(app)/produtos/actions";
+import { centavosParaReais } from "@/lib/utils/money";
+import { EditarProdutoDialog } from "@/app/(app)/produtos/editar-produto-dialog";
 import { NovoProdutoDialog } from "@/app/(app)/produtos/novo-produto-dialog";
 
 export type ProdutoVM = {
@@ -20,78 +17,42 @@ export type ProdutoVM = {
   codigo: string | null;
   categoria: string;
   descricao: string | null;
+  imagemUrl: string | null;
   valorCentavos: number | null;
   ativo: boolean;
 };
 
-function ProdutoRow({ produto }: { produto: ProdutoVM }) {
-  const [, startTransition] = useTransition();
-  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
-
+function ProdutoCard({ produto, onClick }: { produto: ProdutoVM; onClick: () => void }) {
   return (
-    <tr className="border-t">
-      <td className="px-3 py-2">
-        <p className="font-medium leading-snug">{produto.nome}</p>
-        {produto.codigo && <p className="font-mono text-[11px] text-muted-foreground">{produto.codigo}</p>}
-      </td>
-      <td className="px-3 py-2">
-        <Input
-          key={`d-${produto.id}-${produto.descricao}`}
-          defaultValue={produto.descricao ?? ""}
-          placeholder="Sem descrição ainda..."
-          className="h-8 text-xs"
-          onBlur={(e) => {
-            const valor = e.target.value;
-            if (valor !== (produto.descricao ?? "")) {
-              startTransition(() => atualizarDescricaoProdutoAction(produto.id, valor));
-            }
-          }}
-        />
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground">R$</span>
-          <Input
-            key={`v-${produto.id}-${produto.valorCentavos}`}
-            type="number"
-            min="0"
-            step="0.01"
-            defaultValue={produto.valorCentavos != null ? (produto.valorCentavos / 100).toFixed(2) : ""}
-            placeholder="—"
-            className="h-8 w-28 text-xs"
-            onBlur={(e) => {
-              const texto = e.target.value.trim();
-              const valorAtual = produto.valorCentavos != null ? (produto.valorCentavos / 100).toFixed(2) : "";
-              if (texto !== valorAtual) {
-                startTransition(() =>
-                  atualizarValorProdutoAction(produto.id, texto === "" ? null : Number(texto)),
-                );
-              }
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col overflow-hidden rounded-lg border bg-card text-left transition-shadow hover:shadow-md"
+    >
+      <div className="flex aspect-square items-center justify-center bg-muted/40">
+        {produto.imagemUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={produto.imagemUrl}
+            alt={produto.nome}
+            className="h-full w-full object-contain p-2"
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+              e.currentTarget.nextElementSibling?.classList.remove("hidden");
             }}
           />
-        </div>
-      </td>
-      <td className="px-3 py-2 text-right">
-        {confirmandoExclusao ? (
-          <div className="flex items-center justify-end gap-1">
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => startTransition(() => excluirProdutoAction(produto.id))}
-            >
-              Confirmar
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmandoExclusao(false)}>
-              Cancelar
-            </Button>
-          </div>
-        ) : (
-          <Button variant="ghost" size="icon-sm" title="Excluir" onClick={() => setConfirmandoExclusao(true)}>
-            <Trash2 className="size-3.5 text-muted-foreground" />
-          </Button>
-        )}
-      </td>
-    </tr>
+        ) : null}
+        <ImageOff className={cn("size-6 text-muted-foreground/40", produto.imagemUrl && "hidden")} />
+      </div>
+      <div className="space-y-0.5 p-2.5">
+        <p className="line-clamp-2 text-xs font-medium leading-snug">{produto.nome}</p>
+        {produto.codigo && <p className="font-mono text-[10px] text-muted-foreground">{produto.codigo}</p>}
+        <p className="text-xs font-semibold text-success">
+          {produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "Sem valor"}
+        </p>
+      </div>
+    </button>
   );
 }
 
@@ -101,12 +62,16 @@ function CategoriaSection({
   cor,
   aberta,
   onToggle,
+  onNovoProduto,
+  onEditarProduto,
 }: {
   categoria: string;
   produtos: ProdutoVM[];
   cor: ReturnType<typeof corDoIndice>;
   aberta: boolean;
   onToggle: () => void;
+  onNovoProduto: () => void;
+  onEditarProduto: (produto: ProdutoVM) => void;
 }) {
   return (
     <div className={cn("overflow-hidden rounded-lg border", cor.border)}>
@@ -125,29 +90,37 @@ function CategoriaSection({
         {aberta ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
       </button>
       {aberta && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-muted/30 text-left text-xs text-muted-foreground">
-              <th className="px-3 py-2 font-medium">Produto</th>
-              <th className="px-3 py-2 font-medium">Descrição</th>
-              <th className="px-3 py-2 font-medium">Valor</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
+        <div className="space-y-3 p-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             {produtos.map((p) => (
-              <ProdutoRow key={p.id} produto={p} />
+              <ProdutoCard key={p.id} produto={p} onClick={() => onEditarProduto(p)} />
             ))}
-          </tbody>
-        </table>
+            <button
+              type="button"
+              onClick={onNovoProduto}
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+            >
+              <Plus className="size-5" />
+              <span className="text-[11px] font-medium">Novo produto</span>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-export function ProdutosShell({ produtos }: { produtos: ProdutoVM[] }) {
+export function ProdutosShell({
+  produtos,
+  categoriasFixas,
+}: {
+  produtos: ProdutoVM[];
+  categoriasFixas: string[];
+}) {
   const [busca, setBusca] = useState("");
   const [novoAberto, setNovoAberto] = useState(false);
+  const [categoriaParaNovo, setCategoriaParaNovo] = useState<string | undefined>(undefined);
+  const [editando, setEditando] = useState<ProdutoVM | null>(null);
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
 
   const filtrados = useMemo(() => {
@@ -163,12 +136,20 @@ export function ProdutosShell({ produtos }: { produtos: ProdutoVM[] }) {
 
   const categorias = useMemo(() => {
     const mapa = new Map<string, ProdutoVM[]>();
+    for (const c of categoriasFixas) mapa.set(c, []);
     for (const p of filtrados) {
       if (!mapa.has(p.categoria)) mapa.set(p.categoria, []);
       mapa.get(p.categoria)!.push(p);
     }
-    return [...mapa.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtrados]);
+    const termo = busca.trim().length > 0;
+    const entradas = [...mapa.entries()].filter(([, itens]) => !termo || itens.length > 0);
+    return entradas.sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtrados, categoriasFixas, busca]);
+
+  const todasCategorias = useMemo(
+    () => [...new Set([...categoriasFixas, ...produtos.map((p) => p.categoria)])].sort(),
+    [categoriasFixas, produtos],
+  );
 
   const buscando = busca.trim().length > 0;
 
@@ -181,11 +162,16 @@ export function ProdutosShell({ produtos }: { produtos: ProdutoVM[] }) {
     });
   }
 
+  function abrirNovo(categoria?: string) {
+    setCategoriaParaNovo(categoria);
+    setNovoAberto(true);
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b bg-card px-6 py-3.5 shadow-xs">
         <h1 className="text-xl font-bold tracking-tight text-foreground">Produtos</h1>
-        <Button size="sm" onClick={() => setNovoAberto(true)}>
+        <Button size="sm" onClick={() => abrirNovo(undefined)}>
           <Plus className="size-4" />
           Novo produto
         </Button>
@@ -215,12 +201,21 @@ export function ProdutosShell({ produtos }: { produtos: ProdutoVM[] }) {
               cor={corDoIndice(indice)}
               aberta={buscando || abertas.has(categoria)}
               onToggle={() => toggle(categoria)}
+              onNovoProduto={() => abrirNovo(categoria)}
+              onEditarProduto={setEditando}
             />
           ))
         )}
       </div>
 
-      <NovoProdutoDialog open={novoAberto} onOpenChange={setNovoAberto} categoriasExistentes={[...new Set(produtos.map((p) => p.categoria))].sort()} />
+      <NovoProdutoDialog
+        key={`novo-${novoAberto ? `aberto-${categoriaParaNovo ?? ""}` : "fechado"}`}
+        open={novoAberto}
+        onOpenChange={setNovoAberto}
+        categoriasExistentes={todasCategorias}
+        categoriaInicial={categoriaParaNovo}
+      />
+      <EditarProdutoDialog key={`editar-${editando?.id ?? "fechado"}`} produto={editando} onOpenChange={(open) => !open && setEditando(null)} />
     </div>
   );
 }

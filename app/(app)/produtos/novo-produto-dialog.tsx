@@ -29,13 +29,17 @@ export function NovoProdutoDialog({
   open,
   onOpenChange,
   categoriasExistentes,
+  categoriaInicial,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categoriasExistentes: string[];
+  categoriaInicial?: string;
 }) {
   const [state, formAction, pending] = useActionState(criarProdutoAction, initialState);
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState(categoriasExistentes[0] ?? NOVA_CATEGORIA);
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState(
+    categoriaInicial ?? categoriasExistentes[0] ?? NOVA_CATEGORIA,
+  );
 
   useEffect(() => {
     if (state.success) onOpenChange(false);
@@ -46,7 +50,7 @@ export function NovoProdutoDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Novo produto</DialogTitle>
+          <DialogTitle>Novo produto{categoriaInicial ? ` — ${categoriaInicial}` : ""}</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
@@ -85,6 +89,11 @@ export function NovoProdutoDialog({
           ) : (
             <input type="hidden" name="categoria" value={categoriaSelecionada} />
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="imagem-produto">URL da imagem</Label>
+            <Input id="imagem-produto" name="imagemUrl" placeholder="https://..." />
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="descricao-produto">Descrição</Label>

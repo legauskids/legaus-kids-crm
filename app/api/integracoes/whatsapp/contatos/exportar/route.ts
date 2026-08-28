@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const linhas = [
     ["nome", "telefone", "empresa", "tags"].join(","),
     ...contatos.map((c) =>
-      [c.nome, c.telefone, c.empresa ?? "", c.tags.join(";")].map(escaparCsv).join(","),
+      [c.nome, c.telefone ?? "", c.empresa ?? "", c.tags.join(";")].map(escaparCsv).join(","),
     ),
   ];
   const csv = linhas.join("\n");

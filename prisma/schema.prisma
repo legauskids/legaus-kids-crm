@@ -15,6 +15,20 @@ enum StatusConversa {
   ATENDENDO
 }
 
+enum TipoContato {
+  CONTATO
+  CLIENTE
+  FORNECEDOR
+}
+
+enum StatusOrcamento {
+  RASCUNHO
+  ENVIADO
+  APROVADO
+  RECUSADO
+  EXPIRADO
+}
+
 enum EscopoResposta {
   COMPARTILHADA
   PESSOAL
@@ -79,6 +93,7 @@ model User {
   notasInternas       NotaInterna[]
   mensagensEnviadas   Mensagem[]
   atividades          Atividade[]
+  orcamentos          Orcamento[]        @relation("ResponsavelOrcamento")
 }
 
 model Setor {
@@ -88,16 +103,30 @@ model Setor {
 }
 
 model Contato {
-  id        String     @id @default(cuid())
+  id        String      @id @default(cuid())
   nome      String
   empresa   String?
-  telefone  String     @unique
-  tags      String[]   @default([])
-  createdAt DateTime   @default(now())
+  telefone  String?     @unique
+  tags      String[]    @default([])
+  tipo      TipoContato @default(CONTATO)
 
-  conversas Conversa[]
-  negocios  Negocio[]
-  tarefas   Tarefa[]
+  // Preenchidos via busca de CNPJ ao cadastrar cliente/fornecedor (pessoa
+  // jurídica) — ficam vazios pra um contato pessoa física comum vindo do
+  // WhatsApp.
+  cnpj              String?
+  razaoSocial       String?
+  inscricaoEstadual String?
+  endereco          String?
+  cidade            String?
+  uf                String?
+  cep               String?
+
+  createdAt DateTime @default(now())
+
+  conversas  Conversa[]
+  negocios   Negocio[]
+  tarefas    Tarefa[]
+  orcamentos Orcamento[]
 }
 
 model Conversa {
@@ -282,10 +311,42 @@ model Produto {
   codigo        String?
   categoria     String
   descricao     String?
+  imagemUrl     String?
   valorCentavos Int?
   ativo         Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  orcamentoItens OrcamentoItem[]
+
   @@index([categoria])
+}
+
+model Orcamento {
+  id               String          @id @default(cuid())
+  numero           Int             @unique @default(autoincrement())
+  contatoId        String?
+  contato          Contato?        @relation(fields: [contatoId], references: [id])
+  responsavelId    String
+  responsavel      User            @relation("ResponsavelOrcamento", fields: [responsavelId], references: [id])
+  status           StatusOrcamento @default(RASCUNHO)
+  validadeDias     Int             @default(15)
+  observacoes      String?
+  descontoCentavos Int             @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  itens OrcamentoItem[]
+}
+
+model OrcamentoItem {
+  id                    String    @id @default(cuid())
+  orcamentoId           String
+  orcamento             Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  produtoId             String?
+  produto               Produto?  @relation(fields: [produtoId], references: [id])
+  nome                  String
+  quantidade            Int       @default(1)
+  valorUnitarioCentavos Int       @default(0)
+  ordem                 Int       @default(0)
 }

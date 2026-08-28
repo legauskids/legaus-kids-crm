@@ -11,7 +11,7 @@ import {
   Factory,
   Puzzle,
   Users,
-  Package,
+  FileText,
 } from "lucide-react";
 import { LogoMark } from "@/components/layout/logo-mark";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
@@ -21,8 +21,8 @@ export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashbo
   { href: "/atendimento", label: "Atendimento", icon: MessageCircle, modulo: "atendimento" },
   { href: "/negocios", label: "Negócios", icon: Handshake, modulo: "negocios" },
   { href: "/tarefas", label: "Tarefas", icon: ListChecks, modulo: "tarefas" },
-  { href: "/contatos", label: "Contatos", icon: Users, modulo: "contatos" },
-  { href: "/produtos", label: "Produtos", icon: Package, modulo: "produtos" },
+  { href: "/orcamentos", label: "Orçamentos", icon: FileText, modulo: "orcamentos" },
+  { href: "/cadastros", label: "Cadastros", icon: Users, modulo: "contatos" },
   { href: "/producao", label: "Produção", icon: Factory, modulo: "producao" },
 ];
 
@@ -60,7 +60,7 @@ export function Sidebar({ user }: { user: UsuarioComPermissoes }) {
   const itensSecundarios = NAV_ITEMS_SECUNDARIOS.filter((item) => !item.modulo || moduloPermitido(user, item.modulo));
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar sm:flex">
+    <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar sm:flex print:hidden">
       <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-5">
         <LogoMark className="size-8 shrink-0" />
         <div className="leading-tight">

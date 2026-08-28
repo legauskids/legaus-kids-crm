@@ -1,13 +1,26 @@
-export const MODULOS = ["atendimento", "negocios", "tarefas", "producao", "contatos", "produtos", "extensao"] as const;
+export const MODULOS = [
+  "atendimento",
+  "negocios",
+  "tarefas",
+  "producao",
+  "contatos",
+  "produtos",
+  "orcamentos",
+  "extensao",
+] as const;
 export type ModuloKey = (typeof MODULOS)[number];
 
+// "contatos" virou a aba "Cadastros" (contatos + clientes + fornecedores +
+// produtos) — o nome da chave ficou o mesmo pra não perder permissões já
+// salvas, só o rótulo mudou.
 export const MODULO_LABEL: Record<ModuloKey, string> = {
   atendimento: "Atendimento",
   negocios: "Negócios",
   tarefas: "Tarefas",
   producao: "Produção",
-  contatos: "Contatos",
+  contatos: "Cadastros",
   produtos: "Produtos",
+  orcamentos: "Orçamentos",
   extensao: "Extensão",
 };
 
