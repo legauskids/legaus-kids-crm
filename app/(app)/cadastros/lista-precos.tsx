@@ -63,6 +63,63 @@ function CelulaEditavel({
   );
 }
 
+/** Edita um percentual, mas exibe o valor em R$ já calculado (ex: Imposto) — clica pra editar o %, sai/Enter volta a mostrar o R$. */
+function CelulaPercentualComValor({
+  percentual,
+  valorCentavos,
+  onSalvar,
+}: {
+  percentual: number | null;
+  valorCentavos: number;
+  onSalvar: (novoPercentual: number | null) => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(percentual != null ? String(percentual) : "");
+  const [pending, startTransition] = useTransition();
+
+  if (!editando) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setTexto(percentual != null ? String(percentual) : "");
+          setEditando(true);
+        }}
+        className={cn(
+          "flex h-7 w-full items-center justify-end gap-1 whitespace-nowrap rounded border border-transparent px-1.5 text-right text-xs tabular-nums outline-none transition-colors hover:border-input",
+          pending && "opacity-50",
+        )}
+        title="Clique pra editar o percentual"
+      >
+        <span>{centavosParaReais(valorCentavos)}</span>
+        {percentual != null && <span className="text-[9px] text-muted-foreground">({percentual}%)</span>}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      type="number"
+      step="0.01"
+      value={texto}
+      placeholder="%"
+      onChange={(e) => setTexto(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      onBlur={() => {
+        setEditando(false);
+        const bruto = texto.trim() === "" ? null : Number(texto);
+        if (bruto != null && Number.isNaN(bruto)) return;
+        if (bruto === percentual) return;
+        startTransition(() => onSalvar(bruto));
+      }}
+      className="h-7 w-16 rounded border border-ring bg-background px-1.5 text-right text-xs tabular-nums outline-none"
+    />
+  );
+}
+
 /** Campo vazio no cabeçalho da categoria — aplica o valor digitado a todos os itens dessa categoria (Enter ou blur) e volta a ficar vazio. */
 function CelulaAplicarMassa({
   tipo,
@@ -173,7 +230,12 @@ function LinhaProduto({ produto, onAtualizar }: { produto: ProdutoVM; onAtualiza
         {centavosParaReais(calc.precoVendaCentavos)}
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel key={produto.impostoPercentual} valor={produto.impostoPercentual} onSalvar={salvar("impostoPercentual")} largura="w-16" />
+        <CelulaPercentualComValor
+          key={produto.impostoPercentual}
+          percentual={produto.impostoPercentual}
+          valorCentavos={calc.impostoValorCentavos}
+          onSalvar={salvar("impostoPercentual")}
+        />
       </td>
       <td className="px-1 py-1">
         <CelulaEditavel key={produto.instalacaoCentavos} valor={produto.instalacaoCentavos} onSalvar={salvar("instalacaoCentavos")} tipo="reais" />
