@@ -71,3 +71,46 @@ export function listTodosContatosParaExportar() {
     orderBy: { nome: "asc" },
   });
 }
+
+/** Lista para a aba Contatos do CRM, com busca por nome/telefone/empresa e contagem de negócios/tarefas vinculados. */
+export function listarContatosParaPainel(busca?: string) {
+  return prisma.contato.findMany({
+    where: busca
+      ? {
+          OR: [
+            { nome: { contains: busca, mode: "insensitive" } },
+            { telefone: { contains: busca } },
+            { empresa: { contains: busca, mode: "insensitive" } },
+          ],
+        }
+      : undefined,
+    include: { _count: { select: { negocios: true, conversas: true } } },
+    orderBy: { nome: "asc" },
+  });
+}
+
+export function buscarContatoPorId(contatoId: string) {
+  return prisma.contato.findUnique({
+    where: { id: contatoId },
+    include: {
+      negocios: { include: { funil: true, etapa: true }, orderBy: { updatedAt: "desc" } },
+      conversas: { select: { id: true }, take: 1 },
+    },
+  });
+}
+
+export type AtualizarContatoInput = {
+  nome?: string;
+  empresa?: string | null;
+  tags?: string[];
+};
+
+export function atualizarContato(contatoId: string, input: AtualizarContatoInput) {
+  return prisma.contato.update({ where: { id: contatoId }, data: input });
+}
+
+export function criarContato(input: { nome: string; telefone: string; empresa?: string | null }) {
+  return prisma.contato.create({
+    data: { nome: input.nome, telefone: normalizarTelefone(input.telefone), empresa: input.empresa || null },
+  });
+}

@@ -10,6 +10,8 @@ import {
   ListChecks,
   Factory,
   Puzzle,
+  Users,
+  Package,
 } from "lucide-react";
 import { LogoMark } from "@/components/layout/logo-mark";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
@@ -19,6 +21,8 @@ export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashbo
   { href: "/atendimento", label: "Atendimento", icon: MessageCircle, modulo: "atendimento" },
   { href: "/negocios", label: "Negócios", icon: Handshake, modulo: "negocios" },
   { href: "/tarefas", label: "Tarefas", icon: ListChecks, modulo: "tarefas" },
+  { href: "/contatos", label: "Contatos", icon: Users, modulo: "contatos" },
+  { href: "/produtos", label: "Produtos", icon: Package, modulo: "produtos" },
   { href: "/producao", label: "Produção", icon: Factory, modulo: "producao" },
 ];
 

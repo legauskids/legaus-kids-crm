@@ -1,5 +1,6 @@
 node_modules/
 auth/
+auth-antiga-*/
 .env
 *.log
 ultimo-qr.png

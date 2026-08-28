@@ -105,7 +105,21 @@ async function conectar() {
   // comum de "não foi possível conectar" ao escanear o QR.
   const { version } = await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({ auth: state, logger, version });
+  const sock = makeWASocket({
+    auth: state,
+    logger,
+    version,
+    // Achado ao vivo em 2026-08-27/28: fireInitQueries (ligado por padrão)
+    // dispara fetchProps+fetchBlocklist+fetchPrivacySettings só pra manter
+    // paridade com o WhatsApp Web — nada que esse serviço usa, já que só
+    // relê mensagem de texto pro CRM. Numa das contas isso passou a travar
+    // (timeout) toda vez que conectava, derrubando a conexão de novo em
+    // segundos e entrando num loop de reconexão de ~1x por minuto, por
+    // horas — sem nenhum bloqueio real da conta (confirmado: os outros
+    // aparelhos vinculados continuaram funcionando normalmente o tempo
+    // todo). Desligar isso evita a causa, não só o sintoma.
+    fireInitQueries: false,
+  });
 
   sock.ev.on("creds.update", saveCreds);
 

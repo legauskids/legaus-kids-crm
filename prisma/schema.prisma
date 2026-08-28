@@ -275,3 +275,17 @@ model Catalogo {
   url      String
   criadoEm DateTime @default(now())
 }
+
+model Produto {
+  id            String   @id @default(cuid())
+  nome          String
+  codigo        String?
+  categoria     String
+  descricao     String?
+  valorCentavos Int?
+  ativo         Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([categoria])
+}
