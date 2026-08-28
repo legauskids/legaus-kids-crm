@@ -318,6 +318,18 @@ model Produto {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // Planilha de custo/margem (guia "Lista de preços" em Cadastros). Preço de
+  // venda continua sendo valorCentavos — calculado a partir do markup aqui,
+  // pra manter uma fonte única usada também no Orçamento.
+  custoCompraCentavos Int?
+  freteCustoCentavos  Int?
+  ipiCustoCentavos    Int?
+  outrosCustoCentavos Int?
+  quantidadeReferencia Int   @default(1)
+  markupPercentual    Float?
+  impostoPercentual   Float?
+  instalacaoCentavos  Int?
+
   orcamentoItens OrcamentoItem[]
 
   @@index([categoria])

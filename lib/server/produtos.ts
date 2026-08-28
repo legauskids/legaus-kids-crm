@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { calcularPrecificacao } from "@/lib/utils/precificacao";
 
 // Categorias que sempre aparecem na aba Produtos, mesmo sem nenhum item
 // cadastrado ainda — assim dá pra criar produto ali direto. As 10 primeiras
@@ -52,6 +53,48 @@ export function atualizarProduto(produtoId: string, input: AtualizarProdutoInput
 
 export function excluirProduto(produtoId: string) {
   return prisma.produto.delete({ where: { id: produtoId } });
+}
+
+export type CampoPrecoProduto =
+  | "custoCompraCentavos"
+  | "freteCustoCentavos"
+  | "ipiCustoCentavos"
+  | "outrosCustoCentavos"
+  | "quantidadeReferencia"
+  | "markupPercentual"
+  | "impostoPercentual"
+  | "instalacaoCentavos";
+
+/**
+ * Salva um campo da guia "Lista de preços" e recalcula o preço de venda
+ * (valorCentavos) a partir do custo total + markup — mantém uma fonte única
+ * de preço, já que o Orçamento lê valorCentavos direto.
+ */
+export async function atualizarPrecoProduto(produtoId: string, campo: CampoPrecoProduto, valor: number | null) {
+  const atual = await prisma.produto.findUniqueOrThrow({
+    where: { id: produtoId },
+    select: {
+      custoCompraCentavos: true,
+      freteCustoCentavos: true,
+      ipiCustoCentavos: true,
+      outrosCustoCentavos: true,
+      quantidadeReferencia: true,
+      markupPercentual: true,
+      impostoPercentual: true,
+      instalacaoCentavos: true,
+    },
+  });
+
+  const entrada = { ...atual, [campo]: valor };
+  const { custoTotalUnitCentavos, precoVendaCentavos } = calcularPrecificacao(entrada);
+
+  // Só recalcula o preço de venda quando já existe custo lançado — evita
+  // zerar um valorCentavos existente ao editar um campo (ex: quantidade)
+  // antes de preencher os custos da linha.
+  return prisma.produto.update({
+    where: { id: produtoId },
+    data: custoTotalUnitCentavos > 0 ? { [campo]: valor, valorCentavos: precoVendaCentavos } : { [campo]: valor },
+  });
 }
 
 export async function listarCategorias(): Promise<string[]> {

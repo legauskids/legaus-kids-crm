@@ -49,6 +49,14 @@ export default async function CadastrosPage() {
         imagemUrl: p.imagemUrl,
         valorCentavos: p.valorCentavos,
         ativo: p.ativo,
+        custoCompraCentavos: p.custoCompraCentavos,
+        freteCustoCentavos: p.freteCustoCentavos,
+        ipiCustoCentavos: p.ipiCustoCentavos,
+        outrosCustoCentavos: p.outrosCustoCentavos,
+        quantidadeReferencia: p.quantidadeReferencia,
+        markupPercentual: p.markupPercentual,
+        impostoPercentual: p.impostoPercentual,
+        instalacaoCentavos: p.instalacaoCentavos,
       }))}
     />
   );

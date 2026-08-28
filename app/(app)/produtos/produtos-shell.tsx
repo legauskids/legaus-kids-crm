@@ -20,6 +20,14 @@ export type ProdutoVM = {
   imagemUrl: string | null;
   valorCentavos: number | null;
   ativo: boolean;
+  custoCompraCentavos: number | null;
+  freteCustoCentavos: number | null;
+  ipiCustoCentavos: number | null;
+  outrosCustoCentavos: number | null;
+  quantidadeReferencia: number;
+  markupPercentual: number | null;
+  impostoPercentual: number | null;
+  instalacaoCentavos: number | null;
 };
 
 function ProdutoCard({ produto, onClick }: { produto: ProdutoVM; onClick: () => void }) {
