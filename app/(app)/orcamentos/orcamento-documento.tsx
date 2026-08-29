@@ -26,6 +26,13 @@ function formatarData(data: Date): string {
   return new Intl.DateTimeFormat("pt-BR").format(data);
 }
 
+// Descrições puxadas do site vêm com linha em branco entre cada item da
+// lista (bom pra ler no formulário) — no documento isso deixa a coluna
+// enorme, então aqui colapsa pra uma linha por item.
+function compactarDescricao(texto: string): string {
+  return texto.replace(/\n{2,}/g, "\n").trim();
+}
+
 export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocumentoVM }) {
   const subtotal = orcamento.itens.reduce((soma, item) => soma + item.quantidade * item.valorUnitarioCentavos, 0);
   const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
@@ -101,7 +108,9 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
                   </div>
                   <div className="min-w-0">
                     <span className="text-sm">{item.nome}</span>
-                    {item.descricao && <p className="whitespace-pre-wrap text-[10px] text-neutral-500">{item.descricao}</p>}
+                    {item.descricao && (
+                      <p className="whitespace-pre-wrap text-[10px] leading-snug text-neutral-500">{compactarDescricao(item.descricao)}</p>
+                    )}
                   </div>
                 </div>
               </td>
