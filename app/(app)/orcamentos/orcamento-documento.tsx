@@ -100,7 +100,7 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
             <tr key={i} className="border-b border-neutral-100">
               <td className="py-2">
                 <div className="flex items-start gap-2">
-                  <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100">
+                  <div className="flex size-18 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100">
                     {item.imagemUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.imagemUrl} alt="" className="h-full w-full object-contain" />
