@@ -40,6 +40,25 @@ type Ferramenta = {
   executar: (args: ArgsFerramenta, ctx: { usuarioId: string }) => Promise<unknown>;
 };
 
+/**
+ * Resolve um orçamento por ID interno OU por número humano ("orçamento nº
+ * 8") — o histórico de conversa do agente só guarda o texto da resposta
+ * final, que menciona o número, não o ID interno, então o número precisa
+ * funcionar sozinho quando o agente lembra de um orçamento citado antes.
+ */
+async function resolverOrcamento(args: { orcamentoId?: string; numero?: number }) {
+  if (args.orcamentoId) {
+    const orcamento = await buscarOrcamentoPorId(args.orcamentoId);
+    if (orcamento) return orcamento;
+  }
+  if (args.numero) {
+    const todos = await listarOrcamentos();
+    const encontrado = todos.find((o) => o.numero === args.numero);
+    if (encontrado) return buscarOrcamentoPorId(encontrado.id);
+  }
+  return null;
+}
+
 const FERRAMENTAS: Ferramenta[] = [
   {
     name: "buscar_clientes",
@@ -200,31 +219,31 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "enviar_orcamento_whatsapp",
-    description: "Envia um orçamento já criado pro WhatsApp do cliente. Ação sensível — sempre pede confirmação antes.",
+    description:
+      "Envia um orçamento já criado pro WhatsApp do cliente. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
     input_schema: {
       type: "object",
       properties: {
         orcamentoId: { type: "string" },
+        numero: { type: "integer", description: "Número do orçamento (ex: 8), alternativa ao orcamentoId" },
         telefone: { type: "string", description: "Com DDD, só números — usa o telefone do cliente vinculado se não informado" },
       },
-      required: ["orcamentoId"],
     },
     sensivel: true,
     async descreverAcao(args) {
-      const { orcamentoId } = args as { orcamentoId: string };
-      const orcamento = await buscarOrcamentoPorId(orcamentoId);
+      const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) return "orçamento não encontrado";
       const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
       return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}) pro WhatsApp de ${orcamento.contato?.nome ?? "cliente sem nome vinculado"}`;
     },
     async executar(args) {
-      const { orcamentoId, telefone } = args as { orcamentoId: string; telefone?: string };
-      const orcamento = await buscarOrcamentoPorId(orcamentoId);
+      const { telefone } = args as { telefone?: string };
+      const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) throw new Error("Orçamento não encontrado.");
       const telefoneFinal = (telefone || orcamento.contato?.telefone || "").replace(/\D/g, "");
       if (telefoneFinal.length < 10) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
-      const token = await garantirTokenPublico(orcamentoId);
+      const token = await garantirTokenPublico(orcamento.id);
       const link = `${URL_BASE}/publico/orcamento/${token}`;
       const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
       const texto =
@@ -315,14 +334,36 @@ const SYSTEM_PROMPT = `Você é o assistente de automação do CRM da Legaus Kid
 
 Regras:
 - Responda sempre em português do Brasil, direto e objetivo — poucas frases, sem enrolação, como se estivesse falando com o Marcos por WhatsApp.
+- A resposta pode ir pro WhatsApp de verdade — formate como WhatsApp, não como Markdown: *asterisco simples* pra negrito (nunca **duplo**), _underline_ pra itálico, sem títulos com #, sem tabelas.
 - Sempre que o comando envolver um cliente ou produto por nome, use buscar_clientes ou buscar_produtos primeiro pra achar o ID certo antes de criar algo. Se houver mais de um resultado parecido, pergunte qual é.
+- Você tem acesso ao histórico recente da conversa — "esse orçamento", "ele", "o cliente que acabei de criar" etc. se referem ao que apareceu nas mensagens anteriores. Não peça pra repetir uma informação que já foi dada antes.
 - Ferramentas sensíveis (como enviar_orcamento_whatsapp) nunca executam de primeira — o resultado da ferramenta vai te dizer que está pendente de confirmação. Nesse caso, pergunte a confirmação pro Marcos com suas próprias palavras, mencionando os detalhes principais (cliente, valor, número do orçamento).
 - Se não achar o que foi pedido (cliente, produto, orçamento), diga isso claramente em vez de inventar.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 
+const JANELA_HISTORICO_MS = 30 * 60 * 1000; // conversas de mais de 30min atrás não entram como contexto
+const MAX_TROCAS_HISTORICO = 6;
+
+/** Busca as últimas trocas dessa origem pra dar memória de curto prazo ao agente — sem isso, "manda esse orçamento" não sabe qual "esse". */
+async function buscarHistoricoRecente(identificador: string): Promise<Anthropic.MessageParam[]> {
+  const limite = new Date(Date.now() - JANELA_HISTORICO_MS);
+  const recentes = await prisma.comandoAgente.findMany({
+    where: { identificador, criadoEm: { gte: limite }, resposta: { not: null } },
+    orderBy: { criadoEm: "desc" },
+    take: MAX_TROCAS_HISTORICO,
+  });
+  const mensagens: Anthropic.MessageParam[] = [];
+  for (const c of recentes.reverse()) {
+    mensagens.push({ role: "user", content: c.textoComando });
+    mensagens.push({ role: "assistant", content: c.resposta! });
+  }
+  return mensagens;
+}
+
 async function rodarAgenteClaude(
   textoComando: string,
   usuarioId: string,
+  identificador: string,
 ): Promise<{ texto: string; ferramentaPendente: { nome: string; args: unknown; descricao: string } | null; ferramentasChamadas: string[] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -334,7 +375,8 @@ async function rodarAgenteClaude(
   }
 
   const client = new Anthropic({ apiKey });
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: textoComando }];
+  const historico = await buscarHistoricoRecente(identificador);
+  const messages: Anthropic.MessageParam[] = [...historico, { role: "user", content: textoComando }];
   let ferramentaPendente: { nome: string; args: unknown; descricao: string } | null = null;
   const ferramentasChamadas: string[] = [];
 
@@ -450,7 +492,7 @@ export async function processarComandoAgente(input: {
     await prisma.comandoAgente.update({ where: { id: pendente.id }, data: { status: "CANCELADO" } });
   }
 
-  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId);
+  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador);
 
   await prisma.comandoAgente.create({
     data: {
