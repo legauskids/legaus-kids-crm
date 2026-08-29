@@ -12,6 +12,7 @@ import {
   Puzzle,
   Users,
   FileText,
+  Mic,
 } from "lucide-react";
 import { LogoMark } from "@/components/layout/logo-mark";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
@@ -24,6 +25,7 @@ export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashbo
   { href: "/orcamentos", label: "Orçamentos", icon: FileText, modulo: "orcamentos" },
   { href: "/cadastros", label: "Cadastros", icon: Users, modulo: "contatos" },
   { href: "/producao", label: "Produção", icon: Factory, modulo: "producao" },
+  { href: "/agente", label: "Agente", icon: Mic, modulo: "agente" },
 ];
 
 const NAV_ITEMS_SECUNDARIOS: typeof NAV_ITEMS = [

@@ -94,6 +94,40 @@ model User {
   mensagensEnviadas   Mensagem[]
   atividades          Atividade[]
   orcamentos          Orcamento[]        @relation("ResponsavelOrcamento")
+  comandosAgente      ComandoAgente[]
+}
+
+enum OrigemComando {
+  WHATSAPP
+  CRM_TEXTO
+}
+
+enum StatusComando {
+  CONCLUIDO
+  AGUARDANDO_CONFIRMACAO
+  CANCELADO
+  ERRO
+}
+
+// Log + "memória de curto prazo" do agente de IA (comando de voz/texto). Uma
+// linha com status AGUARDANDO_CONFIRMACAO É o estado pendente: guarda qual
+// ferramenta sensível ficou de executar se o usuário confirmar na próxima
+// mensagem da mesma origem (telefone no WhatsApp, "crm:<userId>" no CRM).
+model ComandoAgente {
+  id                   String        @id @default(cuid())
+  origem               OrigemComando
+  identificador        String
+  usuarioId            String?
+  usuario              User?         @relation(fields: [usuarioId], references: [id])
+  textoComando         String
+  resposta             String?
+  ferramentaPendente   String?
+  argumentosPendentes  Json?
+  descricaoPendente    String?
+  status               StatusComando @default(CONCLUIDO)
+  criadoEm             DateTime      @default(now())
+
+  @@index([identificador, criadoEm])
 }
 
 model Setor {
