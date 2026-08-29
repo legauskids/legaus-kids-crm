@@ -29,6 +29,7 @@ type ItemEditavel = {
   chave: string;
   produtoId: string | null;
   nome: string;
+  descricao: string;
   quantidade: number;
   valorUnitarioReais: number;
   imagemUrl: string | null;
@@ -42,7 +43,14 @@ export type OrcamentoParaEditar = {
   observacoes: string | null;
   descontoCentavos: number;
   validadeDias: number;
-  itens: { produtoId: string | null; nome: string; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
+  itens: {
+    produtoId: string | null;
+    nome: string;
+    descricao: string | null;
+    quantidade: number;
+    valorUnitarioCentavos: number;
+    imagemUrl: string | null;
+  }[];
 };
 
 let contador = 0;
@@ -71,6 +79,7 @@ export function OrcamentoEditor({
       chave: novaChave(),
       produtoId: i.produtoId,
       nome: i.nome,
+      descricao: i.descricao ?? "",
       quantidade: i.quantidade,
       valorUnitarioReais: i.valorUnitarioCentavos / 100,
       imagemUrl: i.imagemUrl,
@@ -99,6 +108,7 @@ export function OrcamentoEditor({
         chave: novaChave(),
         produtoId: produto.id,
         nome: produto.nome,
+        descricao: produto.descricao ?? "",
         quantidade: 1,
         valorUnitarioReais: produto.valorCentavos != null ? produto.valorCentavos / 100 : 0,
         imagemUrl: produto.imagemUrl,
@@ -109,7 +119,7 @@ export function OrcamentoEditor({
   function adicionarItemPersonalizado() {
     setItens((atual) => [
       ...atual,
-      { chave: novaChave(), produtoId: null, nome: "", quantidade: 1, valorUnitarioReais: 0, imagemUrl: null },
+      { chave: novaChave(), produtoId: null, nome: "", descricao: "", quantidade: 1, valorUnitarioReais: 0, imagemUrl: null },
     ]);
   }
 
@@ -152,6 +162,7 @@ export function OrcamentoEditor({
         itens: itens.map((i) => ({
           produtoId: i.produtoId,
           nome: i.nome,
+          descricao: i.descricao,
           quantidade: i.quantidade,
           valorUnitarioReais: i.valorUnitarioReais,
         })),
@@ -235,21 +246,30 @@ export function OrcamentoEditor({
               </thead>
               <tbody>
                 {itens.map((item) => (
-                  <tr key={item.chave} className="border-t">
+                  <tr key={item.chave} className="border-t align-top">
                     <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded bg-muted/40">
+                      <div className="flex items-start gap-2">
+                        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center overflow-hidden rounded bg-muted/40">
                           {item.imagemUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={item.imagemUrl} alt="" className="h-full w-full object-contain" />
                           ) : null}
                         </div>
-                        <Input
-                          value={item.nome}
-                          onChange={(e) => atualizarItem(item.chave, { nome: e.target.value })}
-                          placeholder="Nome do item"
-                          className="h-8"
-                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <Input
+                            value={item.nome}
+                            onChange={(e) => atualizarItem(item.chave, { nome: e.target.value })}
+                            placeholder="Nome do item"
+                            className="h-8"
+                          />
+                          <Textarea
+                            value={item.descricao}
+                            onChange={(e) => atualizarItem(item.chave, { descricao: e.target.value })}
+                            placeholder="Descrição (opcional)"
+                            rows={2}
+                            className="min-h-0 resize-y text-xs text-muted-foreground"
+                          />
+                        </div>
                       </div>
                     </td>
                     <td className="px-3 py-2">
@@ -258,7 +278,7 @@ export function OrcamentoEditor({
                         min="1"
                         value={item.quantidade}
                         onChange={(e) => atualizarItem(item.chave, { quantidade: Number(e.target.value) || 1 })}
-                        className="h-8"
+                        className="h-8 text-xs"
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -268,10 +288,10 @@ export function OrcamentoEditor({
                         step="0.01"
                         value={item.valorUnitarioReais}
                         onChange={(e) => atualizarItem(item.chave, { valorUnitarioReais: Number(e.target.value) || 0 })}
-                        className="h-8"
+                        className="h-8 text-xs"
                       />
                     </td>
-                    <td className="px-3 py-2 font-medium tabular-nums">
+                    <td className="px-3 py-2 pt-4 text-xs font-medium tabular-nums">
                       {centavosParaReais(Math.round(item.quantidade * item.valorUnitarioReais * 100))}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -299,11 +319,11 @@ export function OrcamentoEditor({
           />
         </div>
         <div className="space-y-2 rounded-lg border p-4">
-          <div className="flex justify-between text-sm">
+          <div className="flex justify-between text-xs">
             <span className="text-muted-foreground">Subtotal</span>
             <span className="tabular-nums">{centavosParaReais(Math.round(subtotal * 100))}</span>
           </div>
-          <div className="flex items-center justify-between gap-2 text-sm">
+          <div className="flex items-center justify-between gap-2 text-xs">
             <Label htmlFor="desconto" className="text-muted-foreground">
               Desconto (R$)
             </Label>
@@ -314,10 +334,10 @@ export function OrcamentoEditor({
               step="0.01"
               value={descontoReais}
               onChange={(e) => setDescontoReais(Number(e.target.value) || 0)}
-              className="h-8 w-32"
+              className="h-8 w-32 text-xs"
             />
           </div>
-          <div className="flex justify-between border-t pt-2 text-base font-bold">
+          <div className="flex justify-between border-t pt-2 text-sm font-bold">
             <span>Total</span>
             <span className="tabular-nums text-success">{centavosParaReais(Math.round(total * 100))}</span>
           </div>

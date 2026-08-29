@@ -11,9 +11,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Printer, Trash2 } from "lucide-react";
+import { Printer, Send, Trash2 } from "lucide-react";
 import { atualizarStatusOrcamentoAction, excluirOrcamentoAction } from "@/app/(app)/orcamentos/actions";
-import { EnviarOrcamentoDialog } from "@/app/(app)/orcamentos/enviar-orcamento-dialog";
 import type { StatusOrcamento } from "@prisma/client";
 
 const OPCOES: { value: StatusOrcamento; label: string }[] = [
@@ -27,15 +26,9 @@ const OPCOES: { value: StatusOrcamento; label: string }[] = [
 export function ControleStatusOrcamento({
   orcamentoId,
   statusAtual,
-  contatoTelefone = null,
-  contatoEmail = null,
-  emailHabilitado = false,
 }: {
   orcamentoId: string;
   statusAtual: StatusOrcamento;
-  contatoTelefone?: string | null;
-  contatoEmail?: string | null;
-  emailHabilitado?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -64,12 +57,12 @@ export function ControleStatusOrcamento({
           Imprimir / PDF
         </Link>
       </Button>
-      <EnviarOrcamentoDialog
-        orcamentoId={orcamentoId}
-        telefoneInicial={contatoTelefone}
-        emailInicial={contatoEmail}
-        emailHabilitado={emailHabilitado}
-      />
+      <Button variant="outline" size="sm" asChild>
+        <Link href={`/orcamentos/${orcamentoId}/imprimir`} target="_blank">
+          <Send className="size-4" />
+          Enviar
+        </Link>
+      </Button>
       <Button
         variant="ghost"
         size="sm"

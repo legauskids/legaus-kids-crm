@@ -54,6 +54,7 @@ export async function garantirTokenPublico(id: string): Promise<string> {
 export type ItemOrcamentoInput = {
   produtoId?: string | null;
   nome: string;
+  descricao?: string | null;
   quantidade: number;
   valorUnitarioCentavos: number;
 };
@@ -94,6 +95,7 @@ export async function salvarOrcamento(input: SalvarOrcamentoInput) {
         orcamentoId: orcamento.id,
         produtoId: item.produtoId || null,
         nome: item.nome,
+        descricao: item.descricao || null,
         quantidade: item.quantidade,
         valorUnitarioCentavos: item.valorUnitarioCentavos,
         ordem: indice,

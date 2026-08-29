@@ -42,7 +42,7 @@ export async function salvarOrcamentoAction(input: {
   observacoes?: string;
   descontoReais?: number;
   validadeDias?: number;
-  itens: { produtoId?: string | null; nome: string; quantidade: number; valorUnitarioReais: number }[];
+  itens: { produtoId?: string | null; nome: string; descricao?: string | null; quantidade: number; valorUnitarioReais: number }[];
 }): Promise<{ id: string } | { error: string }> {
   const user = await requireUser();
 
@@ -63,6 +63,7 @@ export async function salvarOrcamentoAction(input: {
     itens: input.itens.map((i) => ({
       produtoId: i.produtoId || null,
       nome: i.nome,
+      descricao: i.descricao || null,
       quantidade: Math.max(1, Math.round(i.quantidade)),
       valorUnitarioCentavos: reaisParaCentavos(i.valorUnitarioReais || 0),
     })),

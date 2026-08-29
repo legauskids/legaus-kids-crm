@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireModulo } from "@/lib/auth/guards";
 import { buscarOrcamentoPorId } from "@/lib/server/orcamentos";
-import { emailConfigurado } from "@/lib/server/email";
 import { prisma } from "@/lib/db";
 import { OrcamentoEditor } from "@/app/(app)/orcamentos/orcamento-editor";
 import { ControleStatusOrcamento } from "@/app/(app)/orcamentos/status-orcamento";
@@ -22,7 +21,7 @@ export default async function OrcamentoDetalhePage({
     }),
     prisma.produto.findMany({
       where: { ativo: true },
-      select: { id: true, nome: true, codigo: true, categoria: true, imagemUrl: true, valorCentavos: true },
+      select: { id: true, nome: true, codigo: true, categoria: true, descricao: true, imagemUrl: true, valorCentavos: true },
       orderBy: { nome: "asc" },
     }),
   ]);
@@ -35,13 +34,7 @@ export default async function OrcamentoDetalhePage({
         <h1 className="text-xl font-bold tracking-tight text-foreground">
           Orçamento #{String(orcamento.numero).padStart(4, "0")}
         </h1>
-        <ControleStatusOrcamento
-          orcamentoId={orcamento.id}
-          statusAtual={orcamento.status}
-          contatoTelefone={orcamento.contato?.telefone ?? null}
-          contatoEmail={orcamento.contato?.email ?? null}
-          emailHabilitado={emailConfigurado()}
-        />
+        <ControleStatusOrcamento orcamentoId={orcamento.id} statusAtual={orcamento.status} />
       </div>
       <OrcamentoEditor
         orcamento={{
@@ -53,6 +46,7 @@ export default async function OrcamentoDetalhePage({
           itens: orcamento.itens.map((i) => ({
             produtoId: i.produtoId,
             nome: i.nome,
+            descricao: i.descricao,
             quantidade: i.quantidade,
             valorUnitarioCentavos: i.valorUnitarioCentavos,
             imagemUrl: i.produto?.imagemUrl ?? null,

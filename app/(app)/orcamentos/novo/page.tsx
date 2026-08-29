@@ -12,7 +12,7 @@ export default async function NovoOrcamentoPage() {
     }),
     prisma.produto.findMany({
       where: { ativo: true },
-      select: { id: true, nome: true, codigo: true, categoria: true, imagemUrl: true, valorCentavos: true },
+      select: { id: true, nome: true, codigo: true, categoria: true, descricao: true, imagemUrl: true, valorCentavos: true },
       orderBy: { nome: "asc" },
     }),
   ]);

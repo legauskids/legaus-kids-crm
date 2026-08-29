@@ -16,6 +16,7 @@ export type ProdutoParaEscolha = {
   nome: string;
   codigo: string | null;
   categoria: string;
+  descricao: string | null;
   imagemUrl: string | null;
   valorCentavos: number | null;
 };

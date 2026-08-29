@@ -39,6 +39,7 @@ export default async function OrcamentoPublicoPage({
           responsavel: { nome: orcamento.responsavel.nome },
           itens: orcamento.itens.map((i) => ({
             nome: i.nome,
+            descricao: i.descricao,
             quantidade: i.quantidade,
             valorUnitarioCentavos: i.valorUnitarioCentavos,
             imagemUrl: i.produto?.imagemUrl ?? null,

@@ -360,6 +360,7 @@ model OrcamentoItem {
   produtoId             String?
   produto               Produto?  @relation(fields: [produtoId], references: [id])
   nome                  String
+  descricao             String?
   quantidade            Int       @default(1)
   valorUnitarioCentavos Int       @default(0)
   ordem                 Int       @default(0)

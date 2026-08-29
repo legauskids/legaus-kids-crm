@@ -19,7 +19,7 @@ export type OrcamentoDocumentoVM = {
   descontoCentavos: number;
   contato: { nome: string; razaoSocial: string | null; cnpj: string | null; telefone: string | null; endereco: string | null; cidade: string | null; uf: string | null } | null;
   responsavel: { nome: string };
-  itens: { nome: string; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
+  itens: { nome: string; descricao: string | null; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
 };
 
 function formatarData(data: Date): string {
@@ -79,9 +79,9 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
         </div>
       )}
 
-      <table className="mt-6 w-full text-sm">
+      <table className="mt-6 w-full text-xs">
         <thead>
-          <tr className="border-b border-neutral-300 text-left text-xs uppercase tracking-wide text-neutral-500">
+          <tr className="border-b border-neutral-300 text-left text-[10px] uppercase tracking-wide text-neutral-500">
             <th className="py-2">Item</th>
             <th className="py-2 text-right">Qtd.</th>
             <th className="py-2 text-right">Valor unit.</th>
@@ -92,14 +92,17 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
           {orcamento.itens.map((item, i) => (
             <tr key={i} className="border-b border-neutral-100">
               <td className="py-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
                   <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded bg-neutral-100">
                     {item.imagemUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={item.imagemUrl} alt="" className="h-full w-full object-contain" />
                     ) : null}
                   </div>
-                  <span>{item.nome}</span>
+                  <div className="min-w-0">
+                    <span className="text-sm">{item.nome}</span>
+                    {item.descricao && <p className="whitespace-pre-wrap text-[10px] text-neutral-500">{item.descricao}</p>}
+                  </div>
                 </div>
               </td>
               <td className="py-2 text-right tabular-nums">{item.quantidade}</td>
@@ -111,7 +114,7 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
       </table>
 
       <div className="mt-4 flex justify-end">
-        <div className="w-56 space-y-1 text-sm">
+        <div className="w-56 space-y-1 text-xs">
           <div className="flex justify-between">
             <span className="text-neutral-500">Subtotal</span>
             <span className="tabular-nums">{centavosParaReais(subtotal)}</span>
@@ -122,7 +125,7 @@ export function OrcamentoDocumento({ orcamento }: { orcamento: OrcamentoDocument
               <span className="tabular-nums">-{centavosParaReais(orcamento.descontoCentavos)}</span>
             </div>
           )}
-          <div className="flex justify-between border-t border-neutral-300 pt-1 text-base font-bold">
+          <div className="flex justify-between border-t border-neutral-300 pt-1 text-sm font-bold">
             <span>Total</span>
             <span className="tabular-nums">{centavosParaReais(total)}</span>
           </div>
