@@ -3,9 +3,28 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Mic, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
+import { Mic, Square, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { enviarComandoAgenteAction } from "@/app/(app)/agente/actions";
+import { enviarComandoAgenteAction, enviarComandoAudioAction } from "@/app/(app)/agente/actions";
+
+const DURACAO_MAXIMA_GRAVACAO_S = 120;
+
+function escolherMimeTypeSuportado(): string {
+  const candidatos = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+  for (const tipo of candidatos) {
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(tipo)) return tipo;
+  }
+  return "audio/webm";
+}
+
+function blobParaBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onloadend = () => resolve(String(leitor.result).split(",")[1] ?? "");
+    leitor.onerror = () => reject(leitor.error);
+    leitor.readAsDataURL(blob);
+  });
+}
 
 export type MensagemAgenteVM = {
   id: string;
@@ -33,11 +52,90 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
   const [texto, setTexto] = useState("");
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
+  const [gravando, setGravando] = useState(false);
+  const [segundosGravando, setSegundosGravando] = useState(0);
   const fimRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensagens]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  function pararGravacao() {
+    mediaRecorderRef.current?.stop();
+  }
+
+  async function iniciarGravacao() {
+    setErro(null);
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErro("Esse navegador não dá acesso ao microfone nessa página (precisa de HTTPS).");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const mimeType = escolherMimeTypeSuportado();
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (timerRef.current) clearInterval(timerRef.current);
+        setGravando(false);
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        if (blob.size > 0) processarAudio(blob, mimeType);
+      };
+
+      recorder.start();
+      setGravando(true);
+      setSegundosGravando(0);
+      timerRef.current = setInterval(() => {
+        setSegundosGravando((s) => {
+          if (s + 1 >= DURACAO_MAXIMA_GRAVACAO_S) pararGravacao();
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      setErro("Não consegui acessar o microfone — verifica se o navegador tem permissão pra usar o microfone nesse site.");
+    }
+  }
+
+  function processarAudio(blob: Blob, mimeType: string) {
+    const idTemp = novaChaveTemp();
+    setMensagens((atual) => [
+      ...atual,
+      { id: idTemp, textoComando: "🎤 (transcrevendo áudio...)", resposta: null, status: "PENDENTE", criadoEm: new Date().toISOString() },
+    ]);
+
+    startTransition(async () => {
+      const base64 = await blobParaBase64(blob);
+      const resultado = await enviarComandoAudioAction(base64, mimeType);
+      if ("error" in resultado) {
+        setErro(resultado.error);
+        setMensagens((atual) => atual.filter((m) => m.id !== idTemp));
+        return;
+      }
+      setMensagens((atual) =>
+        atual.map((m) =>
+          m.id === idTemp ? { ...m, textoComando: resultado.transcricao, resposta: resultado.resposta, status: "CONCLUIDO" } : m,
+        ),
+      );
+    });
+  }
 
   function enviar(comandoForcado?: string) {
     const comando = (comandoForcado ?? texto).trim();
@@ -133,10 +231,25 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
       {erro && <p className="px-6 text-sm text-destructive">{erro}</p>}
 
       <div className="border-t bg-card p-4">
+        {gravando && (
+          <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2 text-sm text-destructive">
+            <span className="size-2 animate-pulse rounded-full bg-destructive" />
+            Gravando... {String(Math.floor(segundosGravando / 60)).padStart(1, "0")}:{String(segundosGravando % 60).padStart(2, "0")}
+            <span className="text-muted-foreground">(clique de novo pra parar e enviar)</span>
+          </div>
+        )}
         <div className="mx-auto flex max-w-2xl items-end gap-2">
-          <span className="mb-2 shrink-0" title="Comando por voz vem pelo WhatsApp">
-            <Mic className="size-4 text-muted-foreground" />
-          </span>
+          <Button
+            type="button"
+            variant={gravando ? "destructive" : "ghost"}
+            size="icon"
+            className="shrink-0"
+            title={gravando ? "Parar gravação e enviar" : "Gravar um comando por voz"}
+            disabled={pending && !gravando}
+            onClick={() => (gravando ? pararGravacao() : iniciarGravacao())}
+          >
+            {gravando ? <Square className="size-4" /> : <Mic className="size-4" />}
+          </Button>
           <Textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -146,7 +259,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
                 enviar();
               }
             }}
-            placeholder="Digite um comando..."
+            placeholder="Digite um comando, ou grave por voz..."
             rows={1}
             className="min-h-10 resize-none"
           />
