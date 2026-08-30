@@ -688,7 +688,10 @@ const FERRAMENTAS: Ferramenta[] = [
     async executar(args) {
       const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) throw new Error("Orçamento não encontrado.");
-      return { url: `${URL_BASE}/api/pdf/orcamento/${orcamento.id}`, numero: orcamento.numero };
+      // ?v=<updatedAt> pra garantir um link diferente a cada edição — sem isso o
+      // Marcos recebia "o mesmo link de sempre" depois de editar o orçamento, e o
+      // navegador podia mostrar uma versão em cache em vez de gerar de novo.
+      return { url: `${URL_BASE}/api/pdf/orcamento/${orcamento.id}?v=${orcamento.updatedAt.getTime()}`, numero: orcamento.numero };
     },
   },
   {

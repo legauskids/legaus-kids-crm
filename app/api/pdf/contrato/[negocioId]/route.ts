@@ -15,7 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ nego
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${nomeArquivo}"`,
+        "Content-Disposition": `attachment; filename="${nomeArquivo}"`,
         "Cache-Control": "no-store",
       },
     });

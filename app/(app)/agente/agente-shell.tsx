@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Mic, Square, Send, Loader2, Bot, User as UserIcon } from "lucide-react";
+import { Mic, Square, Send, Loader2, Bot, User as UserIcon, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { enviarComandoAgenteAction, enviarComandoAudioAction } from "@/app/(app)/agente/actions";
 
@@ -26,21 +26,35 @@ function blobParaBase64(blob: Blob): Promise<string> {
   });
 }
 
-/** O agente às vezes manda um link de PDF na resposta em texto puro — transforma em link clicável. */
+function ArquivoCard({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-1 flex w-fit items-center gap-1.5 rounded-lg border border-current/20 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:border-current/40"
+    >
+      <FileText className="size-3.5 shrink-0" />
+      Baixar PDF
+    </a>
+  );
+}
+
+/** O agente às vezes manda um link na resposta em texto puro — link de PDF vira um card de arquivo, o resto vira link clicável normal. */
 function RespostaComLinks({ texto }: { texto: string }) {
   // split com 1 grupo de captura alterna [texto, url, texto, url, ...] — índice ímpar é sempre a URL capturada.
   const partes = texto.split(/(https?:\/\/[^\s]+)/g);
   return (
     <>
-      {partes.map((parte, i) =>
-        i % 2 === 1 ? (
+      {partes.map((parte, i) => {
+        if (i % 2 !== 1) return parte ? <span key={i}>{parte}</span> : null;
+        if (parte.includes("/api/pdf/")) return <ArquivoCard key={i} url={parte} />;
+        return (
           <a key={i} href={parte} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:no-underline">
             {parte}
           </a>
-        ) : (
-          <span key={i}>{parte}</span>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
