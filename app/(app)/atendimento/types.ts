@@ -16,6 +16,8 @@ export type MensagemVM = {
   origem: "MANUAL" | "SISTEMA" | "WHATSAPP";
   autorNome: string | null;
   enviadaEm: string;
+  anexoUrl: string | null;
+  anexoNome: string | null;
 };
 
 export type NotaVM = {

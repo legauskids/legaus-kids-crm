@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { URL_BASE } from "@/lib/constants/app";
 
 type Tx = Prisma.TransactionClient;
 
@@ -22,6 +23,17 @@ export async function onNegocioEtapaChanged(tx: Tx, negocioId: string, novaEtapa
 
   if (etapa.tipo === "GANHO") {
     await handleNegocioGanho(tx, negocio);
+    return;
+  }
+
+  if (etapa.nome === "Pagamento") {
+    await criarTarefaAutomatica(tx, {
+      titulo: "Emitir nota fiscal e boleto",
+      negocioId: negocio.id,
+      contatoId: negocio.contatoId,
+      solicitanteId: negocio.responsavelId,
+      prazoEmHoras: 24,
+    });
     return;
   }
 
@@ -71,6 +83,7 @@ async function handleNegocioGanho(
   });
 
   const responsavelAutomatico = await getResponsavelAutomatico(tx);
+  const linkContrato = `${URL_BASE}/api/pdf/contrato/${negocioPosVenda.id}`;
   await tx.tarefa.create({
     data: {
       titulo: "Emissão de contrato",
@@ -80,7 +93,10 @@ async function handleNegocioGanho(
       solicitanteId: negocioOriginal.responsavelId,
       prazo: new Date(Date.now() + 24 * 60 * 60 * 1000),
       automatica: true,
-      descricao: "Gerado automaticamente após o negócio de venda ser marcado como Ganho.",
+      descricao:
+        `Gerado automaticamente após o negócio de venda ser marcado como Ganho.\n\n` +
+        `Modelo de contrato pronto pra revisar e baixar: ${linkContrato}\n` +
+        `(é um rascunho — revise cláusulas e forma de pagamento antes de mandar pro cliente assinar)`,
     },
   });
 

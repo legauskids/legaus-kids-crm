@@ -1,4 +1,4 @@
-import { chamarApi } from "./crm-api.js";
+import { chamarApi, baixarArquivo } from "./crm-api.js";
 
 const INTERVALO_MS = 5000;
 
@@ -27,7 +27,18 @@ async function processarFila(sock) {
   for (const item of pendentes) {
     try {
       const jid = `${item.telefone}@s.whatsapp.net`;
-      const enviada = await sock.sendMessage(jid, { text: item.texto });
+      let enviada;
+      if (item.anexoUrl) {
+        const arquivo = await baixarArquivo(item.anexoUrl);
+        enviada = await sock.sendMessage(jid, {
+          document: arquivo,
+          mimetype: item.anexoMimetype || "application/pdf",
+          fileName: item.anexoNome || "arquivo.pdf",
+          caption: item.texto,
+        });
+      } else {
+        enviada = await sock.sendMessage(jid, { text: item.texto });
+      }
       if (!enviada?.key?.id) {
         console.error(`[relay-saida] Envio pra ${item.telefone} não retornou id de mensagem.`);
         continue;

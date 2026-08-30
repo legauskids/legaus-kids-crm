@@ -1,6 +1,7 @@
 import "server-only";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/db";
+import { getSessionUser } from "@/lib/auth/session";
 
 export async function getUserFromApiToken(token: string) {
   if (!token) return null;
@@ -29,4 +30,25 @@ export async function requireApiUser(request: Request) {
     });
   }
   return user;
+}
+
+/**
+ * Rotas que servem arquivo tanto pro whatsapp-service (Bearer token) quanto
+ * pro navegador de um usuário logado (cookie de sessão) — ex: PDFs que
+ * precisam ser baixados tanto no fluxo automático de WhatsApp quanto
+ * clicados direto no chat do CRM.
+ */
+export async function requireApiOuSessaoUser(request: Request) {
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (token) {
+    const usuario = await getUserFromApiToken(token);
+    if (usuario) return usuario;
+  }
+  const usuarioSessao = await getSessionUser();
+  if (usuarioSessao) return usuarioSessao;
+  throw new Response(JSON.stringify({ error: "Não autenticado" }), {
+    status: 401,
+    headers: { "content-type": "application/json" },
+  });
 }

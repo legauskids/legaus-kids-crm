@@ -23,6 +23,9 @@ export async function GET(request: Request) {
       telefone: m.conversa.contato.telefone,
       texto: m.texto,
       enviadaEm: m.enviadaEm.toISOString(),
+      anexoUrl: m.anexoUrl ?? undefined,
+      anexoNome: m.anexoNome ?? undefined,
+      anexoMimetype: m.anexoMimetype ?? undefined,
     })),
   });
 }

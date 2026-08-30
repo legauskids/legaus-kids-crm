@@ -17,6 +17,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|publico|api/auth|api/integracoes|api/agente|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|logo-mark.*\\.svg|icon-.*\\.png).*)",
+    "/((?!login|publico|api/auth|api/integracoes|api/agente|api/pdf|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|logo-mark.*\\.svg|icon-.*\\.png).*)",
   ],
 };

@@ -115,6 +115,9 @@ export async function registrarMensagem(input: {
   autorUserId?: string;
   externalId?: string;
   enviadaEm?: Date;
+  anexoUrl?: string;
+  anexoNome?: string;
+  anexoMimetype?: string;
 }) {
   const mensagem = await prisma.mensagem.create({
     data: {
@@ -125,6 +128,9 @@ export async function registrarMensagem(input: {
       autorUserId: input.autorUserId,
       externalId: input.externalId,
       enviadaEm: input.enviadaEm,
+      anexoUrl: input.anexoUrl,
+      anexoNome: input.anexoNome,
+      anexoMimetype: input.anexoMimetype,
     },
   });
   await prisma.conversa.update({ where: { id: input.conversaId }, data: { updatedAt: new Date() } });

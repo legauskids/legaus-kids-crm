@@ -194,6 +194,9 @@ model Mensagem {
   autor       User?           @relation(fields: [autorUserId], references: [id])
   externalId  String?         @unique
   enviadaEm   DateTime        @default(now())
+  anexoUrl       String?
+  anexoNome      String?
+  anexoMimetype  String?
 }
 
 model NotaInterna {

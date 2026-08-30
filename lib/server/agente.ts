@@ -29,6 +29,7 @@ import {
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
 import { enviarEmail, emailConfigurado } from "@/lib/server/email";
 import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/lib/server/orcamento-email";
+import { gerarPdfOrcamento } from "@/lib/server/pdf/orcamento-pdf";
 import {
   buscarClientesSimilar,
   buscarProdutosSimilar,
@@ -589,7 +590,7 @@ const FERRAMENTAS: Ferramenta[] = [
       const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) return "orçamento não encontrado";
       const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
-      return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}) pro WhatsApp de ${orcamento.contato?.nome ?? "cliente sem nome vinculado"}`;
+      return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}), com o PDF anexado, pro WhatsApp de ${orcamento.contato?.nome ?? "cliente sem nome vinculado"}`;
     },
     async executar(args) {
       const { telefone } = args as { telefone?: string };
@@ -606,7 +607,15 @@ const FERRAMENTAS: Ferramenta[] = [
         `no valor de ${centavosParaReais(total)}.\n\nVocê pode conferir todos os detalhes aqui: ${link}\n\nQualquer dúvida, estamos à disposição!`;
 
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal, nomeContato: orcamento.contato?.nome });
-      await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
+      await registrarMensagem({
+        conversaId: conversa.id,
+        texto,
+        direcao: "SAIDA",
+        origem: "SISTEMA",
+        anexoUrl: `${URL_BASE}/api/pdf/orcamento/${orcamento.id}`,
+        anexoNome: `orcamento-${String(orcamento.numero).padStart(4, "0")}.pdf`,
+        anexoMimetype: "application/pdf",
+      });
       return { enviado: true, numero: orcamento.numero };
     },
   },
@@ -658,13 +667,28 @@ const FERRAMENTAS: Ferramenta[] = [
         link,
       });
       const textoAlt = gerarTextoAlternativoEmailOrcamento(orcamento.numero, link);
+      const { buffer: pdfBuffer, nomeArquivo: pdfNome } = await gerarPdfOrcamento(orcamento.id);
       await enviarEmail({
         para: emailFinal,
         assunto: `Orçamento nº ${String(orcamento.numero).padStart(4, "0")} — Legaus Kids`,
         html,
         textoAlternativo: textoAlt,
+        anexos: [{ nomeArquivo: pdfNome, conteudo: pdfBuffer }],
       });
       return { enviado: true, numero: orcamento.numero, email: emailFinal };
+    },
+  },
+  {
+    name: "obter_link_pdf_orcamento",
+    description: "Gera o link de download do PDF de um orçamento, pra mandar aqui mesmo no chat (não é uma ação sensível, só um link de leitura). Informe orcamentoId ou numero.",
+    input_schema: {
+      type: "object",
+      properties: { orcamentoId: { type: "string" }, numero: { type: "integer" } },
+    },
+    async executar(args) {
+      const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
+      if (!orcamento) throw new Error("Orçamento não encontrado.");
+      return { url: `${URL_BASE}/api/pdf/orcamento/${orcamento.id}`, numero: orcamento.numero };
     },
   },
   {
@@ -1010,6 +1034,7 @@ Regras:
 - Você tem acesso ao histórico recente da conversa — "esse orçamento", "ele", "o cliente que acabei de criar" etc. se referem ao que apareceu nas mensagens anteriores. Não peça pra repetir uma informação que já foi dada antes.
 - Ferramentas sensíveis (enviar por WhatsApp ou e-mail, excluir orçamento, marcar negócio como perdido) nunca executam de primeira — o resultado da ferramenta vai te dizer que está pendente de confirmação. IMPORTANTE: pra propor uma ação sensível você TEM que chamar a ferramenta de verdade — nunca descreva a ação em texto puro perguntando "posso confirmar?" sem chamar a ferramenta, porque nesse caso o sistema não sabe o que confirmar depois. A chamada da ferramenta É o pedido de confirmação. Depois de chamá-la, pergunte a confirmação pro Marcos com suas próprias palavras, mencionando os detalhes principais.
 - Ações de edição/criação normais (cliente, produto, preço, orçamento, negócio, tarefa) executam direto, sem pedir confirmação — só pare pra confirmar nas ferramentas marcadas como sensíveis.
+- Enviar orçamento por WhatsApp ou e-mail já manda o PDF de verdade anexado, automaticamente — não precisa de um comando separado pra "mandar em PDF". Se o Marcos pedir só o link/arquivo pra ver aqui no chat mesmo (sem mandar pro cliente), use obter_link_pdf_orcamento.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }

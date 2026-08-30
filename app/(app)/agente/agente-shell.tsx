@@ -26,6 +26,25 @@ function blobParaBase64(blob: Blob): Promise<string> {
   });
 }
 
+/** O agente às vezes manda um link de PDF na resposta em texto puro — transforma em link clicável. */
+function RespostaComLinks({ texto }: { texto: string }) {
+  // split com 1 grupo de captura alterna [texto, url, texto, url, ...] — índice ímpar é sempre a URL capturada.
+  const partes = texto.split(/(https?:\/\/[^\s]+)/g);
+  return (
+    <>
+      {partes.map((parte, i) =>
+        i % 2 === 1 ? (
+          <a key={i} href={parte} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:no-underline">
+            {parte}
+          </a>
+        ) : (
+          <span key={i}>{parte}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export type MensagemAgenteVM = {
   id: string;
   textoComando: string;
@@ -212,7 +231,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
                         m.status === "AGUARDANDO_CONFIRMACAO" ? "bg-warning/15 text-foreground" : "bg-muted text-foreground",
                       )}
                     >
-                      {m.resposta}
+                      <RespostaComLinks texto={m.resposta} />
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm bg-muted px-4 py-2.5 text-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { FileText } from "lucide-react";
 import { Composer } from "@/app/(app)/atendimento/composer";
 import type {
   ConversaDetalhada,
@@ -40,6 +41,20 @@ export function MessagesTab({
               )}
             >
               <p className="whitespace-pre-wrap">{m.texto}</p>
+              {m.anexoUrl && (
+                <a
+                  href={m.anexoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(
+                    "mt-1.5 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs underline underline-offset-2",
+                    m.direcao === "SAIDA" ? "border-primary-foreground/30 text-primary-foreground" : "border-foreground/15 text-foreground",
+                  )}
+                >
+                  <FileText className="size-3.5 shrink-0" />
+                  {m.anexoNome ?? "Arquivo anexado"}
+                </a>
+              )}
               <p
                 className={cn(
                   "mt-1 text-[10px]",

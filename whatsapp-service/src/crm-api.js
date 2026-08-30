@@ -29,3 +29,13 @@ export async function chamarApi(caminho, options = {}) {
   }
   return dados;
 }
+
+/** Baixa um arquivo binário (ex: PDF gerado pelo CRM) com o mesmo Bearer token — sem parsear como JSON. */
+export async function baixarArquivo(url) {
+  const resposta = await fetch(url, { headers: { Authorization: `Bearer ${CRM_API_TOKEN}` } });
+  if (!resposta.ok) {
+    throw new Error(`Erro HTTP ${resposta.status} ao baixar ${url}`);
+  }
+  const arrayBuffer = await resposta.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}

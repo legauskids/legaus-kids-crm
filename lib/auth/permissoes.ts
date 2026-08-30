@@ -7,6 +7,7 @@ export const MODULOS = [
   "produtos",
   "orcamentos",
   "agente",
+  "financeiro",
   "extensao",
 ] as const;
 export type ModuloKey = (typeof MODULOS)[number];
@@ -23,6 +24,7 @@ export const MODULO_LABEL: Record<ModuloKey, string> = {
   produtos: "Produtos",
   orcamentos: "Orçamentos",
   agente: "Agente",
+  financeiro: "Financeiro",
   extensao: "Extensão",
 };
 
