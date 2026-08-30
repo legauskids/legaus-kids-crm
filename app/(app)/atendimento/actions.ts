@@ -13,6 +13,7 @@ import {
 import { criarRespostaRapida, excluirRespostaRapida } from "@/lib/server/respostas-rapidas";
 import { criarNegocio, moverNegocio } from "@/lib/server/negocios";
 import { criarTarefa } from "@/lib/server/tarefas";
+import { gerarSugestaoResposta } from "@/lib/server/agente-atendimento";
 import {
   enviarMensagemSchema,
   criarNotaSchema,
@@ -40,6 +41,18 @@ export async function enviarMensagemAction(formData: FormData): Promise<void> {
     autorUserId: user.id,
   });
   revalidateAtendimento();
+}
+
+export type SugestaoAgenteState = { sugestao?: string; error?: string };
+
+export async function gerarSugestaoAgenteAction(conversaId: string): Promise<SugestaoAgenteState> {
+  await requireUser();
+  try {
+    const sugestao = await gerarSugestaoResposta(conversaId);
+    return { sugestao };
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui gerar uma sugestão." };
+  }
 }
 
 export async function assumirConversaAction(conversaId: string): Promise<void> {

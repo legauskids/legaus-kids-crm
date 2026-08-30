@@ -16,6 +16,12 @@ export async function transcreverAudio(audio: Buffer, mimetype: string): Promise
   form.append("file", new Blob([new Uint8Array(audio)], { type: mimetype }), `audio.${extensao}`);
   form.append("model", "whisper-1");
   form.append("language", "pt");
+  // Viés de vocabulário pro Whisper acertar termos e jargões do negócio que
+  // ele erraria por padrão (ex: transcrever "PL010" como "P L zero dez").
+  form.append(
+    "prompt",
+    "Legaus Kids, playground, parque infantil, kidplay, orçamento, negócio, PL-010, PL-018, Apromes, WhatsApp, lista de preços, markup, etapa, funil.",
+  );
 
   const resposta = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",

@@ -4,9 +4,9 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Zap, Clock } from "lucide-react";
+import { Send, Zap, Clock, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { enviarMensagemAction } from "@/app/(app)/atendimento/actions";
+import { enviarMensagemAction, gerarSugestaoAgenteAction } from "@/app/(app)/atendimento/actions";
 import { QuickRepliesPopover } from "@/app/(app)/atendimento/quick-replies-popover";
 import { AgendarDialog } from "@/app/(app)/atendimento/agendar-dialog";
 import { SlashCommandMenu, type SlashCommand } from "@/app/(app)/atendimento/slash-command-menu";
@@ -43,6 +43,8 @@ export function Composer({
   const [pending, startTransition] = useTransition();
   const [agendarAberto, setAgendarAberto] = useState(false);
   const [comandoAberto, setComandoAberto] = useState<SlashCommand | null>(null);
+  const [gerandoSugestao, setGerandoSugestao] = useState(false);
+  const [erroSugestao, setErroSugestao] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const mostrarSlashMenu = useMemo(() => /^\/[a-zà-ú]*$/i.test(texto), [texto]);
@@ -69,6 +71,23 @@ export function Composer({
   function selecionarComando(cmd: SlashCommand) {
     setTexto("");
     setComandoAberto(cmd);
+  }
+
+  function gerarSugestao() {
+    setErroSugestao(null);
+    setGerandoSugestao(true);
+    startTransition(async () => {
+      const resultado = await gerarSugestaoAgenteAction(conversaId);
+      setGerandoSugestao(false);
+      if (resultado.error) {
+        setErroSugestao(resultado.error);
+        return;
+      }
+      if (resultado.sugestao) {
+        setTexto(resultado.sugestao);
+        textareaRef.current?.focus();
+      }
+    });
   }
 
   const responsavelSugerido = atendenteId ?? currentUserId;
@@ -102,6 +121,16 @@ export function Composer({
           <Clock className="size-4" />
         </Button>
 
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Sugestão do agente"
+          disabled={gerandoSugestao}
+          onClick={gerarSugestao}
+        >
+          {gerandoSugestao ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+        </Button>
+
         <Textarea
           ref={textareaRef}
           value={texto}
@@ -116,6 +145,8 @@ export function Composer({
           <Send className="size-4" />
         </Button>
       </div>
+
+      {erroSugestao && <p className="mt-1.5 text-xs text-destructive">{erroSugestao}</p>}
 
       <AgendarDialog
         open={agendarAberto}

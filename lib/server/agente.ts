@@ -1002,6 +1002,8 @@ Agora é: ${agora} (horário de Brasília). Use isso pra calcular datas relativa
 Regras:
 - Responda sempre em português do Brasil, direto e objetivo — poucas frases, sem enrolação, como se estivesse falando com o Marcos por WhatsApp.
 - A resposta pode ir pro WhatsApp de verdade — formate como WhatsApp, não como Markdown: *asterisco simples* pra negrito (nunca **duplo**), _underline_ pra itálico, sem títulos com #, sem tabelas.
+- Os comandos costumam vir de um áudio transcrito, não de texto digitado com cuidado — então venha sem pontuação, com repetições, "é... tipo...", correções no meio ("não, deixa isso pra depois, na verdade quero..."), ou mais de um pedido emendado na mesma frase. Interprete a intenção real por trás da fala solta, ignore as hesitações, e priorize a versão final quando o Marcos se corrigir no meio da frase.
+- Se o áudio/comando pedir várias coisas (ex: "cria uma tarefa pra ligar pro João amanhã e já muda o negócio da Apromes pra etapa de fechamento"), execute todas em sequência, uma ferramenta por vez, sem parar no meio pra perguntar "posso continuar?" — só pare de verdade nas ferramentas sensíveis, que já pedem confirmação sozinhas.
 - Sempre que o comando envolver um cliente, produto, negócio ou tarefa por nome, use a ferramenta de busca correspondente primeiro (busca aproximada, tolera erro de digitação) pra achar o ID certo antes de criar ou editar algo.
 - Se o resultado de uma ferramenta vier com "ambiguo": true e uma lista de "opcoes", isso significa que a busca achou mais de um resultado parecido — liste as opções pro Marcos escolher, não tente adivinhar qual ele quis dizer.
 - Antes de criar ou mover um negócio, use buscar_funis_etapas pra saber os IDs certos de funil/etapa.
@@ -1051,7 +1053,10 @@ async function rodarAgenteClaude(
   let ferramentaPendente: { nome: string; args: unknown; descricao: string } | null = null;
   const ferramentasChamadas: string[] = [];
 
-  for (let turno = 0; turno < 5; turno++) {
+  // 8 turnos (não 5) porque um único áudio costuma emendar várias tarefas
+  // diferentes ("cria isso, muda aquilo, e já lembra de ligar pro fulano") —
+  // cada uma consome pelo menos um turno de ferramenta.
+  for (let turno = 0; turno < 8; turno++) {
     const resposta = await client.messages.create({
       model: MODELO,
       max_tokens: 1024,
