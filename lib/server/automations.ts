@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
+import { gerarContrato } from "@/lib/server/contratos";
 
 type Tx = Prisma.TransactionClient;
 
@@ -83,7 +84,8 @@ async function handleNegocioGanho(
   });
 
   const responsavelAutomatico = await getResponsavelAutomatico(tx);
-  const linkContrato = `${URL_BASE}/api/pdf/contrato/${negocioPosVenda.id}`;
+  const contrato = await gerarContrato(negocioPosVenda.id, tx);
+  const linkContrato = `${URL_BASE}/api/pdf/contrato/${contrato.id}`;
   await tx.tarefa.create({
     data: {
       titulo: "Emissão de contrato",

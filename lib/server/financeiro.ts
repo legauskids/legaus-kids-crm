@@ -32,6 +32,14 @@ export async function getPainelFinanceiro() {
     }),
   ]);
 
+  const negocioIdsComTarefaContrato = tarefasPendentes.filter((t) => t.titulo === "Emissão de contrato" && t.negocioId).map((t) => t.negocioId!);
+  const contratosPendentes =
+    negocioIdsComTarefaContrato.length > 0
+      ? await prisma.contrato.findMany({ where: { negocioId: { in: negocioIdsComTarefaContrato } }, orderBy: { criadoEm: "desc" } })
+      : [];
+  const contratoIdPorNegocio = new Map<string, string>();
+  for (const c of contratosPendentes) if (!contratoIdPorNegocio.has(c.negocioId)) contratoIdPorNegocio.set(c.negocioId, c.id);
+
   const porMes = new Map<string, number>();
   for (let i = 5; i >= 0; i--) porMes.set(chaveDoMes(inicioDoMes(-i)), 0);
   for (const n of negociosGanhos) {
@@ -78,6 +86,7 @@ export async function getPainelFinanceiro() {
       titulo: t.titulo,
       negocioTitulo: t.negocio?.titulo ?? null,
       negocioId: t.negocioId,
+      contratoId: t.negocioId ? (contratoIdPorNegocio.get(t.negocioId) ?? null) : null,
       contatoNome: t.contato?.nome ?? null,
       prazo: t.prazo,
       responsavelNome: t.responsavel.nome,

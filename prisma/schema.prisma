@@ -269,6 +269,39 @@ model Negocio {
 
   tarefas    Tarefa[]
   atividades Atividade[]
+  contratos  Contrato[]
+}
+
+// Texto único e editável usado como base pra gerar cada contrato — Marcos
+// edita esse "modelo padrão" na aba Contratos do Financeiro, com campos tipo
+// {{cliente_nome}} que são preenchidos na hora de gerar. Fica só um registro
+// "ativo" por vez; histórico de versões não é necessário pro escopo atual.
+model ModeloContrato {
+  id           String   @id @default(cuid())
+  titulo       String   @default("Modelo padrão")
+  conteudo     String
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+enum StatusContrato {
+  GERADO
+  ENVIADO
+  ASSINADO
+  CANCELADO
+}
+
+// Snapshot imutável do texto já mesclado no momento da geração — editar o
+// ModeloContrato depois não muda contratos já gerados, só os próximos.
+model Contrato {
+  id           String         @id @default(cuid())
+  numero       Int            @unique @default(autoincrement())
+  negocioId    String
+  negocio      Negocio        @relation(fields: [negocioId], references: [id])
+  conteudo     String
+  status       StatusContrato @default(GERADO)
+  criadoEm     DateTime       @default(now())
+  atualizadoEm DateTime       @updatedAt
 }
 
 model Tarefa {

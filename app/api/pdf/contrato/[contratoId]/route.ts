@@ -1,17 +1,17 @@
 import { requireApiOuSessaoUser } from "@/lib/auth/api-token";
 import { gerarPdfContrato } from "@/lib/server/pdf/contrato-pdf";
 
-export async function GET(request: Request, { params }: { params: Promise<{ negocioId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ contratoId: string }> }) {
   try {
     await requireApiOuSessaoUser(request);
   } catch (naoAutenticado) {
     return naoAutenticado as Response;
   }
 
-  const { negocioId } = await params;
+  const { contratoId } = await params;
 
   try {
-    const { buffer, nomeArquivo } = await gerarPdfContrato(negocioId);
+    const { buffer, nomeArquivo } = await gerarPdfContrato(contratoId);
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",

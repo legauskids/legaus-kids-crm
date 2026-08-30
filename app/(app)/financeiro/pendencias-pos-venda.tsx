@@ -8,6 +8,7 @@ type Pendencia = {
   titulo: string;
   negocioTitulo: string | null;
   negocioId: string | null;
+  contratoId: string | null;
   contatoNome: string | null;
   prazo: Date;
   responsavelNome: string;
@@ -37,9 +38,9 @@ export function PendenciasPosVenda({ pendencias }: { pendencias: Pendencia[] }) 
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {p.titulo === "Emissão de contrato" && p.negocioId && (
+                {p.titulo === "Emissão de contrato" && p.contratoId && (
                   <a
-                    href={`/api/pdf/contrato/${p.negocioId}`}
+                    href={`/api/pdf/contrato/${p.contratoId}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-1 text-xs text-primary underline underline-offset-2"
