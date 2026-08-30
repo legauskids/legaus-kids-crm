@@ -31,6 +31,8 @@ export async function criarContatoAction(
       uf: parsed.data.uf || null,
       cep: parsed.data.cep || null,
       email: parsed.data.email || null,
+      representanteLegalNome: parsed.data.representanteLegalNome || null,
+      representanteLegalCpf: parsed.data.representanteLegalCpf || null,
     });
   } catch {
     return { error: "Já existe um cadastro com esse telefone." };
@@ -66,6 +68,8 @@ export async function atualizarContatoAction(
     uf: parsed.data.uf || null,
     cep: parsed.data.cep || null,
     email: parsed.data.email || null,
+    representanteLegalNome: parsed.data.representanteLegalNome || null,
+    representanteLegalCpf: parsed.data.representanteLegalCpf || null,
   });
 
   revalidatePath("/cadastros");

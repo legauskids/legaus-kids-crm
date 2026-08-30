@@ -14,6 +14,8 @@ export const criarContatoSchema = z.object({
   uf: z.string().optional(),
   cep: z.string().optional(),
   email: z.string().optional(),
+  representanteLegalNome: z.string().optional(),
+  representanteLegalCpf: z.string().optional(),
 });
 
 export const atualizarContatoSchema = z.object({
@@ -29,4 +31,6 @@ export const atualizarContatoSchema = z.object({
   uf: z.string().optional(),
   cep: z.string().optional(),
   email: z.string().optional(),
+  representanteLegalNome: z.string().optional(),
+  representanteLegalCpf: z.string().optional(),
 });

@@ -13,6 +13,7 @@ type Negocio = {
   valorCentavos: number;
   produto: string | null;
   descricao: string | null;
+  formaPagamento: string | null;
   dataInicio: Date;
   previsaoFechamento: Date | null;
   origem: string | null;
@@ -95,6 +96,17 @@ export function DadosTab({
           <div className="space-y-2">
             <Label htmlFor="descricao">Descrição</Label>
             <Textarea id="descricao" name="descricao" rows={3} defaultValue={negocio.descricao ?? ""} />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="formaPagamento">Forma de pagamento</Label>
+            <Input
+              id="formaPagamento"
+              name="formaPagamento"
+              placeholder="ex: à vista via PIX, no ato da assinatura"
+              defaultValue={negocio.formaPagamento ?? ""}
+            />
+            <p className="text-xs text-muted-foreground">Necessário pra marcar o negócio como Ganho — vai direto pro contrato.</p>
           </div>
 
           {isFunilPosVenda && (

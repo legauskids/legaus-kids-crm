@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
 import { negocioParadoAlemDoPrazo } from "@/lib/utils/dates";
@@ -61,9 +62,15 @@ export function NegociosBoardShell({
   const etapaPorId = new Map(etapasOrdenadas.map((e) => [e.id, e]));
 
   function commitMove(negocioId: string, novaEtapaId: string) {
+    const itemsAntes = items;
     setItems((prev) => prev.map((i) => (i.id === negocioId ? { ...i, columnId: novaEtapaId } : i)));
     startTransition(async () => {
-      await moverNegocioAction(negocioId, novaEtapaId);
+      const resultado = await moverNegocioAction(negocioId, novaEtapaId);
+      if (resultado.error) {
+        setItems(itemsAntes);
+        toast.error(resultado.error);
+        return;
+      }
       router.refresh();
     });
   }

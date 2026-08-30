@@ -153,6 +153,19 @@ export function NovoContatoDialog({
                   <Input id="cep-novo" name="cep" defaultValue={dadosCnpj?.cep ?? ""} />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4 rounded-lg border p-3">
+                <div className="col-span-2">
+                  <Label className="text-xs text-muted-foreground">Quem assina pela empresa (pro contrato)</Label>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="representanteLegalNome-novo">Nome do representante</Label>
+                  <Input id="representanteLegalNome-novo" name="representanteLegalNome" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="representanteLegalCpf-novo">CPF do representante</Label>
+                  <Input id="representanteLegalCpf-novo" name="representanteLegalCpf" placeholder="000.000.000-00" />
+                </div>
+              </div>
             </>
           )}
 

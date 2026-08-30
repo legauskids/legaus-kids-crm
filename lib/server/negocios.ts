@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { onNegocioEtapaChanged } from "@/lib/server/automations";
+import { validarDadosParaContrato } from "@/lib/server/contratos";
 
 export function listFunisComEtapas() {
   return prisma.funil.findMany({
@@ -47,6 +48,14 @@ export function listNegociosPorContato(contatoId: string) {
 }
 
 export async function moverNegocio(negocioId: string, novaEtapaId: string): Promise<void> {
+  const etapaAlvo = await prisma.etapa.findUniqueOrThrow({ where: { id: novaEtapaId } });
+  if (etapaAlvo.tipo === "GANHO") {
+    const faltando = await validarDadosParaContrato(negocioId);
+    if (faltando.length > 0) {
+      throw new Error(`Faltam dados pro contrato antes de marcar como Ganho: ${faltando.join(", ")}.`);
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.negocio.update({
       where: { id: negocioId },
@@ -88,6 +97,7 @@ export type AtualizarDadosNegocioInput = {
   valorCentavos?: number;
   produto?: string | null;
   descricao?: string | null;
+  formaPagamento?: string | null;
   previsaoFechamento?: Date | null;
   origem?: string | null;
   progressoProducao?: number | null;

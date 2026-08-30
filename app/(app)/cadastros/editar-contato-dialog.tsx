@@ -126,6 +126,19 @@ export function EditarContatoDialog({
                     <Input id="cep-editar" name="cep" defaultValue={contato.cep ?? ""} />
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-4 rounded-lg border p-3">
+                  <div className="col-span-2">
+                    <Label className="text-xs text-muted-foreground">Quem assina pela empresa (pro contrato)</Label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="representanteLegalNome-editar">Nome do representante</Label>
+                    <Input id="representanteLegalNome-editar" name="representanteLegalNome" defaultValue={contato.representanteLegalNome ?? ""} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="representanteLegalCpf-editar">CPF do representante</Label>
+                    <Input id="representanteLegalCpf-editar" name="representanteLegalCpf" defaultValue={contato.representanteLegalCpf ?? ""} placeholder="000.000.000-00" />
+                  </div>
+                </div>
               </>
             )}
 

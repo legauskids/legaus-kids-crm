@@ -17,11 +17,16 @@ import {
 } from "@/lib/validators/negocio";
 import { reaisParaCentavos } from "@/lib/utils/money";
 
-export async function moverNegocioAction(negocioId: string, novaEtapaId: string): Promise<void> {
+export async function moverNegocioAction(negocioId: string, novaEtapaId: string): Promise<{ error?: string }> {
   await requireUser();
-  await moverNegocio(negocioId, novaEtapaId);
+  try {
+    await moverNegocio(negocioId, novaEtapaId);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui mover o negócio." };
+  }
   revalidatePath("/negocios");
   revalidatePath(`/negocios/${negocioId}`);
+  return {};
 }
 
 export type CriarNegocioState = { error?: string; success?: boolean };
@@ -85,6 +90,7 @@ export async function atualizarDadosNegocioAction(
     valorCentavos: parsed.data.valorReais != null ? reaisParaCentavos(parsed.data.valorReais) : undefined,
     produto: parsed.data.produto || undefined,
     descricao: parsed.data.descricao || undefined,
+    formaPagamento: parsed.data.formaPagamento || undefined,
     previsaoFechamento: parsed.data.previsaoFechamento ? new Date(parsed.data.previsaoFechamento) : undefined,
     origem: parsed.data.origem || undefined,
     progressoProducao: parsed.data.progressoProducao,

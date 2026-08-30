@@ -21,6 +21,7 @@ export const atualizarDadosNegocioSchema = z.object({
   valorReais: z.coerce.number().min(0).optional(),
   produto: z.string().optional(),
   descricao: z.string().optional(),
+  formaPagamento: z.string().optional(),
   previsaoFechamento: z.string().optional(),
   origem: z.string().optional(),
   progressoProducao: z.coerce.number().min(0).max(100).optional(),

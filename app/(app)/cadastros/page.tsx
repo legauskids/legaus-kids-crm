@@ -19,6 +19,8 @@ function paraVM(c: Awaited<ReturnType<typeof listarContatosParaPainel>>[number])
     uf: c.uf,
     cep: c.cep,
     email: c.email,
+    representanteLegalNome: c.representanteLegalNome,
+    representanteLegalCpf: c.representanteLegalCpf,
     negociosCount: c._count.negocios,
     conversasCount: c._count.conversas,
   };

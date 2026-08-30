@@ -147,7 +147,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "atualizar_cliente",
     description:
-      "Edita os dados de um cliente já cadastrado (nome, telefone, e-mail, empresa, CNPJ, razão social, endereço). Informe clienteId (se já souber) ou nomeBusca. Só os campos passados são alterados.",
+      "Edita os dados de um cliente já cadastrado (nome, telefone, e-mail, empresa, CNPJ, razão social, endereço, representante legal). Informe clienteId (se já souber) ou nomeBusca. Só os campos passados são alterados. O nome e CPF do representante legal e a razão social/CNPJ/endereço são exigidos antes de marcar um negócio desse cliente como Ganho (pro contrato).",
     input_schema: {
       type: "object",
       properties: {
@@ -163,6 +163,8 @@ const FERRAMENTAS: Ferramenta[] = [
         novaCidade: { type: "string" },
         novoUf: { type: "string" },
         novoCep: { type: "string" },
+        novoRepresentanteLegalNome: { type: "string", description: "Nome de quem assina pela empresa cliente" },
+        novoRepresentanteLegalCpf: { type: "string", description: "CPF de quem assina pela empresa cliente" },
       },
     },
     async executar(args) {
@@ -179,6 +181,8 @@ const FERRAMENTAS: Ferramenta[] = [
         novaCidade?: string;
         novoUf?: string;
         novoCep?: string;
+        novoRepresentanteLegalNome?: string;
+        novoRepresentanteLegalCpf?: string;
       };
       const resolvido = await resolverPorBusca(a.clienteId, a.nomeBusca, (t) =>
         buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id)),
@@ -199,6 +203,8 @@ const FERRAMENTAS: Ferramenta[] = [
         cidade: a.novaCidade,
         uf: a.novoUf,
         cep: a.novoCep,
+        representanteLegalNome: a.novoRepresentanteLegalNome,
+        representanteLegalCpf: a.novoRepresentanteLegalCpf,
       });
       return { id: atualizado.id, nome: atualizado.nome };
     },
@@ -799,7 +805,8 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "atualizar_negocio",
-    description: "Edita valor, produto ou descrição de um negócio já existente. Informe negocioId ou tituloBusca.",
+    description:
+      "Edita valor, produto, descrição ou forma de pagamento de um negócio já existente. Informe negocioId ou tituloBusca. A forma de pagamento é exigida antes de marcar o negócio como Ganho (vai pro contrato).",
     input_schema: {
       type: "object",
       properties: {
@@ -808,10 +815,18 @@ const FERRAMENTAS: Ferramenta[] = [
         novoValorReais: { type: "number" },
         novoProduto: { type: "string" },
         novaDescricao: { type: "string" },
+        novaFormaPagamento: { type: "string", description: "ex: à vista via PIX, no ato da assinatura" },
       },
     },
     async executar(args) {
-      const a = args as { negocioId?: string; tituloBusca?: string; novoValorReais?: number; novoProduto?: string; novaDescricao?: string };
+      const a = args as {
+        negocioId?: string;
+        tituloBusca?: string;
+        novoValorReais?: number;
+        novoProduto?: string;
+        novaDescricao?: string;
+        novaFormaPagamento?: string;
+      };
       const resolvido = await resolverPorBusca(a.negocioId, a.tituloBusca, buscarNegociosSimilarIds);
       if (!resolvido) throw new Error(`Não achei nenhum negócio parecido com "${a.tituloBusca}".`);
       if ("ambiguo" in resolvido) {
@@ -822,6 +837,7 @@ const FERRAMENTAS: Ferramenta[] = [
         valorCentavos: a.novoValorReais != null ? reaisParaCentavos(a.novoValorReais) : undefined,
         produto: a.novoProduto,
         descricao: a.novaDescricao,
+        formaPagamento: a.novaFormaPagamento,
       });
       return { id: negocio.id, titulo: negocio.titulo };
     },
@@ -1038,6 +1054,7 @@ Regras:
 - Ferramentas sensíveis (enviar por WhatsApp ou e-mail, excluir orçamento, marcar negócio como perdido) nunca executam de primeira — o resultado da ferramenta vai te dizer que está pendente de confirmação. IMPORTANTE: pra propor uma ação sensível você TEM que chamar a ferramenta de verdade — nunca descreva a ação em texto puro perguntando "posso confirmar?" sem chamar a ferramenta, porque nesse caso o sistema não sabe o que confirmar depois. A chamada da ferramenta É o pedido de confirmação. Depois de chamá-la, pergunte a confirmação pro Marcos com suas próprias palavras, mencionando os detalhes principais.
 - Ações de edição/criação normais (cliente, produto, preço, orçamento, negócio, tarefa) executam direto, sem pedir confirmação — só pare pra confirmar nas ferramentas marcadas como sensíveis.
 - Enviar orçamento por WhatsApp ou e-mail já manda o PDF de verdade anexado, automaticamente — não precisa de um comando separado pra "mandar em PDF". Se o Marcos pedir só o link/arquivo pra ver aqui no chat mesmo (sem mandar pro cliente), use obter_link_pdf_orcamento.
+- Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }

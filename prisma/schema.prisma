@@ -156,6 +156,11 @@ model Contato {
   cep               String?
   email             String?
 
+  // Quem assina pela empresa — precisa pro contrato, não é revelado pela
+  // busca de CNPJ (sigilo), então é preenchido manualmente.
+  representanteLegalNome String?
+  representanteLegalCpf  String?
+
   createdAt DateTime @default(now())
 
   conversas  Conversa[]
@@ -262,6 +267,7 @@ model Negocio {
   dataInstalacao     DateTime?
   equipeInstalacao   String?
   motivoPerda        String?
+  formaPagamento     String?
   origemConversaId   String?
   origemConversa     Conversa? @relation("OrigemConversaNegocio", fields: [origemConversaId], references: [id])
   createdAt          DateTime  @default(now())

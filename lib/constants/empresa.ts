@@ -13,4 +13,7 @@ export const EMPRESA = {
   telefone: "(55) 9960-3257",
   email: "contato@legauskids.com.br",
   site: "legauskids.com.br",
+  // Quem assina pela empresa nos contratos — proprietário, fixo.
+  representanteNome: "MARCOS ZANCAN",
+  representanteCpf: "003.598.010-99",
 } as const;

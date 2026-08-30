@@ -66,7 +66,17 @@ export async function onNegocioEtapaChanged(tx: Tx, negocioId: string, novaEtapa
 
 async function handleNegocioGanho(
   tx: Tx,
-  negocioOriginal: { id: string; titulo: string; contatoId: string | null; valorCentavos: number; responsavelId: string; origem: string | null },
+  negocioOriginal: {
+    id: string;
+    titulo: string;
+    contatoId: string | null;
+    valorCentavos: number;
+    responsavelId: string;
+    origem: string | null;
+    produto: string | null;
+    descricao: string | null;
+    formaPagamento: string | null;
+  },
 ): Promise<void> {
   const funilPosVenda = await tx.funil.findFirstOrThrow({ where: { nome: "Funil de pós-venda" } });
   const etapaContrato = await tx.etapa.findFirstOrThrow({ where: { funilId: funilPosVenda.id, nome: "Contrato" } });
@@ -80,6 +90,12 @@ async function handleNegocioGanho(
       valorCentavos: negocioOriginal.valorCentavos,
       responsavelId: negocioOriginal.responsavelId,
       origem: negocioOriginal.origem,
+      // Copiados pro contrato conseguir usar produto/forma de pagamento de
+      // verdade — sem isso o negócio de pós-venda nascia em branco e o
+      // contrato caía nos valores padrão mesmo com o gate já validado.
+      produto: negocioOriginal.produto,
+      descricao: negocioOriginal.descricao,
+      formaPagamento: negocioOriginal.formaPagamento,
     },
   });
 

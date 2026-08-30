@@ -23,6 +23,8 @@ export type ContatoVM = {
   uf: string | null;
   cep: string | null;
   email: string | null;
+  representanteLegalNome: string | null;
+  representanteLegalCpf: string | null;
   negociosCount: number;
   conversasCount: number;
 };

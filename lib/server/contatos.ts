@@ -118,6 +118,8 @@ export type AtualizarContatoInput = {
   cep?: string | null;
   email?: string | null;
   telefone?: string | null;
+  representanteLegalNome?: string | null;
+  representanteLegalCpf?: string | null;
 };
 
 export function atualizarContato(contatoId: string, input: AtualizarContatoInput) {
@@ -140,6 +142,8 @@ export type CriarContatoInput = {
   uf?: string | null;
   cep?: string | null;
   email?: string | null;
+  representanteLegalNome?: string | null;
+  representanteLegalCpf?: string | null;
 };
 
 export function criarContato(input: CriarContatoInput) {
@@ -156,6 +160,8 @@ export function criarContato(input: CriarContatoInput) {
       uf: input.uf || null,
       cep: input.cep || null,
       email: input.email || null,
+      representanteLegalNome: input.representanteLegalNome || null,
+      representanteLegalCpf: input.representanteLegalCpf || null,
     },
   });
 }
