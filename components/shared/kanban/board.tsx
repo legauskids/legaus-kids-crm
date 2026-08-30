@@ -4,7 +4,8 @@ import { useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -42,7 +43,13 @@ export function KanbanBoard<T>({
   onDrop: (itemId: string, toColumnId: string) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // Mouse arrasta na hora (distância curta já basta); toque precisa de um
+  // pressionar-e-segurar antes de virar arrasto — senão todo scroll vertical
+  // no celular é capturado como se fosse mover o card (bug real relatado).
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
 
   const activeItem = items.find((i) => i.id === activeId);
 

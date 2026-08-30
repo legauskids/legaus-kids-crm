@@ -13,7 +13,11 @@ export function KanbanCard({ id, children }: { id: string; children: ReactNode }
       {...listeners}
       {...attributes}
       className={cn(
-        "cursor-grab touch-none rounded-lg border bg-card shadow-sm transition-all hover:shadow-md active:cursor-grabbing",
+        // touch-pan-y (não touch-none): deixa o navegador rolar a coluna
+        // verticalmente num toque rápido; o TouchSensor (delay-based, ver
+        // board.tsx) só assume o gesto como arrasto depois de segurar
+        // parado por um instante, e aí sim assume o controle do toque.
+        "cursor-grab touch-pan-y rounded-lg border bg-card shadow-sm transition-all hover:shadow-md active:cursor-grabbing",
         isDragging && "opacity-40 shadow-lg",
       )}
     >
