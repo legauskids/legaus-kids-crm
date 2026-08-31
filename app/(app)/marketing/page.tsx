@@ -59,8 +59,14 @@ async function PostagensDataTab() {
         status: p.status,
         legenda: p.legenda,
         contexto: p.contexto,
+        headline: p.headline,
         criadoEm: p.criadoEm.toISOString(),
         criadoPorNome: p.criadoPor.nome,
+        imagens: p.imagens.map((img) => ({
+          id: img.id,
+          ordem: img.ordem,
+          variantes: img.variantes.map((v) => ({ id: v.id, layout: v.layout, escolhida: v.escolhida })),
+        })),
       }))}
     />
   );

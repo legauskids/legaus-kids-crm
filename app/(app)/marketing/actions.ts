@@ -7,6 +7,8 @@ import {
   atualizarLegendaPostagem,
   atualizarStatusPostagem,
   excluirPostagem,
+  definirVarianteEscolhida,
+  editarImagemDaPostagem,
   salvarModelo,
   criarModelo,
   excluirModelo,
@@ -24,28 +26,59 @@ export async function criarPostagemAction(
   formData: FormData,
 ): Promise<PostagemFormState> {
   const user = await requireModulo("marketing");
-  const arquivo = formData.get("imagem");
+  const arquivos = formData.getAll("imagens").filter((a): a is File => a instanceof File && a.size > 0);
   const tipo = String(formData.get("tipo") ?? "");
   const contexto = String(formData.get("contexto") ?? "").trim();
+  const headline = String(formData.get("headline") ?? "").trim();
 
-  if (!(arquivo instanceof File) || arquivo.size === 0) {
-    return { error: "Escolha uma imagem." };
+  if (arquivos.length === 0) {
+    return { error: "Escolha ao menos uma imagem." };
   }
   if (!["FEED_INSTAGRAM", "STORY_INSTAGRAM", "STATUS_WHATSAPP", "FEED_FACEBOOK"].includes(tipo)) {
     return { error: "Escolha o tipo de postagem." };
   }
 
   try {
-    const arrayBuffer = await arquivo.arrayBuffer();
+    const imagens = await Promise.all(
+      arquivos.map(async (arquivo) => ({
+        buffer: Buffer.from(await arquivo.arrayBuffer()),
+        mime: arquivo.type || "image/jpeg",
+      })),
+    );
     await criarPostagem({
       tipo: tipo as TipoPostagem,
       contexto,
-      imagemBuffer: Buffer.from(arrayBuffer),
-      imagemMime: arquivo.type || "image/jpeg",
+      headline: headline || undefined,
+      imagens,
       criadoPorId: user.id,
     });
   } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui processar a imagem." };
+    return { error: erro instanceof Error ? erro.message : "Não consegui processar as imagens." };
+  }
+
+  revalidateMarketing();
+  return { success: true };
+}
+
+export async function definirVarianteEscolhidaAction(postagemImagemId: string, varianteId: string): Promise<void> {
+  await requireModulo("marketing");
+  await definirVarianteEscolhida(postagemImagemId, varianteId);
+  revalidateMarketing();
+}
+
+export type EditarImagemIAState = { error?: string; success?: boolean };
+
+export async function editarImagemComIAAction(
+  postagemImagemId: string,
+  instrucao: string,
+): Promise<EditarImagemIAState> {
+  await requireModulo("marketing");
+  if (!instrucao.trim()) return { error: "Descreva o que você quer mudar na foto." };
+
+  try {
+    await editarImagemDaPostagem(postagemImagemId, instrucao.trim());
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui editar a imagem." };
   }
 
   revalidateMarketing();

@@ -1,11 +1,14 @@
 import "server-only";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import Anthropic from "@anthropic-ai/sdk";
+import { ImageResponse } from "next/og";
 import { prisma } from "@/lib/db";
-import type { TipoPostagem, StatusPostagem } from "@prisma/client";
+import type { TipoPostagem, StatusPostagem, LayoutVariante } from "@prisma/client";
 
 const LOGO_PATH = path.join(process.cwd(), "public", "legaus-logo.png");
+const FONTE_HEADLINE_PATH = path.join(process.cwd(), "assets", "fonts", "Baloo2-ExtraBold.ttf");
 const COR_MARCA = "#00A99D";
 const MODELO_IA = "claude-sonnet-5";
 
@@ -19,18 +22,14 @@ const DIMENSOES: Record<TipoPostagem, { largura: number; altura: number }> = {
 /**
  * Composição de marca — deliberadamente NÃO usa IA generativa pra "redesenhar"
  * a foto (arriscado demais distorcer uma instalação/produto real). É um
- * enquadramento + faixa de marca determinísticos: sempre correto, sempre
- * previsível, a mesma identidade visual em toda postagem.
+ * enquadramento + elementos de marca determinísticos, em 3 variantes de
+ * layout (faixa embaixo, logo no canto sem faixa, faixa lateral vertical),
+ * pra escolher qual encaixa melhor em cada foto — nem toda foto tem espaço
+ * pra faixa.
  */
-export async function compositarImagemBranded(bufferOriginal: Buffer, tipo: TipoPostagem): Promise<Buffer> {
-  const { largura, altura } = DIMENSOES[tipo];
+async function gerarFaixa(base: Buffer, largura: number, altura: number): Promise<Buffer> {
   const alturaFaixa = Math.round(altura * 0.12);
   const larguraLogo = Math.round(largura * 0.4);
-
-  const base = await sharp(bufferOriginal)
-    .rotate()
-    .resize(largura, altura, { fit: "cover", position: "attention" })
-    .toBuffer();
 
   const logoBuffer = await sharp(LOGO_PATH).resize({ width: larguraLogo }).png().toBuffer();
   const logoMeta = await sharp(logoBuffer).metadata();
@@ -49,6 +48,178 @@ export async function compositarImagemBranded(bufferOriginal: Buffer, tipo: Tipo
     ])
     .jpeg({ quality: 90 })
     .toBuffer();
+}
+
+async function gerarCanto(base: Buffer, largura: number, altura: number): Promise<Buffer> {
+  const larguraLogo = Math.round(largura * 0.3);
+  const logoBuffer = await sharp(LOGO_PATH).resize({ width: larguraLogo }).png().toBuffer();
+  const logoMeta = await sharp(logoBuffer).metadata();
+  const logoAltura = logoMeta.height ?? 0;
+
+  const margem = Math.round(largura * 0.05);
+  const padding = Math.round(largura * 0.02);
+  const cardLargura = larguraLogo + padding * 2;
+  const cardAltura = logoAltura + padding * 2;
+  const left = largura - margem - cardLargura;
+  const top = altura - margem - cardAltura;
+
+  const cardSvg = `<svg width="${cardLargura}" height="${cardAltura}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="18" ry="18" fill="white" fill-opacity="0.88"/></svg>`;
+
+  return sharp(base)
+    .composite([
+      { input: Buffer.from(cardSvg), top, left },
+      { input: logoBuffer, top: top + padding, left: left + padding },
+    ])
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+async function gerarLateral(base: Buffer, largura: number, altura: number): Promise<Buffer> {
+  const larguraFaixa = Math.round(largura * 0.15);
+  const padding = Math.round(larguraFaixa * 0.18);
+
+  const logoRotacionado = await sharp(LOGO_PATH)
+    .rotate(90)
+    .resize({ width: larguraFaixa - padding * 2 })
+    .png()
+    .toBuffer();
+  const logoMeta = await sharp(logoRotacionado).metadata();
+  const logoLargura = logoMeta.width ?? 0;
+  const logoAltura = logoMeta.height ?? 0;
+
+  const left = largura - larguraFaixa;
+  const faixaSvg = `<svg width="${larguraFaixa}" height="${altura}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="${COR_MARCA}"/></svg>`;
+
+  return sharp(base)
+    .composite([
+      { input: Buffer.from(faixaSvg), top: 0, left },
+      {
+        input: logoRotacionado,
+        top: Math.round((altura - logoAltura) / 2),
+        left: left + Math.round((larguraFaixa - logoLargura) / 2),
+      },
+    ])
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+/**
+ * Renderiza o texto de destaque como um "badge" (pílula colorida com texto
+ * branco em Baloo 2, a fonte mais próxima da tipografia arredondada usada
+ * nas postagens reais da Legaus Kids). Usa next/og (satori) porque é o único
+ * caminho testado que embute fonte customizada de forma confiável tanto
+ * localmente quanto na Vercel — SVG com fonte via sharp/librsvg se mostrou
+ * frágil entre ambientes.
+ */
+async function renderizarBadgeHeadline(texto: string, largura: number): Promise<Buffer> {
+  const fonte = await readFile(FONTE_HEADLINE_PATH);
+  const alturaCanvas = 480;
+
+  const resposta = new ImageResponse(
+    {
+      type: "div",
+      key: null,
+      props: {
+        style: { width: largura, height: alturaCanvas, display: "flex", padding: 48 },
+        children: {
+          type: "div",
+          key: null,
+          props: {
+            style: {
+              display: "flex",
+              backgroundColor: COR_MARCA,
+              borderRadius: 20,
+              padding: "18px 28px",
+              fontFamily: "Baloo2",
+              fontWeight: 800,
+              fontSize: 56,
+              color: "white",
+              lineHeight: 1.15,
+              maxWidth: largura - 96,
+            },
+            children: texto,
+          },
+        },
+      },
+    } as ConstructorParameters<typeof ImageResponse>[0],
+    { width: largura, height: alturaCanvas, fonts: [{ name: "Baloo2", data: fonte, weight: 800, style: "normal" }] },
+  );
+
+  const buffer = Buffer.from(await resposta.arrayBuffer());
+  return sharp(buffer).trim().toBuffer();
+}
+
+export type VarianteGerada = { layout: LayoutVariante; buffer: Buffer };
+
+export async function compositarVariantes(
+  bufferOriginal: Buffer,
+  tipo: TipoPostagem,
+  headline?: string | null,
+): Promise<VarianteGerada[]> {
+  const { largura, altura } = DIMENSOES[tipo];
+
+  const base = await sharp(bufferOriginal)
+    .rotate()
+    .resize(largura, altura, { fit: "cover", position: "attention" })
+    .toBuffer();
+
+  const badge = headline?.trim() ? await renderizarBadgeHeadline(headline.trim(), largura) : null;
+  const margemBadge = Math.round(largura * 0.06);
+
+  const comBadge = async (buf: Buffer): Promise<Buffer> => {
+    if (!badge) return buf;
+    return sharp(buf)
+      .composite([{ input: badge, top: margemBadge, left: margemBadge }])
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  };
+
+  const [faixa, canto, lateral] = await Promise.all([
+    gerarFaixa(base, largura, altura),
+    gerarCanto(base, largura, altura),
+    gerarLateral(base, largura, altura),
+  ]);
+
+  return [
+    { layout: "FAIXA", buffer: await comBadge(faixa) },
+    { layout: "CANTO", buffer: await comBadge(canto) },
+    { layout: "LATERAL", buffer: await comBadge(lateral) },
+  ];
+}
+
+/**
+ * Edição por IA generativa (OpenAI gpt-image-1) — separada de propósito da
+ * composição de marca acima. Só roda quando solicitado explicitamente
+ * (melhorar qualidade, remover objeto, trocar fundo etc.), porque alterar a
+ * foto de um produto/instalação real tem risco real de distorcer o que foi
+ * de fato entregue. V1 é só por instrução em texto, sem máscara/seleção de
+ * área.
+ */
+export async function editarImagemComIA(buffer: Buffer, mimetype: string, instrucao: string): Promise<Buffer> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY não configurada — edição por IA indisponível.");
+
+  const extensao = mimetype === "image/png" ? "png" : "jpg";
+  const form = new FormData();
+  form.append("model", "gpt-image-1");
+  form.append("prompt", instrucao);
+  form.append("image", new Blob([new Uint8Array(buffer)], { type: mimetype }), `imagem.${extensao}`);
+
+  const resposta = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+
+  if (!resposta.ok) {
+    const detalhe = await resposta.text().catch(() => "");
+    throw new Error(`Falha na edição por IA (${resposta.status}): ${detalhe.slice(0, 300)}`);
+  }
+
+  const json = (await resposta.json()) as { data?: { b64_json?: string }[] };
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) throw new Error("Edição por IA não retornou imagem.");
+  return Buffer.from(b64, "base64");
 }
 
 // Voz capturada do Instagram real (@legaus.kids) em 2026-08-31: entusiasmada,
@@ -97,24 +268,41 @@ export async function gerarLegenda(input: { tipo: TipoPostagem; contexto: string
 export async function criarPostagem(input: {
   tipo: TipoPostagem;
   contexto: string;
-  imagemBuffer: Buffer;
-  imagemMime: string;
+  headline?: string;
+  imagens: { buffer: Buffer; mime: string }[];
   criadoPorId: string;
 }) {
-  const imagemEditada = await compositarImagemBranded(input.imagemBuffer, input.tipo);
   const legenda = await gerarLegenda({ tipo: input.tipo, contexto: input.contexto });
+
+  const imagensParaCriar = await Promise.all(
+    input.imagens.map(async (img, ordem) => {
+      const variantes = await compositarVariantes(img.buffer, input.tipo, input.headline);
+      return {
+        ordem,
+        imagemOriginal: new Uint8Array(img.buffer),
+        imagemOriginalMime: img.mime,
+        variantes: {
+          create: variantes.map((v, i) => ({
+            layout: v.layout,
+            escolhida: i === 0,
+            imagem: new Uint8Array(v.buffer),
+            imagemMime: "image/jpeg",
+          })),
+        },
+      };
+    }),
+  );
 
   return prisma.postagem.create({
     data: {
       tipo: input.tipo,
       contexto: input.contexto || null,
+      headline: input.headline || null,
       legenda,
-      imagemOriginal: new Uint8Array(input.imagemBuffer),
-      imagemOriginalMime: input.imagemMime,
-      imagemEditada: new Uint8Array(imagemEditada),
-      imagemEditadaMime: "image/jpeg",
       criadoPorId: input.criadoPorId,
+      imagens: { create: imagensParaCriar },
     },
+    include: { imagens: { include: { variantes: true } } },
   });
 }
 
@@ -128,15 +316,84 @@ export function listarPostagens(status?: StatusPostagem) {
       status: true,
       legenda: true,
       contexto: true,
+      headline: true,
       criadoEm: true,
       criadoPor: { select: { nome: true } },
+      imagens: {
+        orderBy: { ordem: "asc" },
+        select: {
+          id: true,
+          ordem: true,
+          variantes: { select: { id: true, layout: true, escolhida: true } },
+        },
+      },
     },
     orderBy: { criadoEm: "desc" },
   });
 }
 
 export function buscarPostagemPorId(id: string) {
-  return prisma.postagem.findUnique({ where: { id } });
+  return prisma.postagem.findUnique({
+    where: { id },
+    include: {
+      criadoPor: { select: { nome: true } },
+      imagens: {
+        orderBy: { ordem: "asc" },
+        include: { variantes: true },
+      },
+    },
+  });
+}
+
+export function buscarVariantePorId(id: string) {
+  return prisma.postagemImagemVariante.findUnique({ where: { id } });
+}
+
+export function buscarImagemOriginalPorId(id: string) {
+  return prisma.postagemImagem.findUnique({
+    where: { id },
+    select: { imagemOriginal: true, imagemOriginalMime: true },
+  });
+}
+
+export async function definirVarianteEscolhida(postagemImagemId: string, varianteId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.postagemImagemVariante.updateMany({
+      where: { postagemImagemId },
+      data: { escolhida: false },
+    }),
+    prisma.postagemImagemVariante.update({
+      where: { id: varianteId },
+      data: { escolhida: true },
+    }),
+  ]);
+}
+
+export async function editarImagemDaPostagem(postagemImagemId: string, instrucao: string): Promise<void> {
+  const imagem = await prisma.postagemImagem.findUniqueOrThrow({
+    where: { id: postagemImagemId },
+    include: { postagem: { select: { tipo: true, headline: true } } },
+  });
+
+  const editada = await editarImagemComIA(Buffer.from(imagem.imagemOriginal), imagem.imagemOriginalMime, instrucao);
+  const variantes = await compositarVariantes(editada, imagem.postagem.tipo, imagem.postagem.headline);
+
+  await prisma.$transaction([
+    prisma.postagemImagem.update({
+      where: { id: postagemImagemId },
+      data: { imagemOriginal: new Uint8Array(editada), imagemOriginalMime: "image/png" },
+    }),
+    prisma.postagemImagemVariante.deleteMany({ where: { postagemImagemId } }),
+    prisma.postagemImagemVariante.createMany({
+      data: variantes.map((v, i) => ({
+        postagemImagemId,
+        layout: v.layout,
+        escolhida: i === 0,
+        imagem: new Uint8Array(v.buffer),
+        imagemMime: "image/jpeg",
+      })),
+    }),
+  ]);
 }
 
 export async function atualizarLegendaPostagem(id: string, legenda: string): Promise<void> {

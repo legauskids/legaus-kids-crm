@@ -473,19 +473,51 @@ model ModeloPostagem {
   atualizadoEm  DateTime @updatedAt
 }
 
+// Uma Postagem pode ter várias fotos (carrossel) — cada foto tem 2-3
+// variantes de layout de marca geradas de uma vez, e uma delas fica marcada
+// como escolhida. Edição por IA substitui a "original" da foto e regenera
+// as variantes.
 model Postagem {
-  id                 String          @id @default(cuid())
-  numero             Int             @unique @default(autoincrement())
-  tipo               TipoPostagem
-  status             StatusPostagem  @default(AGUARDANDO_APROVACAO)
-  contexto           String?
-  legenda            String?
+  id           String         @id @default(cuid())
+  numero       Int            @unique @default(autoincrement())
+  tipo         TipoPostagem
+  status       StatusPostagem @default(AGUARDANDO_APROVACAO)
+  contexto     String?
+  headline     String?
+  legenda      String?
+  criadoPorId  String
+  criadoPor    User           @relation(fields: [criadoPorId], references: [id])
+  criadoEm     DateTime       @default(now())
+  atualizadoEm DateTime       @updatedAt
+
+  imagens PostagemImagem[]
+}
+
+model PostagemImagem {
+  id                 String   @id @default(cuid())
+  postagemId         String
+  postagem           Postagem @relation(fields: [postagemId], references: [id], onDelete: Cascade)
+  ordem              Int      @default(0)
   imagemOriginal     Bytes
-  imagemOriginalMime String          @default("image/jpeg")
-  imagemEditada      Bytes
-  imagemEditadaMime  String          @default("image/jpeg")
-  criadoPorId        String
-  criadoPor          User            @relation(fields: [criadoPorId], references: [id])
-  criadoEm           DateTime        @default(now())
-  atualizadoEm       DateTime        @updatedAt
+  imagemOriginalMime String   @default("image/jpeg")
+  criadoEm           DateTime @default(now())
+
+  variantes PostagemImagemVariante[]
+}
+
+enum LayoutVariante {
+  FAIXA
+  CANTO
+  LATERAL
+}
+
+model PostagemImagemVariante {
+  id               String         @id @default(cuid())
+  postagemImagemId String
+  postagemImagem   PostagemImagem @relation(fields: [postagemImagemId], references: [id], onDelete: Cascade)
+  layout           LayoutVariante
+  escolhida        Boolean        @default(false)
+  imagem           Bytes
+  imagemMime       String         @default("image/jpeg")
+  criadoEm         DateTime       @default(now())
 }
