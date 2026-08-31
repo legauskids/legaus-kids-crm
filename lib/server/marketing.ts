@@ -11,6 +11,7 @@ const LOGO_PATH = path.join(process.cwd(), "public", "legaus-logo.png");
 const FONTE_HEADLINE_PATH = path.join(process.cwd(), "assets", "fonts", "Baloo2-ExtraBold.ttf");
 const COR_MARCA = "#00A99D";
 const COR_MARCA_ESCURA = "#00786f";
+const COR_CONTORNO_TEXTO = "#ff6b3d";
 const MODELO_IA = "claude-sonnet-5";
 
 const DIMENSOES: Record<TipoPostagem, { largura: number; altura: number }> = {
@@ -142,34 +143,39 @@ async function gerarLateral(base: Buffer, largura: number, altura: number): Prom
     .toBuffer();
 }
 
+function sparkleSvg(tamanho: number, cor: string): string {
+  return `<svg width="${tamanho}" height="${tamanho}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 0 L61 39 L100 50 L61 61 L50 100 L39 61 L0 50 L39 39 Z" fill="${cor}"/></svg>`;
+}
+
 /**
- * Renderiza o texto de destaque como um "badge" (pílula colorida com texto
- * branco em Baloo 2, a fonte mais próxima da tipografia arredondada usada
- * nas postagens reais da Legaus Kids). Usa next/og (satori) porque é o único
- * caminho testado que embute fonte customizada de forma confiável tanto
- * localmente quanto na Vercel — SVG com fonte via sharp/librsvg se mostrou
- * frágil entre ambientes.
+ * Renderiza o texto de destaque flutuando direto sobre a foto — texto branco
+ * grande em Baloo 2 com contorno colorido (WebkitTextStroke) e sombra, igual
+ * ao estilo das postagens reais do Instagram da Legaus Kids, em vez de uma
+ * pílula com fundo sólido (que tampava a foto e ficava artificial). Usa
+ * next/og (satori) porque é o único caminho testado que embute fonte
+ * customizada de forma confiável tanto localmente quanto na Vercel — e,
+ * important: satori tem suporte real a WebkitTextStroke/textShadow, então dá
+ * pra imitar a tipografia "bubble" sem precisar de Chromium nem de serviço
+ * externo.
  */
-async function renderizarBadgeHeadline(texto: string, largura: number): Promise<Buffer> {
+async function renderizarHeadline(texto: string, largura: number, altura: number): Promise<Buffer> {
   const fonte = await readFile(FONTE_HEADLINE_PATH);
-  const alturaCanvas = 480;
+  const numeroPalavras = texto.trim().split(/\s+/).length;
+  const fontSize = numeroPalavras > 5 ? 60 : numeroPalavras > 3 ? 72 : 86;
 
   const resposta = new ImageResponse(
     {
       type: "div",
       key: null,
       props: {
-        // alignItems/justifyContent em flex-start é essencial: sem isso o
-        // filho "pílula" estica (stretch é o default do flexbox) até
-        // preencher todo o canvas e vira um bloco retangular gigante em vez
-        // de uma pílula compacta.
         style: {
           width: largura,
-          height: alturaCanvas,
+          height: altura,
           display: "flex",
+          flexDirection: "column",
           alignItems: "flex-start",
           justifyContent: "flex-start",
-          padding: 48,
+          padding: "72px 64px",
         },
         children: {
           type: "div",
@@ -177,28 +183,46 @@ async function renderizarBadgeHeadline(texto: string, largura: number): Promise<
           props: {
             style: {
               display: "flex",
-              background: `linear-gradient(135deg, ${COR_MARCA}, ${COR_MARCA_ESCURA})`,
-              borderRadius: 999,
-              padding: "20px 36px",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+              flexWrap: "wrap",
+              width: Math.round(largura * 0.78),
               fontFamily: "Baloo2",
               fontWeight: 800,
-              fontSize: 50,
+              fontSize,
               color: "white",
-              lineHeight: 1.1,
-              letterSpacing: -0.5,
-              maxWidth: largura - 96,
+              WebkitTextStroke: `9px ${COR_CONTORNO_TEXTO}`,
+              lineHeight: 1.08,
+              textShadow: "0 8px 18px rgba(0,0,0,0.45)",
             },
             children: texto,
           },
         },
       },
     } as ConstructorParameters<typeof ImageResponse>[0],
-    { width: largura, height: alturaCanvas, fonts: [{ name: "Baloo2", data: fonte, weight: 800, style: "normal" }] },
+    { width: largura, height: altura, fonts: [{ name: "Baloo2", data: fonte, weight: 800, style: "normal" }] },
   );
 
-  const buffer = Buffer.from(await resposta.arrayBuffer());
-  return sharp(buffer).trim().toBuffer();
+  return Buffer.from(await resposta.arrayBuffer());
+}
+
+async function montarCamadaHeadline(
+  texto: string,
+  largura: number,
+  altura: number,
+): Promise<sharp.OverlayOptions[]> {
+  const headlineBuffer = await renderizarHeadline(texto, largura, altura);
+  return [
+    { input: headlineBuffer, top: 0, left: 0 },
+    {
+      input: Buffer.from(sparkleSvg(Math.round(largura * 0.052), "#ffd23f")),
+      top: Math.round(altura * 0.03),
+      left: largura - Math.round(largura * 0.12),
+    },
+    {
+      input: Buffer.from(sparkleSvg(Math.round(largura * 0.028), "#ffffff")),
+      top: Math.round(altura * 0.08),
+      left: largura - Math.round(largura * 0.065),
+    },
+  ];
 }
 
 export type VarianteGerada = { layout: LayoutVariante; buffer: Buffer };
@@ -215,15 +239,11 @@ export async function compositarVariantes(
     .resize(largura, altura, { fit: "cover", position: "attention" })
     .toBuffer();
 
-  const badge = headline?.trim() ? await renderizarBadgeHeadline(headline.trim(), largura) : null;
-  const margemBadge = Math.round(largura * 0.06);
+  const camadaHeadline = headline?.trim() ? await montarCamadaHeadline(headline.trim(), largura, altura) : null;
 
-  const comBadge = async (buf: Buffer): Promise<Buffer> => {
-    if (!badge) return buf;
-    return sharp(buf)
-      .composite([{ input: badge, top: margemBadge, left: margemBadge }])
-      .jpeg({ quality: 92 })
-      .toBuffer();
+  const comHeadline = async (buf: Buffer): Promise<Buffer> => {
+    if (!camadaHeadline) return buf;
+    return sharp(buf).composite(camadaHeadline).jpeg({ quality: 92 }).toBuffer();
   };
 
   const [faixa, canto, lateral] = await Promise.all([
@@ -233,9 +253,9 @@ export async function compositarVariantes(
   ]);
 
   return [
-    { layout: "FAIXA", buffer: await comBadge(faixa) },
-    { layout: "CANTO", buffer: await comBadge(canto) },
-    { layout: "LATERAL", buffer: await comBadge(lateral) },
+    { layout: "FAIXA", buffer: await comHeadline(faixa) },
+    { layout: "CANTO", buffer: await comHeadline(canto) },
+    { layout: "LATERAL", buffer: await comHeadline(lateral) },
   ];
 }
 
