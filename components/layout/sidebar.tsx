@@ -14,6 +14,7 @@ import {
   FileText,
   Mic,
   Wallet,
+  Megaphone,
 } from "lucide-react";
 import { LogoMark } from "@/components/layout/logo-mark";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
@@ -28,6 +29,7 @@ export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashbo
   { href: "/cadastros", label: "Cadastros", icon: Users, modulo: "contatos" },
   { href: "/producao", label: "Produção", icon: Factory, modulo: "producao" },
   { href: "/agente", label: "Agente", icon: Mic, modulo: "agente" },
+  { href: "/marketing", label: "Marketing", icon: Megaphone, modulo: "marketing" },
 ];
 
 const NAV_ITEMS_SECUNDARIOS: typeof NAV_ITEMS = [

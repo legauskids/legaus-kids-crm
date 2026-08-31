@@ -95,6 +95,7 @@ model User {
   atividades          Atividade[]
   orcamentos          Orcamento[]        @relation("ResponsavelOrcamento")
   comandosAgente      ComandoAgente[]
+  postagens           Postagem[]
 }
 
 enum OrigemComando {
@@ -440,4 +441,51 @@ model OrcamentoItem {
   quantidade            Int       @default(1)
   valorUnitarioCentavos Int       @default(0)
   ordem                 Int       @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Marketing — postagens (Instagram/Facebook/Status do WhatsApp). Fotos ficam
+// guardadas como bytes no próprio Postgres (mesma ideia do PDF gerado sob
+// demanda: sem depender de um serviço de storage externo pra funcionar hoje).
+// ---------------------------------------------------------------------------
+
+enum TipoPostagem {
+  FEED_INSTAGRAM
+  STORY_INSTAGRAM
+  STATUS_WHATSAPP
+  FEED_FACEBOOK
+}
+
+enum StatusPostagem {
+  RASCUNHO
+  AGUARDANDO_APROVACAO
+  APROVADO
+  PUBLICADO
+  RECUSADO
+}
+
+model ModeloPostagem {
+  id            String   @id @default(cuid())
+  titulo        String
+  tipo          TipoPostagem
+  legendaModelo String
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+}
+
+model Postagem {
+  id                 String          @id @default(cuid())
+  numero             Int             @unique @default(autoincrement())
+  tipo               TipoPostagem
+  status             StatusPostagem  @default(AGUARDANDO_APROVACAO)
+  contexto           String?
+  legenda            String?
+  imagemOriginal     Bytes
+  imagemOriginalMime String          @default("image/jpeg")
+  imagemEditada      Bytes
+  imagemEditadaMime  String          @default("image/jpeg")
+  criadoPorId        String
+  criadoPor          User            @relation(fields: [criadoPorId], references: [id])
+  criadoEm           DateTime        @default(now())
+  atualizadoEm       DateTime        @updatedAt
 }
