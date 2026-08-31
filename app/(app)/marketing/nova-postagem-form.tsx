@@ -6,9 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ImagePlus, Loader2, X } from "lucide-react";
+import { ImagePlus, Loader2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { criarPostagemAction, type PostagemFormState } from "@/app/(app)/marketing/actions";
-import { TIPO_POSTAGEM_LABEL } from "@/app/(app)/marketing/types";
+import { TIPO_POSTAGEM_LABEL, type TipoPostagem } from "@/app/(app)/marketing/types";
 
 const initialState: PostagemFormState = {};
 
@@ -18,16 +18,18 @@ export function NovaPostagemForm() {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(criarPostagemAction, initialState);
   const [arquivos, setArquivos] = useState<ArquivoComPreview[]>([]);
+  const [tipos, setTipos] = useState<TipoPostagem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (state.success) {
       arquivos.forEach((a) => URL.revokeObjectURL(a.preview));
-      router.push("/marketing?aba=postagens");
+      const ids = state.ids ?? [];
+      router.push(ids.length > 0 ? `/marketing?aba=postagens&novos=${ids.join(",")}` : "/marketing?aba=postagens");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.success, router]);
+  }, [state.success, state.ids, router]);
 
   function adicionarArquivos(novos: FileList | null) {
     if (!novos || novos.length === 0) return;
@@ -43,9 +45,25 @@ export function NovaPostagemForm() {
     });
   }
 
+  function moverArquivo(index: number, direcao: -1 | 1) {
+    setArquivos((atual) => {
+      const destino = index + direcao;
+      if (destino < 0 || destino >= atual.length) return atual;
+      const copia = [...atual];
+      [copia[index], copia[destino]] = [copia[destino], copia[index]];
+      return copia;
+    });
+  }
+
+  function alternarTipo(tipo: TipoPostagem) {
+    setTipos((atual) => (atual.includes(tipo) ? atual.filter((t) => t !== tipo) : [...atual, tipo]));
+  }
+
   function submeter(formData: FormData) {
     formData.delete("imagens");
     arquivos.forEach((a) => formData.append("imagens", a.file));
+    formData.delete("tipos");
+    tipos.forEach((t) => formData.append("tipos", t));
     formAction(formData);
   }
 
@@ -70,9 +88,31 @@ export function NovaPostagemForm() {
                     <X className="size-3.5" />
                   </button>
                   {arquivos.length > 1 && (
-                    <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                      {i + 1}
-                    </span>
+                    <>
+                      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        {i + 1}
+                      </span>
+                      <div className="absolute inset-x-0 bottom-1 flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          type="button"
+                          disabled={i === 0}
+                          onClick={() => moverArquivo(i, -1)}
+                          className="rounded-full bg-black/60 p-1 text-white disabled:opacity-30"
+                          title="Mover pra esquerda"
+                        >
+                          <ChevronLeft className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={i === arquivos.length - 1}
+                          onClick={() => moverArquivo(i, 1)}
+                          className="rounded-full bg-black/60 p-1 text-white disabled:opacity-30"
+                          title="Mover pra direita"
+                        >
+                          <ChevronRight className="size-3.5" />
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
@@ -98,24 +138,37 @@ export function NovaPostagemForm() {
             />
             {arquivos.length > 1 && (
               <p className="text-xs text-muted-foreground">
-                {arquivos.length} fotos vão virar um carrossel na mesma postagem, nessa ordem.
+                {arquivos.length} fotos vão virar um carrossel na mesma postagem, nessa ordem — passe o mouse pra reordenar ou remover.
               </p>
             )}
 
             <div className="space-y-2">
-              <label htmlFor="tipo" className="text-sm font-medium">
-                Onde vai ser postado
-              </label>
-              <select id="tipo" name="tipo" required defaultValue="" className="h-9 w-full rounded-md border bg-background px-2 text-sm">
-                <option value="" disabled>
-                  Escolha...
-                </option>
-                {Object.entries(TIPO_POSTAGEM_LABEL).map(([valor, label]) => (
-                  <option key={valor} value={valor}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <span className="text-sm font-medium">Onde vai ser postado</span>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(TIPO_POSTAGEM_LABEL).map(([valor, label]) => {
+                  const marcado = tipos.includes(valor as TipoPostagem);
+                  return (
+                    <label
+                      key={valor}
+                      className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
+                        marcado ? "border-primary bg-primary/5 text-foreground" : "border-border text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={marcado}
+                        onChange={() => alternarTipo(valor as TipoPostagem)}
+                        className="size-4 accent-primary"
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Pode marcar mais de um — cada destino gera sua própria postagem, já no formato certo, e no final você vê a prévia de
+                todos juntos.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -144,7 +197,7 @@ export function NovaPostagemForm() {
 
             {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 
-            <Button type="submit" className="w-full" disabled={pending || arquivos.length === 0}>
+            <Button type="submit" className="w-full" disabled={pending || arquivos.length === 0 || tipos.length === 0}>
               {pending ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />

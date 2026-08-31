@@ -19,7 +19,9 @@ function revalidateMarketing() {
   revalidatePath("/marketing");
 }
 
-export type PostagemFormState = { error?: string; success?: boolean };
+export type PostagemFormState = { error?: string; success?: boolean; ids?: string[] };
+
+const TIPOS_VALIDOS = ["FEED_INSTAGRAM", "STORY_INSTAGRAM", "STATUS_WHATSAPP", "FEED_FACEBOOK"];
 
 export async function criarPostagemAction(
   _prevState: PostagemFormState,
@@ -27,15 +29,15 @@ export async function criarPostagemAction(
 ): Promise<PostagemFormState> {
   const user = await requireModulo("marketing");
   const arquivos = formData.getAll("imagens").filter((a): a is File => a instanceof File && a.size > 0);
-  const tipo = String(formData.get("tipo") ?? "");
+  const tipos = formData.getAll("tipos").map(String).filter((t) => TIPOS_VALIDOS.includes(t));
   const contexto = String(formData.get("contexto") ?? "").trim();
   const headline = String(formData.get("headline") ?? "").trim();
 
   if (arquivos.length === 0) {
     return { error: "Escolha ao menos uma imagem." };
   }
-  if (!["FEED_INSTAGRAM", "STORY_INSTAGRAM", "STATUS_WHATSAPP", "FEED_FACEBOOK"].includes(tipo)) {
-    return { error: "Escolha o tipo de postagem." };
+  if (tipos.length === 0) {
+    return { error: "Escolha ao menos um lugar pra postar." };
   }
 
   try {
@@ -45,19 +47,24 @@ export async function criarPostagemAction(
         mime: arquivo.type || "image/jpeg",
       })),
     );
-    await criarPostagem({
-      tipo: tipo as TipoPostagem,
-      contexto,
-      headline: headline || undefined,
-      imagens,
-      criadoPorId: user.id,
-    });
+    // uma postagem por destino selecionado — cada tipo tem seu próprio
+    // enquadramento (feed x story) e formato de legenda.
+    const criadas = await Promise.all(
+      tipos.map((tipo) =>
+        criarPostagem({
+          tipo: tipo as TipoPostagem,
+          contexto,
+          headline: headline || undefined,
+          imagens,
+          criadoPorId: user.id,
+        }),
+      ),
+    );
+    revalidateMarketing();
+    return { success: true, ids: criadas.map((p) => p.id) };
   } catch (erro) {
     return { error: erro instanceof Error ? erro.message : "Não consegui processar as imagens." };
   }
-
-  revalidateMarketing();
-  return { success: true };
 }
 
 export async function definirVarianteEscolhidaAction(postagemImagemId: string, varianteId: string): Promise<void> {

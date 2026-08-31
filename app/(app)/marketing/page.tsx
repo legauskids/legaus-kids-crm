@@ -12,10 +12,15 @@ const ABAS = [
   { chave: "modelos", label: "Modelos" },
 ] as const;
 
-export default async function MarketingPage({ searchParams }: { searchParams: Promise<{ aba?: string }> }) {
+export default async function MarketingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aba?: string; novos?: string }>;
+}) {
   await requireModulo("marketing");
-  const { aba } = await searchParams;
+  const { aba, novos } = await searchParams;
   const abaAtiva = ABAS.some((a) => a.chave === aba) ? aba! : "nova";
+  const idsNovos = novos ? novos.split(",").filter(Boolean) : undefined;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -42,16 +47,17 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
       </div>
 
       {abaAtiva === "nova" && <NovaPostagemForm />}
-      {abaAtiva === "postagens" && <PostagensDataTab />}
+      {abaAtiva === "postagens" && <PostagensDataTab idsNovos={idsNovos} />}
       {abaAtiva === "modelos" && <ModelosDataTab />}
     </div>
   );
 }
 
-async function PostagensDataTab() {
-  const postagens = await listarPostagens();
+async function PostagensDataTab({ idsNovos }: { idsNovos?: string[] }) {
+  const postagens = await listarPostagens(undefined, idsNovos);
   return (
     <PostagensLista
+      filtrandoNovos={Boolean(idsNovos && idsNovos.length > 0)}
       postagens={postagens.map((p) => ({
         id: p.id,
         numero: p.numero,

@@ -10,6 +10,7 @@ import type { TipoPostagem, StatusPostagem, LayoutVariante } from "@prisma/clien
 const LOGO_PATH = path.join(process.cwd(), "public", "legaus-logo.png");
 const FONTE_HEADLINE_PATH = path.join(process.cwd(), "assets", "fonts", "Baloo2-ExtraBold.ttf");
 const COR_MARCA = "#00A99D";
+const COR_MARCA_ESCURA = "#00786f";
 const MODELO_IA = "claude-sonnet-5";
 
 const DIMENSOES: Record<TipoPostagem, { largura: number; altura: number }> = {
@@ -28,25 +29,39 @@ const DIMENSOES: Record<TipoPostagem, { largura: number; altura: number }> = {
  * pra faixa.
  */
 async function gerarFaixa(base: Buffer, largura: number, altura: number): Promise<Buffer> {
-  const alturaFaixa = Math.round(altura * 0.12);
-  const larguraLogo = Math.round(largura * 0.4);
+  const larguraLogo = Math.round(largura * 0.32);
+  const paddingVertical = Math.round(largura * 0.03);
 
   const logoBuffer = await sharp(LOGO_PATH).resize({ width: larguraLogo }).png().toBuffer();
   const logoMeta = await sharp(logoBuffer).metadata();
   const logoAltura = logoMeta.height ?? 0;
+  // altura da faixa segue o tamanho real do logo (com sua legenda "Fábrica de
+  // Brinquedos") em vez de uma fração fixa da imagem — evita cortar o logo.
+  const alturaFaixa = logoAltura + paddingVertical * 2;
+  const alturaTransicao = Math.round(alturaFaixa * 0.55);
 
-  const faixaSvg = `<svg width="${largura}" height="${alturaFaixa}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="${COR_MARCA}"/></svg>`;
+  const transicaoSvg = `<svg width="${largura}" height="${alturaTransicao}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${COR_MARCA_ESCURA}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${COR_MARCA_ESCURA}" stop-opacity="0.92"/>
+    </linearGradient></defs>
+    <rect width="100%" height="100%" fill="url(#g)"/>
+  </svg>`;
+  const faixaSvg = `<svg width="${largura}" height="${alturaFaixa}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="${COR_MARCA_ESCURA}"/>
+      <stop offset="100%" stop-color="${COR_MARCA}"/>
+    </linearGradient></defs>
+    <rect width="100%" height="100%" fill="url(#g2)"/>
+  </svg>`;
 
   return sharp(base)
     .composite([
+      { input: Buffer.from(transicaoSvg), top: altura - alturaFaixa - alturaTransicao, left: 0 },
       { input: Buffer.from(faixaSvg), top: altura - alturaFaixa, left: 0 },
-      {
-        input: logoBuffer,
-        top: altura - alturaFaixa + Math.round((alturaFaixa - logoAltura) / 2),
-        left: Math.round((largura - larguraLogo) / 2),
-      },
+      { input: logoBuffer, top: altura - alturaFaixa + paddingVertical, left: Math.round((largura - larguraLogo) / 2) },
     ])
-    .jpeg({ quality: 90 })
+    .jpeg({ quality: 92 })
     .toBuffer();
 }
 
@@ -57,26 +72,34 @@ async function gerarCanto(base: Buffer, largura: number, altura: number): Promis
   const logoAltura = logoMeta.height ?? 0;
 
   const margem = Math.round(largura * 0.05);
-  const padding = Math.round(largura * 0.02);
+  const padding = Math.round(largura * 0.025);
   const cardLargura = larguraLogo + padding * 2;
   const cardAltura = logoAltura + padding * 2;
+  const folga = 30;
   const left = largura - margem - cardLargura;
   const top = altura - margem - cardAltura;
 
-  const cardSvg = `<svg width="${cardLargura}" height="${cardAltura}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="18" ry="18" fill="white" fill-opacity="0.88"/></svg>`;
+  const cardSvg = `<svg width="${cardLargura + folga * 2}" height="${cardAltura + folga * 2}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="s" x="-50%" y="-50%" width="200%" height="200%">
+        <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.32"/>
+      </filter>
+    </defs>
+    <rect x="${folga}" y="${folga}" width="${cardLargura}" height="${cardAltura}" rx="20" ry="20" fill="white" fill-opacity="0.94" filter="url(#s)"/>
+  </svg>`;
 
   return sharp(base)
     .composite([
-      { input: Buffer.from(cardSvg), top, left },
+      { input: Buffer.from(cardSvg), top: top - folga, left: left - folga },
       { input: logoBuffer, top: top + padding, left: left + padding },
     ])
-    .jpeg({ quality: 90 })
+    .jpeg({ quality: 92 })
     .toBuffer();
 }
 
 async function gerarLateral(base: Buffer, largura: number, altura: number): Promise<Buffer> {
-  const larguraFaixa = Math.round(largura * 0.15);
-  const padding = Math.round(larguraFaixa * 0.18);
+  const larguraFaixa = Math.round(largura * 0.17);
+  const padding = Math.round(larguraFaixa * 0.16);
 
   const logoRotacionado = await sharp(LOGO_PATH)
     .rotate(90)
@@ -88,10 +111,26 @@ async function gerarLateral(base: Buffer, largura: number, altura: number): Prom
   const logoAltura = logoMeta.height ?? 0;
 
   const left = largura - larguraFaixa;
-  const faixaSvg = `<svg width="${larguraFaixa}" height="${altura}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="${COR_MARCA}"/></svg>`;
+  const larguraTransicao = Math.round(larguraFaixa * 0.6);
+
+  const transicaoSvg = `<svg width="${larguraTransicao}" height="${altura}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="${COR_MARCA_ESCURA}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${COR_MARCA_ESCURA}" stop-opacity="0.92"/>
+    </linearGradient></defs>
+    <rect width="100%" height="100%" fill="url(#g3)"/>
+  </svg>`;
+  const faixaSvg = `<svg width="${larguraFaixa}" height="${altura}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="g4" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${COR_MARCA}"/>
+      <stop offset="100%" stop-color="${COR_MARCA_ESCURA}"/>
+    </linearGradient></defs>
+    <rect width="100%" height="100%" fill="url(#g4)"/>
+  </svg>`;
 
   return sharp(base)
     .composite([
+      { input: Buffer.from(transicaoSvg), top: 0, left: left - larguraTransicao },
       { input: Buffer.from(faixaSvg), top: 0, left },
       {
         input: logoRotacionado,
@@ -99,7 +138,7 @@ async function gerarLateral(base: Buffer, largura: number, altura: number): Prom
         left: left + Math.round((larguraFaixa - logoLargura) / 2),
       },
     ])
-    .jpeg({ quality: 90 })
+    .jpeg({ quality: 92 })
     .toBuffer();
 }
 
@@ -120,21 +159,34 @@ async function renderizarBadgeHeadline(texto: string, largura: number): Promise<
       type: "div",
       key: null,
       props: {
-        style: { width: largura, height: alturaCanvas, display: "flex", padding: 48 },
+        // alignItems/justifyContent em flex-start é essencial: sem isso o
+        // filho "pílula" estica (stretch é o default do flexbox) até
+        // preencher todo o canvas e vira um bloco retangular gigante em vez
+        // de uma pílula compacta.
+        style: {
+          width: largura,
+          height: alturaCanvas,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "flex-start",
+          padding: 48,
+        },
         children: {
           type: "div",
           key: null,
           props: {
             style: {
               display: "flex",
-              backgroundColor: COR_MARCA,
-              borderRadius: 20,
-              padding: "18px 28px",
+              background: `linear-gradient(135deg, ${COR_MARCA}, ${COR_MARCA_ESCURA})`,
+              borderRadius: 999,
+              padding: "20px 36px",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
               fontFamily: "Baloo2",
               fontWeight: 800,
-              fontSize: 56,
+              fontSize: 50,
               color: "white",
-              lineHeight: 1.15,
+              lineHeight: 1.1,
+              letterSpacing: -0.5,
               maxWidth: largura - 96,
             },
             children: texto,
@@ -170,7 +222,7 @@ export async function compositarVariantes(
     if (!badge) return buf;
     return sharp(buf)
       .composite([{ input: badge, top: margemBadge, left: margemBadge }])
-      .jpeg({ quality: 90 })
+      .jpeg({ quality: 92 })
       .toBuffer();
   };
 
@@ -306,9 +358,12 @@ export async function criarPostagem(input: {
   });
 }
 
-export function listarPostagens(status?: StatusPostagem) {
+export function listarPostagens(status?: StatusPostagem, ids?: string[]) {
   return prisma.postagem.findMany({
-    where: status ? { status } : undefined,
+    where: {
+      ...(status ? { status } : {}),
+      ...(ids && ids.length > 0 ? { id: { in: ids } } : {}),
+    },
     select: {
       id: true,
       numero: true,

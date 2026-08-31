@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -257,7 +258,7 @@ function PostagemCard({ postagem }: { postagem: PostagemVM }) {
   );
 }
 
-export function PostagensLista({ postagens }: { postagens: PostagemVM[] }) {
+export function PostagensLista({ postagens, filtrandoNovos }: { postagens: PostagemVM[]; filtrandoNovos?: boolean }) {
   if (postagens.length === 0) {
     return (
       <div className="flex-1 p-6">
@@ -268,6 +269,17 @@ export function PostagensLista({ postagens }: { postagens: PostagemVM[] }) {
 
   return (
     <div className="flex-1 space-y-3 p-6">
+      {filtrandoNovos && (
+        <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+          <span className="text-foreground">
+            Prévia{postagens.length > 1 ? "s" : ""} de {postagens.length} destino{postagens.length > 1 ? "s" : ""} que você acabou de
+            gerar.
+          </span>
+          <Link href="/marketing?aba=postagens" className="font-medium text-primary hover:underline">
+            Ver todas as postagens
+          </Link>
+        </div>
+      )}
       {postagens.map((p) => (
         <PostagemCard key={p.id} postagem={p} />
       ))}
