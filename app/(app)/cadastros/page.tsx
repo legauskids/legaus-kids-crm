@@ -1,6 +1,7 @@
 import { requireModulo } from "@/lib/auth/guards";
 import { listarContatosParaPainel } from "@/lib/server/contatos";
 import { listarProdutosAgrupados, CATEGORIAS_FIXAS } from "@/lib/server/produtos";
+import { listarCotacoes } from "@/lib/server/cotacoes";
 import { CadastrosShell } from "@/app/(app)/cadastros/cadastros-shell";
 import type { ContatoVM } from "@/app/(app)/cadastros/lista-contatos";
 
@@ -29,11 +30,12 @@ function paraVM(c: Awaited<ReturnType<typeof listarContatosParaPainel>>[number])
 export default async function CadastrosPage() {
   await requireModulo("contatos");
 
-  const [contatos, clientes, fornecedores, produtos] = await Promise.all([
+  const [contatos, clientes, fornecedores, produtos, cotacoes] = await Promise.all([
     listarContatosParaPainel("CONTATO"),
     listarContatosParaPainel("CLIENTE"),
     listarContatosParaPainel("FORNECEDOR"),
     listarProdutosAgrupados(),
+    listarCotacoes(),
   ]);
 
   return (
@@ -42,6 +44,15 @@ export default async function CadastrosPage() {
       clientes={clientes.map(paraVM)}
       fornecedores={fornecedores.map(paraVM)}
       categoriasFixas={CATEGORIAS_FIXAS}
+      cotacoes={cotacoes.map((c) => ({
+        id: c.id,
+        numero: c.numero,
+        tipo: c.tipo,
+        titulo: c.titulo,
+        criadoEm: c.criadoEm.toISOString(),
+        criadoPorNome: c.criadoPor.nome,
+        quantidadeItens: c._count.itens,
+      }))}
       produtos={produtos.map((p) => ({
         id: p.id,
         nome: p.nome,

@@ -1,7 +1,7 @@
 import "server-only";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import sharp from "sharp";
+import sharp, { type OverlayOptions } from "sharp";
 import Anthropic from "@anthropic-ai/sdk";
 import { ImageResponse } from "next/og";
 import { prisma } from "@/lib/db";
@@ -208,7 +208,7 @@ async function montarCamadaHeadline(
   texto: string,
   largura: number,
   altura: number,
-): Promise<sharp.OverlayOptions[]> {
+): Promise<OverlayOptions[]> {
   const headlineBuffer = await renderizarHeadline(texto, largura, altura);
   return [
     { input: headlineBuffer, top: 0, left: 0 },

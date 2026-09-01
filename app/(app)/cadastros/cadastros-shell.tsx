@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ListaContatos, type ContatoVM } from "@/app/(app)/cadastros/lista-contatos";
 import { ListaPrecos } from "@/app/(app)/cadastros/lista-precos";
+import { ListaCotacoes, type CotacaoResumoVM } from "@/app/(app)/cadastros/cotacoes/lista-cotacoes";
 import { ProdutosShell, type ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 
 export function CadastrosShell({
@@ -12,12 +13,14 @@ export function CadastrosShell({
   fornecedores,
   produtos,
   categoriasFixas,
+  cotacoes,
 }: {
   contatos: ContatoVM[];
   clientes: ContatoVM[];
   fornecedores: ContatoVM[];
   produtos: ProdutoVM[];
   categoriasFixas: string[];
+  cotacoes: CotacaoResumoVM[];
 }) {
   // Patches locais por produto (id -> campos alterados), aplicados por cima
   // do que veio do servidor. Assim a guia Produtos reflete na hora uma
@@ -48,6 +51,7 @@ export function CadastrosShell({
             <TabsTrigger value="fornecedores">Fornecedores ({fornecedores.length})</TabsTrigger>
             <TabsTrigger value="produtos">Produtos ({produtos.length})</TabsTrigger>
             <TabsTrigger value="lista-precos">Lista de preços</TabsTrigger>
+            <TabsTrigger value="cotacoes">Cotações ({cotacoes.length})</TabsTrigger>
           </TabsList>
         </div>
 
@@ -65,6 +69,9 @@ export function CadastrosShell({
         </TabsContent>
         <TabsContent value="lista-precos" className="flex-1 overflow-hidden">
           <ListaPrecos produtos={produtosAtuais} categoriasFixas={categoriasFixas} onAtualizarProduto={aplicarAjusteProduto} />
+        </TabsContent>
+        <TabsContent value="cotacoes" className="flex-1 overflow-hidden">
+          <ListaCotacoes cotacoes={cotacoes} />
         </TabsContent>
       </Tabs>
     </div>

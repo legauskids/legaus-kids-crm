@@ -96,6 +96,7 @@ model User {
   orcamentos          Orcamento[]        @relation("ResponsavelOrcamento")
   comandosAgente      ComandoAgente[]
   postagens           Postagem[]
+  cotacoes            Cotacao[]
 }
 
 enum OrigemComando {
@@ -520,4 +521,57 @@ model PostagemImagemVariante {
   imagem           Bytes
   imagemMime       String         @default("image/jpeg")
   criadoEm         DateTime       @default(now())
+}
+
+enum TipoCotacao {
+  PLAYGROUND
+  KIDPLAY
+  BRINQUEDOS
+  OUTROS
+}
+
+// Calculadora de custo/margem por categoria (aba "Cotações" em Cadastros) —
+// reconstrução das planilhas Excel que o Marcos já usa pra precificar um
+// playground/kidplay sob medida: itens agrupados por seção (torre, conexão,
+// subidas...), mais um painel de resumo (mão de obra, markup, instalação,
+// frete, imposto) que calcula o preço de venda e a margem. Diferente do
+// Orçamento (documento formal pro cliente): aqui é a ferramenta de cálculo
+// interna, antes de virar proposta.
+model Cotacao {
+  id     String        @id @default(cuid())
+  numero Int           @unique @default(autoincrement())
+  tipo   TipoCotacao
+  titulo String
+  itens  CotacaoItem[]
+
+  // Mão de obra varia em quantidade de campos por tipo (Playground tem 1,
+  // Kidplay tem 2 — "TL" e "Estofador") — guardado como
+  // [{ label: string, valorCentavos: number }].
+  maoDeObra               Json     @default("[]")
+  markup                  Float    @default(1.9)
+  adicionalCentavos       Int      @default(0)
+  instalacaoPercentual    Float    @default(5)
+  freteKm                 Float    @default(0)
+  fretePrecoPorKmCentavos Int      @default(500)
+  impostoCentavos         Int      @default(0)
+
+  criadoPorId  String
+  criadoPor    User     @relation(fields: [criadoPorId], references: [id])
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([tipo])
+}
+
+model CotacaoItem {
+  id                    String  @id @default(cuid())
+  cotacaoId             String
+  cotacao               Cotacao @relation(fields: [cotacaoId], references: [id], onDelete: Cascade)
+  secao                 String
+  nome                  String
+  quantidade            Float   @default(0)
+  custoUnitarioCentavos Int     @default(0)
+  ordem                 Int     @default(0)
+
+  @@index([cotacaoId])
 }
