@@ -180,7 +180,7 @@ export type CampoItemCotacao =
   | "quantidade"
   | "custoUnitarioCentavos"
   | "secao"
-  | "antecipacaoIcmsCentavos"
+  | "antecipacaoIcmsPercentual"
   | "freteCentavos"
   | "instalacaoCentavos"
   | "markup"

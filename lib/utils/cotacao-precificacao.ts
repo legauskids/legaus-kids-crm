@@ -74,7 +74,7 @@ export function calcularCotacao(entrada: EntradaCotacao): ResultadoCotacao {
 export type EntradaItemPorItem = {
   quantidade: number;
   custoUnitarioCentavos: number;
-  antecipacaoIcmsCentavos: number;
+  antecipacaoIcmsPercentual: number;
   freteCentavos: number;
   instalacaoCentavos: number;
   markup: number;
@@ -83,6 +83,7 @@ export type EntradaItemPorItem = {
 
 export type ResultadoItemPorItem = {
   totalCentavos: number;
+  antecipacaoIcmsCentavos: number;
   vendaCentavos: number;
   impostoCentavos: number;
   custoFinalCentavos: number;
@@ -92,13 +93,16 @@ export type ResultadoItemPorItem = {
 
 export function calcularItemPorItem(entrada: EntradaItemPorItem): ResultadoItemPorItem {
   const totalCentavos = Math.round(entrada.quantidade * entrada.custoUnitarioCentavos);
+  // Antecipação de ICMS é um percentual sobre o Total do item (igual o
+  // Imposto % é um percentual sobre a Venda).
+  const antecipacaoIcmsCentavos = Math.round(totalCentavos * (entrada.antecipacaoIcmsPercentual / 100));
   // base = total do item + custos extras da linha, ANTES do markup.
-  const baseCentavos = totalCentavos + entrada.antecipacaoIcmsCentavos + entrada.freteCentavos + entrada.instalacaoCentavos;
+  const baseCentavos = totalCentavos + antecipacaoIcmsCentavos + entrada.freteCentavos + entrada.instalacaoCentavos;
   const vendaCentavos = Math.round(baseCentavos * entrada.markup);
   const impostoCentavos = Math.round(vendaCentavos * (entrada.impostoPercentual / 100));
   const custoFinalCentavos = baseCentavos + impostoCentavos;
   const lucroCentavos = vendaCentavos - custoFinalCentavos;
   const percentualLucro = vendaCentavos > 0 ? (lucroCentavos / vendaCentavos) * 100 : 0;
 
-  return { totalCentavos, vendaCentavos, impostoCentavos, custoFinalCentavos, lucroCentavos, percentualLucro };
+  return { totalCentavos, antecipacaoIcmsCentavos, vendaCentavos, impostoCentavos, custoFinalCentavos, lucroCentavos, percentualLucro };
 }

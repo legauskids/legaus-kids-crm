@@ -40,7 +40,7 @@ export type ItemVM = {
   quantidade: number;
   custoUnitarioCentavos: number;
   ordem: number;
-  antecipacaoIcmsCentavos: number;
+  antecipacaoIcmsPercentual: number;
   freteCentavos: number;
   instalacaoCentavos: number;
   markup: number;
@@ -200,7 +200,7 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
         calcularItemPorItem({
           quantidade: item.quantidade,
           custoUnitarioCentavos: item.custoUnitarioCentavos,
-          antecipacaoIcmsCentavos: item.antecipacaoIcmsCentavos,
+          antecipacaoIcmsPercentual: item.antecipacaoIcmsPercentual,
           freteCentavos: item.freteCentavos,
           instalacaoCentavos: item.instalacaoCentavos,
           markup: item.markup,
@@ -244,7 +244,7 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
         quantidade: 0,
         custoUnitarioCentavos: 0,
         ordem: atual.length,
-        antecipacaoIcmsCentavos: 0,
+        antecipacaoIcmsPercentual: 0,
         freteCentavos: 0,
         instalacaoCentavos: 0,
         markup: 1.9,
@@ -327,7 +327,7 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
                       <th className="w-20 px-2 py-2 text-right font-medium">Qtd.</th>
                       <th className="w-24 px-2 py-2 text-right font-medium">Valor unit.</th>
                       <th className="w-24 px-2 py-2 text-right font-medium">Total</th>
-                      <th className="w-24 px-2 py-2 text-right font-medium">Antecip. ICMS</th>
+                      <th className="w-20 px-2 py-2 text-right font-medium">Antecip. ICMS %</th>
                       <th className="w-20 px-2 py-2 text-right font-medium">Frete</th>
                       <th className="w-24 px-2 py-2 text-right font-medium">Instalação</th>
                       <th className="w-16 px-2 py-2 text-right font-medium">Markup</th>
@@ -363,10 +363,9 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
                             <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{centavosParaReais(r.totalCentavos)}</td>
                             <td className="px-2 py-1">
                               <CelulaNumero
-                                valor={item.antecipacaoIcmsCentavos}
-                                onSalvar={(v) => salvarItem(item.id, "antecipacaoIcmsCentavos", v)}
-                                tipo="reais"
-                                largura="w-20"
+                                valor={item.antecipacaoIcmsPercentual}
+                                onSalvar={(v) => salvarItem(item.id, "antecipacaoIcmsPercentual", v)}
+                                largura="w-16"
                               />
                             </td>
                             <td className="px-2 py-1">

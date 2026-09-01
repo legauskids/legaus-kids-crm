@@ -24,7 +24,7 @@ export default async function CotacaoPage({ params }: { params: Promise<{ id: st
           quantidade: i.quantidade,
           custoUnitarioCentavos: i.custoUnitarioCentavos,
           ordem: i.ordem,
-          antecipacaoIcmsCentavos: i.antecipacaoIcmsCentavos,
+          antecipacaoIcmsPercentual: i.antecipacaoIcmsPercentual,
           freteCentavos: i.freteCentavos,
           instalacaoCentavos: i.instalacaoCentavos,
           markup: i.markup,
