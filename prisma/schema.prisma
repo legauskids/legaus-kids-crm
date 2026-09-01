@@ -573,5 +573,15 @@ model CotacaoItem {
   custoUnitarioCentavos Int     @default(0)
   ordem                 Int     @default(0)
 
+  // Só usados no modo "por item" (tipo OUTROS) — projetos maiores com itens
+  // variados, onde cada linha tem seu próprio markup/frete/instalação/
+  // imposto, em vez de um resumo único pro projeto inteiro como em
+  // Playground/Kidplay.
+  antecipacaoIcmsCentavos Int   @default(0)
+  freteCentavos           Int   @default(0)
+  instalacaoCentavos      Int   @default(0)
+  markup                  Float @default(1.9)
+  impostoPercentual       Float @default(7)
+
   @@index([cotacaoId])
 }

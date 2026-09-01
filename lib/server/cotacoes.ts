@@ -78,15 +78,21 @@ const MAO_DE_OBRA_PADRAO: Record<TipoCotacao, string[]> = {
   PLAYGROUND: ["Mão de obra Fundisa"],
   KIDPLAY: ["Mão de obra TL", "Mão de obra Estofador"],
   BRINQUEDOS: ["Mão de obra"],
-  OUTROS: ["Mão de obra"],
+  // OUTROS não usa resumo compartilhado — cada item calcula seu próprio
+  // markup/frete/instalação/imposto (ver calcularItemPorItem).
+  OUTROS: [],
 };
 
 export const TITULO_PADRAO: Record<TipoCotacao, string> = {
   PLAYGROUND: "Nova cotação de Playground",
   KIDPLAY: "Nova cotação de Kidplay",
   BRINQUEDOS: "Nova cotação de Brinquedos",
-  OUTROS: "Nova cotação",
+  OUTROS: "Nova cotação de projeto",
 };
+
+// Tipos que usam cálculo por item (cada linha com seu próprio markup, em vez
+// de um resumo único pro projeto) — ver calcularItemPorItem.
+export const TIPOS_POR_ITEM: TipoCotacao[] = ["OUTROS"];
 
 export async function criarCotacao(tipo: TipoCotacao, criadoPorId: string) {
   const itensPadrao = ITENS_PADRAO[tipo];
@@ -169,7 +175,16 @@ export async function criarItemCotacao(cotacaoId: string, secao: string) {
   });
 }
 
-export type CampoItemCotacao = "nome" | "quantidade" | "custoUnitarioCentavos" | "secao";
+export type CampoItemCotacao =
+  | "nome"
+  | "quantidade"
+  | "custoUnitarioCentavos"
+  | "secao"
+  | "antecipacaoIcmsCentavos"
+  | "freteCentavos"
+  | "instalacaoCentavos"
+  | "markup"
+  | "impostoPercentual";
 
 export async function atualizarItemCotacao(itemId: string, campo: CampoItemCotacao, valor: string | number): Promise<void> {
   await prisma.cotacaoItem.update({ where: { id: itemId }, data: { [campo]: valor } });

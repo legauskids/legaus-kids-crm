@@ -65,3 +65,40 @@ export function calcularCotacao(entrada: EntradaCotacao): ResultadoCotacao {
     percentualLucro,
   };
 }
+
+// Modo "por item" (tipo OUTROS) — projetos maiores com itens variados, onde
+// cada linha tem seu próprio markup/frete/instalação/imposto, em vez de um
+// resumo único pro projeto inteiro (Playground/Kidplay usam calcularCotacao
+// acima). Reconstrução exata da planilha "Outros-Cotação" do Marcos.
+
+export type EntradaItemPorItem = {
+  quantidade: number;
+  custoUnitarioCentavos: number;
+  antecipacaoIcmsCentavos: number;
+  freteCentavos: number;
+  instalacaoCentavos: number;
+  markup: number;
+  impostoPercentual: number;
+};
+
+export type ResultadoItemPorItem = {
+  totalCentavos: number;
+  vendaCentavos: number;
+  impostoCentavos: number;
+  custoFinalCentavos: number;
+  lucroCentavos: number;
+  percentualLucro: number;
+};
+
+export function calcularItemPorItem(entrada: EntradaItemPorItem): ResultadoItemPorItem {
+  const totalCentavos = Math.round(entrada.quantidade * entrada.custoUnitarioCentavos);
+  // base = total do item + custos extras da linha, ANTES do markup.
+  const baseCentavos = totalCentavos + entrada.antecipacaoIcmsCentavos + entrada.freteCentavos + entrada.instalacaoCentavos;
+  const vendaCentavos = Math.round(baseCentavos * entrada.markup);
+  const impostoCentavos = Math.round(vendaCentavos * (entrada.impostoPercentual / 100));
+  const custoFinalCentavos = baseCentavos + impostoCentavos;
+  const lucroCentavos = vendaCentavos - custoFinalCentavos;
+  const percentualLucro = vendaCentavos > 0 ? (lucroCentavos / vendaCentavos) * 100 : 0;
+
+  return { totalCentavos, vendaCentavos, impostoCentavos, custoFinalCentavos, lucroCentavos, percentualLucro };
+}

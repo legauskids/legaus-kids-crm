@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
-import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precificacao";
+import { calcularCotacao, calcularItemPorItem, type MaoDeObraItem } from "@/lib/utils/cotacao-precificacao";
 import {
   atualizarTituloCotacaoAction,
   atualizarCampoResumoCotacaoAction,
@@ -27,6 +27,12 @@ const TIPO_LABEL: Record<string, string> = {
   OUTROS: "Outros",
 };
 
+// Tipos que calculam por item (cada linha com seu próprio markup/frete/
+// instalação/imposto) em vez de um resumo único pro projeto inteiro.
+const TIPOS_POR_ITEM = new Set(["OUTROS"]);
+
+const SECAO_PADRAO_POR_ITEM = "Itens";
+
 export type ItemVM = {
   id: string;
   secao: string;
@@ -34,6 +40,11 @@ export type ItemVM = {
   quantidade: number;
   custoUnitarioCentavos: number;
   ordem: number;
+  antecipacaoIcmsCentavos: number;
+  freteCentavos: number;
+  instalacaoCentavos: number;
+  markup: number;
+  impostoPercentual: number;
 };
 
 export type CotacaoDetalheVM = {
@@ -144,6 +155,7 @@ function LinhaResumoCalculada({ label, valorCentavos, destaque }: { label: strin
 
 export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM }) {
   const router = useRouter();
+  const modoPorItem = TIPOS_POR_ITEM.has(inicial.tipo);
   const [titulo, setTitulo] = useState(inicial.titulo);
   const [itens, setItens] = useState(inicial.itens);
   const [maoDeObra, setMaoDeObra] = useState(inicial.maoDeObra);
@@ -180,6 +192,42 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
     [itens, maoDeObra, markup, adicionalCentavos, instalacaoPercentual, freteKm, fretePrecoPorKmCentavos, impostoCentavos],
   );
 
+  const resultadosPorItem = useMemo(() => {
+    const mapa = new Map<string, ReturnType<typeof calcularItemPorItem>>();
+    for (const item of itens) {
+      mapa.set(
+        item.id,
+        calcularItemPorItem({
+          quantidade: item.quantidade,
+          custoUnitarioCentavos: item.custoUnitarioCentavos,
+          antecipacaoIcmsCentavos: item.antecipacaoIcmsCentavos,
+          freteCentavos: item.freteCentavos,
+          instalacaoCentavos: item.instalacaoCentavos,
+          markup: item.markup,
+          impostoPercentual: item.impostoPercentual,
+        }),
+      );
+    }
+    return mapa;
+  }, [itens]);
+
+  const totaisPorItem = useMemo(() => {
+    let totalCentavos = 0;
+    let vendaCentavos = 0;
+    let impostoCentavos = 0;
+    let custoFinalCentavos = 0;
+    let lucroCentavos = 0;
+    for (const r of resultadosPorItem.values()) {
+      totalCentavos += r.totalCentavos;
+      vendaCentavos += r.vendaCentavos;
+      impostoCentavos += r.impostoCentavos;
+      custoFinalCentavos += r.custoFinalCentavos;
+      lucroCentavos += r.lucroCentavos;
+    }
+    const percentualLucro = vendaCentavos > 0 ? (lucroCentavos / vendaCentavos) * 100 : 0;
+    return { totalCentavos, vendaCentavos, impostoCentavos, custoFinalCentavos, lucroCentavos, percentualLucro };
+  }, [resultadosPorItem]);
+
   function salvarItem(id: string, campo: CampoItemCotacao, valor: string | number) {
     setItens((atual) => atual.map((i) => (i.id === id ? { ...i, [campo]: valor } : i)));
     atualizarItemCotacaoAction(id, campo, valor);
@@ -187,7 +235,22 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
 
   async function adicionarItem(secao: string) {
     const { id } = await criarItemCotacaoAction(inicial.id, secao);
-    setItens((atual) => [...atual, { id, secao, nome: "Novo item", quantidade: 0, custoUnitarioCentavos: 0, ordem: atual.length }]);
+    setItens((atual) => [
+      ...atual,
+      {
+        id,
+        secao,
+        nome: "Novo item",
+        quantidade: 0,
+        custoUnitarioCentavos: 0,
+        ordem: atual.length,
+        antecipacaoIcmsCentavos: 0,
+        freteCentavos: 0,
+        instalacaoCentavos: 0,
+        markup: 1.9,
+        impostoPercentual: 7,
+      },
+    ]);
   }
 
   async function excluirItem(id: string) {
@@ -253,60 +316,106 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-4 p-6 xl:grid-cols-[1fr_320px]">
-        <div className="space-y-3">
-          {secoes.map(([secao, itensDaSecao]) => (
-            <Card key={secao} className="overflow-hidden py-0">
-              <div className="border-b bg-muted/40 px-4 py-2 text-sm font-semibold">{secao}</div>
+        {modoPorItem ? (
+          <div className="space-y-3">
+            <Card className="overflow-hidden py-0">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
                       <th className="px-3 py-2 font-medium">Item</th>
-                      <th className="w-24 px-2 py-2 text-right font-medium">Quantidade</th>
-                      <th className="w-28 px-2 py-2 text-right font-medium">Custo unit.</th>
-                      <th className="w-28 px-3 py-2 text-right font-medium">Custo total</th>
+                      <th className="w-20 px-2 py-2 text-right font-medium">Qtd.</th>
+                      <th className="w-24 px-2 py-2 text-right font-medium">Valor unit.</th>
+                      <th className="w-24 px-2 py-2 text-right font-medium">Total</th>
+                      <th className="w-24 px-2 py-2 text-right font-medium">Antecip. ICMS</th>
+                      <th className="w-20 px-2 py-2 text-right font-medium">Frete</th>
+                      <th className="w-24 px-2 py-2 text-right font-medium">Instalação</th>
+                      <th className="w-16 px-2 py-2 text-right font-medium">Markup</th>
+                      <th className="w-24 px-2 py-2 text-right font-medium">Venda</th>
+                      <th className="w-16 px-2 py-2 text-right font-medium">Imposto %</th>
+                      <th className="w-24 px-2 py-2 text-right font-medium">Custo final</th>
+                      <th className="w-24 px-3 py-2 text-right font-medium">Lucro</th>
+                      <th className="w-16 px-2 py-2 text-right font-medium">%</th>
                       <th className="w-8 px-2 py-2" />
                     </tr>
                   </thead>
                   <tbody>
-                    {itensDaSecao.map((item) => (
-                      <tr key={item.id} className="border-b last:border-b-0">
-                        <td className="px-2 py-1">
-                          <CelulaTexto valor={item.nome} onSalvar={(v) => salvarItem(item.id, "nome", v)} />
-                        </td>
-                        <td className="px-2 py-1">
-                          <CelulaNumero valor={item.quantidade} onSalvar={(v) => salvarItem(item.id, "quantidade", v)} largura="w-20" />
-                        </td>
-                        <td className="px-2 py-1">
-                          <CelulaNumero
-                            valor={item.custoUnitarioCentavos}
-                            onSalvar={(v) => salvarItem(item.id, "custoUnitarioCentavos", v)}
-                            tipo="reais"
-                            largura="w-24"
-                          />
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
-                          {centavosParaReais(Math.round(item.quantidade * item.custoUnitarioCentavos))}
-                        </td>
-                        <td className="px-1 py-1 text-center">
-                          <button
-                            type="button"
-                            onClick={() => excluirItem(item.id)}
-                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            title="Excluir linha"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {[...itens]
+                      .sort((a, b) => a.ordem - b.ordem)
+                      .map((item) => {
+                        const r = resultadosPorItem.get(item.id)!;
+                        return (
+                          <tr key={item.id} className="border-b last:border-b-0">
+                            <td className="min-w-40 px-2 py-1">
+                              <CelulaTexto valor={item.nome} onSalvar={(v) => salvarItem(item.id, "nome", v)} />
+                            </td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero valor={item.quantidade} onSalvar={(v) => salvarItem(item.id, "quantidade", v)} largura="w-16" />
+                            </td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero
+                                valor={item.custoUnitarioCentavos}
+                                onSalvar={(v) => salvarItem(item.id, "custoUnitarioCentavos", v)}
+                                tipo="reais"
+                                largura="w-20"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{centavosParaReais(r.totalCentavos)}</td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero
+                                valor={item.antecipacaoIcmsCentavos}
+                                onSalvar={(v) => salvarItem(item.id, "antecipacaoIcmsCentavos", v)}
+                                tipo="reais"
+                                largura="w-20"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero valor={item.freteCentavos} onSalvar={(v) => salvarItem(item.id, "freteCentavos", v)} tipo="reais" largura="w-16" />
+                            </td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero
+                                valor={item.instalacaoCentavos}
+                                onSalvar={(v) => salvarItem(item.id, "instalacaoCentavos", v)}
+                                tipo="reais"
+                                largura="w-20"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero valor={item.markup} onSalvar={(v) => salvarItem(item.id, "markup", v)} largura="w-14" />
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-medium tabular-nums">{centavosParaReais(r.vendaCentavos)}</td>
+                            <td className="px-2 py-1">
+                              <CelulaNumero valor={item.impostoPercentual} onSalvar={(v) => salvarItem(item.id, "impostoPercentual", v)} largura="w-14" />
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{centavosParaReais(r.custoFinalCentavos)}</td>
+                            <td
+                              className={cn("px-3 py-1.5 text-right font-medium tabular-nums", r.lucroCentavos >= 0 ? "text-success" : "text-destructive")}
+                            >
+                              {centavosParaReais(r.lucroCentavos)}
+                            </td>
+                            <td className={cn("px-2 py-1.5 text-right tabular-nums", r.lucroCentavos >= 0 ? "text-success" : "text-destructive")}>
+                              {r.percentualLucro.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%
+                            </td>
+                            <td className="px-1 py-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => excluirItem(item.id)}
+                                className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                title="Excluir linha"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
               <div className="border-t px-3 py-1.5">
                 <button
                   type="button"
-                  onClick={() => adicionarItem(secao)}
+                  onClick={() => adicionarItem(SECAO_PADRAO_POR_ITEM)}
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
                   <Plus className="size-3.5" />
@@ -314,90 +423,184 @@ export function CotacaoEditor({ cotacao: inicial }: { cotacao: CotacaoDetalheVM 
                 </button>
               </div>
             </Card>
-          ))}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {secoes.map(([secao, itensDaSecao]) => (
+              <Card key={secao} className="overflow-hidden py-0">
+                <div className="border-b bg-muted/40 px-4 py-2 text-sm font-semibold">{secao}</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <th className="px-3 py-2 font-medium">Item</th>
+                        <th className="w-24 px-2 py-2 text-right font-medium">Quantidade</th>
+                        <th className="w-28 px-2 py-2 text-right font-medium">Custo unit.</th>
+                        <th className="w-28 px-3 py-2 text-right font-medium">Custo total</th>
+                        <th className="w-8 px-2 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itensDaSecao.map((item) => (
+                        <tr key={item.id} className="border-b last:border-b-0">
+                          <td className="px-2 py-1">
+                            <CelulaTexto valor={item.nome} onSalvar={(v) => salvarItem(item.id, "nome", v)} />
+                          </td>
+                          <td className="px-2 py-1">
+                            <CelulaNumero valor={item.quantidade} onSalvar={(v) => salvarItem(item.id, "quantidade", v)} largura="w-20" />
+                          </td>
+                          <td className="px-2 py-1">
+                            <CelulaNumero
+                              valor={item.custoUnitarioCentavos}
+                              onSalvar={(v) => salvarItem(item.id, "custoUnitarioCentavos", v)}
+                              tipo="reais"
+                              largura="w-24"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                            {centavosParaReais(Math.round(item.quantidade * item.custoUnitarioCentavos))}
+                          </td>
+                          <td className="px-1 py-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => excluirItem(item.id)}
+                              className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              title="Excluir linha"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t px-3 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => adicionarItem(secao)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Plus className="size-3.5" />
+                    Inserir item
+                  </button>
+                </div>
+              </Card>
+            ))}
 
-          <Card className="p-3">
-            <div className="flex items-center gap-2">
-              <input
-                value={novaSecao}
-                onChange={(e) => setNovaSecao(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") adicionarSecao();
-                }}
-                placeholder="Nome da nova seção (ex: Torre, Descidas...)"
-                className="h-8 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus:border-ring"
-              />
-              <Button size="sm" variant="outline" onClick={adicionarSecao} disabled={!novaSecao.trim()}>
-                <Plus className="size-3.5" />
-                Nova seção
-              </Button>
-            </div>
-          </Card>
-        </div>
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  value={novaSecao}
+                  onChange={(e) => setNovaSecao(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") adicionarSecao();
+                  }}
+                  placeholder="Nome da nova seção (ex: Torre, Descidas...)"
+                  className="h-8 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus:border-ring"
+                />
+                <Button size="sm" variant="outline" onClick={adicionarSecao} disabled={!novaSecao.trim()}>
+                  <Plus className="size-3.5" />
+                  Nova seção
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
 
         <div className="xl:sticky xl:top-0 xl:self-start">
           <Card>
             <CardContent className="p-4">
-              <h2 className="mb-2 text-sm font-semibold text-foreground">Resumo e margem</h2>
+              {modoPorItem ? (
+                <>
+                  <h2 className="mb-2 text-sm font-semibold text-foreground">Totais do projeto</h2>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    Cada item já calcula seu próprio markup, frete, instalação e imposto — aqui é só a soma de tudo.
+                  </p>
+                  <LinhaResumoCalculada label="Total (custo material)" valorCentavos={totaisPorItem.totalCentavos} />
+                  <LinhaResumoCalculada label="Venda" valorCentavos={totaisPorItem.vendaCentavos} destaque />
+                  <LinhaResumoCalculada label="Imposto" valorCentavos={totaisPorItem.impostoCentavos} />
+                  <LinhaResumoCalculada label="Custo final" valorCentavos={totaisPorItem.custoFinalCentavos} />
+                  <div
+                    className={cn(
+                      "flex items-center justify-between border-t pt-2",
+                      totaisPorItem.lucroCentavos >= 0 ? "text-success" : "text-destructive",
+                    )}
+                  >
+                    <span className="text-xs font-semibold">Lucro</span>
+                    <span className="text-xs font-semibold tabular-nums">{centavosParaReais(totaisPorItem.lucroCentavos)}</span>
+                  </div>
+                  <div className={cn("flex items-center justify-between", totaisPorItem.lucroCentavos >= 0 ? "text-success" : "text-destructive")}>
+                    <span className="text-xs font-semibold">Percentual</span>
+                    <span className="text-xs font-semibold tabular-nums">
+                      {totaisPorItem.percentualLucro.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="mb-2 text-sm font-semibold text-foreground">Resumo e margem</h2>
 
-              {maoDeObra.map((m, indice) => (
-                <LinhaResumo key={m.label} label={m.label}>
-                  <CelulaNumero valor={m.valorCentavos} onSalvar={(v) => salvarMaoDeObra(indice, v)} tipo="reais" largura="w-24" />
-                </LinhaResumo>
-              ))}
+                  {maoDeObra.map((m, indice) => (
+                    <LinhaResumo key={m.label} label={m.label}>
+                      <CelulaNumero valor={m.valorCentavos} onSalvar={(v) => salvarMaoDeObra(indice, v)} tipo="reais" largura="w-24" />
+                    </LinhaResumo>
+                  ))}
 
-              <LinhaResumoCalculada label="Total materiais" valorCentavos={resultado.totalMateriaisCentavos} />
-              <LinhaResumoCalculada label="Total mão de obra" valorCentavos={resultado.totalMaoDeObraCentavos} />
+                  <LinhaResumoCalculada label="Total materiais" valorCentavos={resultado.totalMateriaisCentavos} />
+                  <LinhaResumoCalculada label="Total mão de obra" valorCentavos={resultado.totalMaoDeObraCentavos} />
 
-              <LinhaResumo label="Markup (multiplicador)">
-                <CelulaNumero valor={markup} onSalvar={campoResumo(setMarkup, "markup")} largura="w-20" />
-              </LinhaResumo>
-              <LinhaResumoCalculada label="Preço venda calculado" valorCentavos={resultado.precoVendaCalculadoCentavos} />
+                  <LinhaResumo label="Markup (multiplicador)">
+                    <CelulaNumero valor={markup} onSalvar={campoResumo(setMarkup, "markup")} largura="w-20" />
+                  </LinhaResumo>
+                  <LinhaResumoCalculada label="Preço venda calculado" valorCentavos={resultado.precoVendaCalculadoCentavos} />
 
-              <LinhaResumo label="Adicional">
-                <CelulaNumero valor={adicionalCentavos} onSalvar={campoResumo(setAdicionalCentavos, "adicionalCentavos")} tipo="reais" largura="w-24" />
-              </LinhaResumo>
-              <LinhaResumoCalculada label="Preço de venda total" valorCentavos={resultado.precoDeVendaTotalCentavos} />
+                  <LinhaResumo label="Adicional">
+                    <CelulaNumero valor={adicionalCentavos} onSalvar={campoResumo(setAdicionalCentavos, "adicionalCentavos")} tipo="reais" largura="w-24" />
+                  </LinhaResumo>
+                  <LinhaResumoCalculada label="Preço de venda total" valorCentavos={resultado.precoDeVendaTotalCentavos} />
 
-              <LinhaResumo label="Instalação (%)">
-                <CelulaNumero
-                  valor={instalacaoPercentual}
-                  onSalvar={campoResumo(setInstalacaoPercentual, "instalacaoPercentual")}
-                  largura="w-20"
-                />
-              </LinhaResumo>
-              <LinhaResumoCalculada label="Preço venda com instalação" valorCentavos={resultado.precoVendaComInstalacaoCentavos} />
+                  <LinhaResumo label="Instalação (%)">
+                    <CelulaNumero
+                      valor={instalacaoPercentual}
+                      onSalvar={campoResumo(setInstalacaoPercentual, "instalacaoPercentual")}
+                      largura="w-20"
+                    />
+                  </LinhaResumo>
+                  <LinhaResumoCalculada label="Preço venda com instalação" valorCentavos={resultado.precoVendaComInstalacaoCentavos} />
 
-              <LinhaResumo label="Frete — Km">
-                <CelulaNumero valor={freteKm} onSalvar={campoResumo(setFreteKm, "freteKm")} largura="w-20" />
-              </LinhaResumo>
-              <LinhaResumo label="Frete — preço/Km">
-                <CelulaNumero
-                  valor={fretePrecoPorKmCentavos}
-                  onSalvar={campoResumo(setFretePrecoPorKmCentavos, "fretePrecoPorKmCentavos")}
-                  tipo="reais"
-                  largura="w-24"
-                />
-              </LinhaResumo>
-              <LinhaResumoCalculada label="Valor frete" valorCentavos={resultado.valorFreteCentavos} />
+                  <LinhaResumo label="Frete — Km">
+                    <CelulaNumero valor={freteKm} onSalvar={campoResumo(setFreteKm, "freteKm")} largura="w-20" />
+                  </LinhaResumo>
+                  <LinhaResumo label="Frete — preço/Km">
+                    <CelulaNumero
+                      valor={fretePrecoPorKmCentavos}
+                      onSalvar={campoResumo(setFretePrecoPorKmCentavos, "fretePrecoPorKmCentavos")}
+                      tipo="reais"
+                      largura="w-24"
+                    />
+                  </LinhaResumo>
+                  <LinhaResumoCalculada label="Valor frete" valorCentavos={resultado.valorFreteCentavos} />
 
-              <LinhaResumo label="Imposto (R$)">
-                <CelulaNumero valor={impostoCentavos} onSalvar={campoResumo(setImpostoCentavos, "impostoCentavos")} tipo="reais" largura="w-24" />
-              </LinhaResumo>
+                  <LinhaResumo label="Imposto (R$)">
+                    <CelulaNumero valor={impostoCentavos} onSalvar={campoResumo(setImpostoCentavos, "impostoCentavos")} tipo="reais" largura="w-24" />
+                  </LinhaResumo>
 
-              <LinhaResumoCalculada label="Total de custos" valorCentavos={resultado.totalDeCustosCentavos} />
-              <LinhaResumoCalculada label="Total (cobrado do cliente)" valorCentavos={resultado.totalCentavos} destaque />
+                  <LinhaResumoCalculada label="Total de custos" valorCentavos={resultado.totalDeCustosCentavos} />
+                  <LinhaResumoCalculada label="Total (cobrado do cliente)" valorCentavos={resultado.totalCentavos} destaque />
 
-              <div className={cn("flex items-center justify-between border-t pt-2", resultado.resultadoCentavos >= 0 ? "text-success" : "text-destructive")}>
-                <span className="text-xs font-semibold">Resultado</span>
-                <span className="text-xs font-semibold tabular-nums">{centavosParaReais(resultado.resultadoCentavos)}</span>
-              </div>
-              <div className={cn("flex items-center justify-between", resultado.resultadoCentavos >= 0 ? "text-success" : "text-destructive")}>
-                <span className="text-xs font-semibold">Percentual</span>
-                <span className="text-xs font-semibold tabular-nums">
-                  {resultado.percentualLucro.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                </span>
-              </div>
+                  <div className={cn("flex items-center justify-between border-t pt-2", resultado.resultadoCentavos >= 0 ? "text-success" : "text-destructive")}>
+                    <span className="text-xs font-semibold">Resultado</span>
+                    <span className="text-xs font-semibold tabular-nums">{centavosParaReais(resultado.resultadoCentavos)}</span>
+                  </div>
+                  <div className={cn("flex items-center justify-between", resultado.resultadoCentavos >= 0 ? "text-success" : "text-destructive")}>
+                    <span className="text-xs font-semibold">Percentual</span>
+                    <span className="text-xs font-semibold tabular-nums">
+                      {resultado.percentualLucro.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                    </span>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
