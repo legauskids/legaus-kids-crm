@@ -97,6 +97,7 @@ model User {
   comandosAgente      ComandoAgente[]
   postagens           Postagem[]
   cotacoes            Cotacao[]
+  negociosExcluidos   Negocio[]          @relation("ExclusorNegocio")
 }
 
 enum OrigemComando {
@@ -274,6 +275,15 @@ model Negocio {
   origemConversa     Conversa? @relation("OrigemConversaNegocio", fields: [origemConversaId], references: [id])
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+
+  // Exclusão é sempre um soft-delete com justificativa obrigatória — nunca
+  // apaga a linha de verdade, só tira de toda listagem/board/dashboard (ver
+  // a extensão do Prisma Client em lib/db.ts que já filtra excluidoEm: null
+  // automaticamente em findMany/findFirst/count de Negocio).
+  excluidoEm     DateTime?
+  motivoExclusao String?
+  excluidoPorId  String?
+  excluidoPor    User?     @relation("ExclusorNegocio", fields: [excluidoPorId], references: [id])
 
   tarefas    Tarefa[]
   atividades Atividade[]

@@ -131,3 +131,18 @@ export function adicionarNotaHistorico(negocioId: string, texto: string, autorId
     data: { negocioId, tipo: "NOTA", texto, autorId },
   });
 }
+
+// Soft-delete: nunca apaga a linha de verdade, só marca excluidoEm — a
+// extensão do Prisma Client em lib/db.ts já filtra esses negócios de toda
+// listagem/board/dashboard automaticamente. Justificativa é obrigatória.
+export async function excluirNegocio(negocioId: string, motivo: string, excluidoPorId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.negocio.update({
+      where: { id: negocioId },
+      data: { excluidoEm: new Date(), motivoExclusao: motivo, excluidoPorId },
+    });
+    await tx.atividade.create({
+      data: { negocioId, tipo: "SISTEMA", texto: `Negócio excluído. Motivo: ${motivo}`, autorId: excluidoPorId },
+    });
+  });
+}

@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, XCircle, CreditCard } from "lucide-react";
+import { Trophy, XCircle, CreditCard, Trash2 } from "lucide-react";
 import {
   moverNegocioAction,
   marcarPagamentoIdentificadoAction,
   marcarPerdidoAction,
+  excluirNegocioAction,
 } from "@/app/(app)/negocios/actions";
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
+import { ExcluirNegocioDialog } from "@/app/(app)/negocios/excluir-negocio-dialog";
 
 type Etapa = { id: string; nome: string; ordem: number; tipo: "NORMAL" | "GANHO" | "PERDIDO" };
 
@@ -31,6 +33,7 @@ export function EtapaBreadcrumb({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [motivoOpen, setMotivoOpen] = useState(false);
+  const [excluirOpen, setExcluirOpen] = useState(false);
 
   const etapasNormais = [...etapas].filter((e) => e.tipo === "NORMAL").sort((a, b) => a.ordem - b.ordem);
   const etapaAtual = etapas.find((e) => e.id === etapaAtualId);
@@ -101,6 +104,15 @@ export function EtapaBreadcrumb({
             </Button>
           </>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => setExcluirOpen(true)}
+        >
+          <Trash2 className="size-4" />
+          Excluir
+        </Button>
       </div>
 
       <MotivoPerdaDialog
@@ -110,6 +122,15 @@ export function EtapaBreadcrumb({
           await marcarPerdidoAction(negocioId, motivo);
           setMotivoOpen(false);
           router.refresh();
+        }}
+      />
+      <ExcluirNegocioDialog
+        open={excluirOpen}
+        onOpenChange={setExcluirOpen}
+        onConfirm={async (motivo) => {
+          await excluirNegocioAction(negocioId, motivo);
+          setExcluirOpen(false);
+          router.push("/negocios");
         }}
       />
     </div>

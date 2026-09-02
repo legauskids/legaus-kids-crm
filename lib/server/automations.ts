@@ -1,10 +1,13 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
 import { gerarContrato } from "@/lib/server/contratos";
 
-type Tx = Prisma.TransactionClient;
+// Derivado do client de verdade (com a extensão de soft-delete de Negocio
+// aplicada em lib/db.ts) em vez de Prisma.TransactionClient genérico — os
+// dois tipos divergem depois de um $extends, e um `tx` vindo de
+// prisma.$transaction(...) só bate com este.
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 // Toda automação cria tarefas para a Dani, conforme a especificação (§4.4).
 const RESPONSAVEL_AUTOMATICO_USERNAME = "dani";

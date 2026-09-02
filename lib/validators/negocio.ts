@@ -16,6 +16,11 @@ export const marcarPerdidoSchema = z.object({
   motivo: z.string().min(1, "Informe o motivo da perda"),
 });
 
+export const excluirNegocioSchema = z.object({
+  negocioId: z.string().min(1),
+  motivo: z.string().min(1, "Informe o motivo da exclusão"),
+});
+
 export const atualizarDadosNegocioSchema = z.object({
   negocioId: z.string().min(1),
   valorReais: z.coerce.number().min(0).optional(),

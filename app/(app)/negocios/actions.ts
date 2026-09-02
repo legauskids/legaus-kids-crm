@@ -8,12 +8,14 @@ import {
   marcarNegocioPerdido,
   atualizarDadosNegocio,
   adicionarNotaHistorico,
+  excluirNegocio,
 } from "@/lib/server/negocios";
 import { marcarPagamentoIdentificado } from "@/lib/server/automations";
 import {
   criarNegocioSchema,
   marcarPerdidoSchema,
   atualizarDadosNegocioSchema,
+  excluirNegocioSchema,
 } from "@/lib/validators/negocio";
 import { reaisParaCentavos } from "@/lib/utils/money";
 
@@ -108,4 +110,16 @@ export async function adicionarNotaHistoricoAction(negocioId: string, texto: str
   if (!texto.trim()) return;
   await adicionarNotaHistorico(negocioId, texto.trim(), user.id);
   revalidatePath(`/negocios/${negocioId}`);
+}
+
+export async function excluirNegocioAction(negocioId: string, motivo: string): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const parsed = excluirNegocioSchema.safeParse({ negocioId, motivo });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+  await excluirNegocio(parsed.data.negocioId, parsed.data.motivo, user.id);
+  revalidatePath("/negocios");
+  revalidatePath(`/negocios/${negocioId}`);
+  return {};
 }

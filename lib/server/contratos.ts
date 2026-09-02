@@ -2,9 +2,12 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { EMPRESA } from "@/lib/constants/empresa";
 import { centavosParaReais } from "@/lib/utils/money";
-import type { StatusContrato, Prisma } from "@prisma/client";
+import type { StatusContrato } from "@prisma/client";
 
-type Cliente = Prisma.TransactionClient | typeof prisma;
+// Derivado do client de verdade (com a extensão de soft-delete de Negocio
+// aplicada em lib/db.ts) em vez de Prisma.TransactionClient genérico — os
+// dois tipos divergem depois de um $extends.
+type Cliente = Parameters<Parameters<typeof prisma.$transaction>[0]>[0] | typeof prisma;
 
 export const CAMPOS_MODELO_CONTRATO = [
   { chave: "cliente_nome", descricao: "Nome do cliente" },

@@ -45,6 +45,13 @@ export default async function NegocioDetalhePage({
         </div>
       </div>
 
+      {negocio.excluidoEm && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <p className="font-semibold">Este negócio foi excluído em {negocio.excluidoEm.toLocaleDateString("pt-BR")}.</p>
+          {negocio.motivoExclusao && <p className="mt-0.5">Motivo: {negocio.motivoExclusao}</p>}
+        </div>
+      )}
+
       <EtapaBreadcrumb
         negocioId={negocio.id}
         etapaAtualId={negocio.etapaId}
