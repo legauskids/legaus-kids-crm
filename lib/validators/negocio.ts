@@ -23,6 +23,8 @@ export const excluirNegocioSchema = z.object({
 
 export const atualizarDadosNegocioSchema = z.object({
   negocioId: z.string().min(1),
+  titulo: z.string().min(1, "Informe um título").optional(),
+  contatoId: z.string().optional(),
   valorReais: z.coerce.number().min(0).optional(),
   produto: z.string().optional(),
   descricao: z.string().optional(),

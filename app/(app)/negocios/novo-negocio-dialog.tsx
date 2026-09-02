@@ -21,6 +21,7 @@ import {
 import { criarNegocioAction, type CriarNegocioState } from "@/app/(app)/negocios/actions";
 
 const initialState: CriarNegocioState = {};
+const OPCOES_ORIGEM = ["Visitas", "Campanhas", "Prospecção"];
 
 export function NovoNegocioDialog({
   open,
@@ -107,7 +108,18 @@ export function NovoNegocioDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="origem">Origem</Label>
-              <Input id="origem" name="origem" placeholder="Instagram, indicação..." />
+              <Select name="origem">
+                <SelectTrigger id="origem" className="w-full">
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  {OPCOES_ORIGEM.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

@@ -94,6 +94,8 @@ export async function criarNegocio(input: CriarNegocioInput) {
 }
 
 export type AtualizarDadosNegocioInput = {
+  titulo?: string;
+  contatoId?: string | null;
   valorCentavos?: number;
   produto?: string | null;
   descricao?: string | null;

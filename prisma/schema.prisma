@@ -205,6 +205,12 @@ model Mensagem {
   anexoUrl       String?
   anexoNome      String?
   anexoMimetype  String?
+
+  // Preenchidos quando a mensagem é um contato compartilhado pelo WhatsApp
+  // (vCard) — deixa a UI mostrar um card com botão "Adicionar ao CRM" em vez
+  // de só texto solto.
+  contatoCompartilhadoNome     String?
+  contatoCompartilhadoTelefone String?
 }
 
 model NotaInterna {
@@ -400,7 +406,14 @@ model Produto {
   codigo        String?
   categoria     String
   descricao     String?
+  // imagemUrl guarda tanto uma URL externa (ex: puxada do site antigo) quanto
+  // a rota interna /api/imagem/produto/{id} quando uma foto é enviada pelo
+  // Cadastros — o componente de UI usa um <img src> só, sem precisar saber
+  // qual dos dois casos é. imagemBytes/imagemMime só existem quando a foto
+  // foi enviada por upload (não quando é só uma URL externa).
   imagemUrl     String?
+  imagemBytes   Bytes?
+  imagemMime    String?
   valorCentavos Int?
   ativo         Boolean  @default(true)
   createdAt     DateTime @default(now())

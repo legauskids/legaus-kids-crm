@@ -88,3 +88,36 @@ export async function buscarTarefasSimilarIds(termo: string, limite = 8): Promis
   `;
   return linhas.map((l) => l.id);
 }
+
+// Cotacao ainda não tem índice trigram (tabela nova, poucas linhas por
+// enquanto) — ILIKE simples já cobre bem o volume atual.
+export type CotacaoSimilar = { id: string; numero: number; titulo: string; tipo: string };
+
+export async function buscarCotacoesSimilar(termo: string, limite = 8): Promise<CotacaoSimilar[]> {
+  return prisma.cotacao.findMany({
+    where: { titulo: { contains: termo, mode: "insensitive" } },
+    select: { id: true, numero: true, titulo: true, tipo: true },
+    orderBy: { criadoEm: "desc" },
+    take: limite,
+  });
+}
+
+export type ContratoSimilar = { id: string };
+
+/** Busca contrato pelo título do negócio ou nome do cliente vinculado. */
+export async function buscarContratosSimilarIds(termo: string, limite = 8): Promise<string[]> {
+  const curinga = `%${termo}%`;
+  const linhas = await prisma.$queryRaw<ContratoSimilar[]>`
+    SELECT co.id
+    FROM "Contrato" co
+    JOIN "Negocio" n ON n.id = co."negocioId"
+    LEFT JOIN "Contato" c ON c.id = n."contatoId"
+    WHERE similarity(n.titulo, ${termo}) > ${LIMIAR_SIMILARIDADE}
+       OR similarity(COALESCE(c.nome, ''), ${termo}) > ${LIMIAR_SIMILARIDADE}
+       OR n.titulo ILIKE ${curinga}
+       OR c.nome ILIKE ${curinga}
+    ORDER BY GREATEST(similarity(n.titulo, ${termo}), similarity(COALESCE(c.nome, ''), ${termo})) DESC
+    LIMIT ${limite}
+  `;
+  return linhas.map((l) => l.id);
+}

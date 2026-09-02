@@ -11,6 +11,29 @@ function extrairTexto(msg) {
   return msg.message?.conversation || msg.message?.extendedTextMessage?.text || null;
 }
 
+/** Pega o telefone de dentro do vCard (linha "TEL..."), só dígitos — mesmo formato que extrairTelefone já usa pro remetente. */
+function extrairTelefoneDoVCard(vcard) {
+  const linhaTel = vcard.split(/\r?\n/).find((l) => l.toUpperCase().startsWith("TEL"));
+  if (!linhaTel) return null;
+  const valor = linhaTel.split(":").pop();
+  if (!valor) return null;
+  const digitos = valor.replace(/[^\d]/g, "");
+  return digitos || null;
+}
+
+/**
+ * Contato compartilhado no WhatsApp vem como `contactMessage` (um só) ou
+ * `contactsArrayMessage` (vários) — v1 só trata o primeiro contato do array,
+ * cobre o caso comum de "aqui está o contato do fulano".
+ */
+function extrairContatoCompartilhado(msg) {
+  const contato = msg.message?.contactMessage || msg.message?.contactsArrayMessage?.contacts?.[0];
+  if (!contato?.vcard) return null;
+  const telefone = extrairTelefoneDoVCard(contato.vcard);
+  if (!telefone) return null;
+  return { nome: contato.displayName || "Contato sem nome", telefone };
+}
+
 /**
  * Contas WhatsApp mais novas às vezes identificam o contato por um "LID"
  * (Linked ID, identificador interno de privacidade que o WhatsApp foi
@@ -44,8 +67,13 @@ export function ligarRelayDeEntrada(sock) {
     for (const msg of messages) {
       try {
         const telefone = extrairTelefone(msg.key);
-        const texto = extrairTexto(msg);
-        if (!telefone || !texto || !msg.key?.id) continue;
+        if (!telefone || !msg.key?.id) continue;
+
+        const contatoCompartilhado = extrairContatoCompartilhado(msg);
+        const texto = contatoCompartilhado
+          ? `📇 Contato compartilhado: ${contatoCompartilhado.nome} — ${contatoCompartilhado.telefone}`
+          : extrairTexto(msg);
+        if (!texto) continue;
 
         await chamarApi("/api/integracoes/whatsapp/mensagens", {
           method: "POST",
@@ -63,6 +91,7 @@ export function ligarRelayDeEntrada(sock) {
             enviadaEm: msg.messageTimestamp
               ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
               : undefined,
+            contatoCompartilhado: contatoCompartilhado || undefined,
           }),
         });
       } catch (erro) {

@@ -14,6 +14,10 @@ const bodySchema = z.object({
   direcao: z.enum(["ENTRADA", "SAIDA"]),
   externalId: z.string().min(1),
   enviadaEm: z.string().optional(),
+  // Preenchido quando a mensagem é um contato compartilhado (vCard) — o
+  // whatsapp-service já manda um texto amigável, isso aqui só liga o botão
+  // "Adicionar ao CRM" na UI.
+  contatoCompartilhado: z.object({ nome: z.string().min(1), telefone: z.string().min(1) }).optional(),
 });
 
 export async function POST(request: Request) {
@@ -45,6 +49,8 @@ export async function POST(request: Request) {
     origem: "WHATSAPP",
     externalId: parsed.data.externalId,
     enviadaEm: parsed.data.enviadaEm ? new Date(parsed.data.enviadaEm) : undefined,
+    contatoCompartilhadoNome: parsed.data.contatoCompartilhado?.nome,
+    contatoCompartilhadoTelefone: parsed.data.contatoCompartilhado?.telefone,
   });
 
   return NextResponse.json({ ok: true, mensagemId: mensagem.id, conversaId: conversa.id });

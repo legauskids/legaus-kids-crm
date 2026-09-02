@@ -25,7 +25,10 @@ export default async function NegocioDetalhePage({
   const negocio = await getNegocioDetalhado(negocioId);
   if (!negocio) notFound();
 
-  const usuarios = await prisma.user.findMany({ orderBy: { nome: "asc" } });
+  const [usuarios, contatos] = await Promise.all([
+    prisma.user.findMany({ orderBy: { nome: "asc" } }),
+    prisma.contato.findMany({ select: { id: true, nome: true }, orderBy: { nome: "asc" } }),
+  ]);
   const isFunilVenda = negocio.funil.nome === "Funil de venda";
   const isFunilPosVenda = negocio.funil.nome === "Funil de pós-venda";
 
@@ -67,7 +70,7 @@ export default async function NegocioDetalhePage({
           <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
         <TabsContent value="dados">
-          <DadosTab negocio={negocio} usuarios={usuarios} isFunilPosVenda={isFunilPosVenda} />
+          <DadosTab negocio={negocio} contatos={contatos} usuarios={usuarios} isFunilPosVenda={isFunilPosVenda} />
         </TabsContent>
         <TabsContent value="tarefas">
           <TarefasTab

@@ -6,6 +6,11 @@ export function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
 }
 
+export async function existeContatoComTelefone(telefone: string): Promise<boolean> {
+  const contato = await prisma.contato.findUnique({ where: { telefone: normalizarTelefone(telefone) }, select: { id: true } });
+  return contato != null;
+}
+
 /** Usado pelo painel da extensão pra decidir entre a tela de "contato novo" e a de resumo. */
 export function buscarContatoComNegociosPorTelefone(telefone: string) {
   return prisma.contato.findUnique({

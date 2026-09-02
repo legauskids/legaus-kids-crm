@@ -1,6 +1,8 @@
 import "server-only";
+import sharp from "sharp";
 import { prisma } from "@/lib/db";
 import { calcularPrecificacao } from "@/lib/utils/precificacao";
+import { URL_BASE } from "@/lib/constants/app";
 
 // Categorias que sempre aparecem na aba Produtos, mesmo sem nenhum item
 // cadastrado ainda — assim dá pra criar produto ali direto. As 10 primeiras
@@ -53,6 +55,31 @@ export function atualizarProduto(produtoId: string, input: AtualizarProdutoInput
 
 export function excluirProduto(produtoId: string) {
   return prisma.produto.delete({ where: { id: produtoId } });
+}
+
+/**
+ * Salva uma foto enviada por upload — redimensiona (largura máx. 1000px, o
+ * bastante pra card/orçamento sem inchar o banco) e guarda os bytes direto
+ * no Produto. imagemUrl vira a rota interna de servir essa imagem, pra tudo
+ * que já lê imagemUrl (cards, orçamento, PDF) continuar funcionando sem
+ * precisar saber que a foto agora é upload em vez de link externo.
+ */
+export async function atualizarFotoProduto(produtoId: string, arquivo: Buffer): Promise<string> {
+  const redimensionado = await sharp(arquivo).rotate().resize({ width: 1000, withoutEnlargement: true }).jpeg({ quality: 88 }).toBuffer();
+
+  await prisma.produto.update({
+    where: { id: produtoId },
+    data: {
+      imagemBytes: new Uint8Array(redimensionado),
+      imagemMime: "image/jpeg",
+      imagemUrl: `${URL_BASE}/api/imagem/produto/${produtoId}`,
+    },
+  });
+  return `${URL_BASE}/api/imagem/produto/${produtoId}`;
+}
+
+export function buscarFotoProduto(produtoId: string) {
+  return prisma.produto.findUnique({ where: { id: produtoId }, select: { imagemBytes: true, imagemMime: true } });
 }
 
 export type CampoPrecoProduto =

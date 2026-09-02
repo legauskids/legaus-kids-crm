@@ -11,6 +11,7 @@ import {
   cancelarMensagemAgendada,
 } from "@/lib/server/conversas";
 import { criarRespostaRapida, excluirRespostaRapida } from "@/lib/server/respostas-rapidas";
+import { salvarContatoPorTelefone, existeContatoComTelefone } from "@/lib/server/contatos";
 import { criarNegocio, moverNegocio } from "@/lib/server/negocios";
 import { criarTarefa } from "@/lib/server/tarefas";
 import { gerarSugestaoResposta } from "@/lib/server/agente-atendimento";
@@ -210,4 +211,22 @@ export async function moverMiniFormAction(
   await moverNegocio(parsed.data.negocioId, parsed.data.etapaId);
   revalidateAtendimento();
   return { success: true };
+}
+
+export async function adicionarContatoCompartilhadoAction(
+  nome: string,
+  telefone: string,
+): Promise<{ id: string; jaExistia: boolean } | { error: string }> {
+  await requireUser();
+  try {
+    // Por telefone (não criarContato) de propósito: um contato compartilhado
+    // pode já existir no CRM com esse número (ex: já é cliente) — nesse caso
+    // só reaproveita o registro em vez de estourar erro de telefone
+    // duplicado.
+    const jaExistia = await existeContatoComTelefone(telefone);
+    const contato = await salvarContatoPorTelefone({ nome, telefone });
+    return { id: contato.id, jaExistia };
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui adicionar o contato." };
+  }
 }

@@ -59,6 +59,8 @@ export default async function AtendimentoPage({
           enviadaEm: m.enviadaEm.toISOString(),
           anexoUrl: m.anexoUrl,
           anexoNome: m.anexoNome,
+          contatoCompartilhadoNome: m.contatoCompartilhadoNome,
+          contatoCompartilhadoTelefone: m.contatoCompartilhadoTelefone,
         })),
         notas: conversaSelecionadaRaw.notas.map((n) => ({
           id: n.id,

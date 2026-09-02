@@ -4,16 +4,20 @@ import { requireUser } from "@/lib/auth/guards";
 import { processarComandoAgente } from "@/lib/server/agente";
 import { transcreverAudio, transcricaoConfigurada } from "@/lib/server/transcricao";
 
-export async function enviarComandoAgenteAction(texto: string): Promise<{ resposta: string } | { error: string }> {
+export async function enviarComandoAgenteAction(
+  texto: string,
+  anexoPdf?: { base64: string; nomeArquivo: string },
+): Promise<{ resposta: string } | { error: string }> {
   const user = await requireUser();
-  if (!texto.trim()) return { error: "Digite um comando." };
+  if (!texto.trim() && !anexoPdf) return { error: "Digite um comando." };
 
   try {
     const resultado = await processarComandoAgente({
-      texto: texto.trim(),
+      texto: texto.trim() || "Segue o PDF anexado.",
       origem: "CRM_TEXTO",
       identificador: `crm:${user.id}`,
       usuarioId: user.id,
+      anexoPdf,
     });
     return resultado;
   } catch (erro) {

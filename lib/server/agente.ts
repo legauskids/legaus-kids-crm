@@ -35,7 +35,12 @@ import {
   buscarProdutosSimilar,
   buscarNegociosSimilarIds,
   buscarTarefasSimilarIds,
+  buscarCotacoesSimilar,
+  buscarContratosSimilarIds,
 } from "@/lib/server/busca-similar";
+import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precificacao";
+import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
+import { listarContratos } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
 import { URL_BASE } from "@/lib/constants/app";
 import type { OrigemComando, StatusOrcamento } from "@prisma/client";
@@ -1015,6 +1020,75 @@ const FERRAMENTAS: Ferramenta[] = [
     },
   },
   {
+    name: "buscar_cotacoes",
+    description:
+      "Busca cotações de custo/margem (aba Cotações em Cadastros — calculadora interna de preço por categoria: Playground, Kidplay, Brinquedos, Outros) por título. Deixe termo vazio pra listar as mais recentes. Use antes de responder perguntas sobre preço/margem de uma cotação específica.",
+    input_schema: {
+      type: "object",
+      properties: { termo: { type: "string", description: "Título da cotação, opcional" } },
+    },
+    async executar(args) {
+      const { termo } = args as { termo?: string };
+      const resumos = await buscarCotacoesSimilar(termo ?? "", 8);
+      if (resumos.length === 0) return "Nenhuma cotação encontrada.";
+      return Promise.all(
+        resumos.map(async (r) => {
+          const cotacao = await buscarCotacaoPorId(r.id);
+          if (!cotacao) return { id: r.id, numero: r.numero, titulo: r.titulo, tipo: r.tipo };
+          const resultado = calcularCotacao({
+            itens: cotacao.itens.map((i) => ({ quantidade: i.quantidade, custoUnitarioCentavos: i.custoUnitarioCentavos })),
+            maoDeObra: cotacao.maoDeObra as unknown as MaoDeObraItem[],
+            markup: cotacao.markup,
+            adicionalCentavos: cotacao.adicionalCentavos,
+            instalacaoPercentual: cotacao.instalacaoPercentual,
+            freteKm: cotacao.freteKm,
+            fretePrecoPorKmCentavos: cotacao.fretePrecoPorKmCentavos,
+            impostoCentavos: cotacao.impostoCentavos,
+          });
+          return {
+            id: r.id,
+            numero: r.numero,
+            titulo: r.titulo,
+            tipo: r.tipo,
+            quantidade_itens: cotacao.itens.length,
+            total_cobrado: centavosParaReais(resultado.totalCentavos),
+            resultado: centavosParaReais(resultado.resultadoCentavos),
+          };
+        }),
+      );
+    },
+  },
+  {
+    name: "buscar_contratos",
+    description:
+      "Busca contratos gerados (snapshot do texto no momento da geração, vinculado a um negócio) pelo título do negócio ou nome do cliente. Deixe termo vazio pra listar os mais recentes.",
+    input_schema: {
+      type: "object",
+      properties: { termo: { type: "string", description: "Título do negócio ou nome do cliente, opcional" } },
+    },
+    async executar(args) {
+      const { termo } = args as { termo?: string };
+      let contratos;
+      if (termo) {
+        const ids = await buscarContratosSimilarIds(termo);
+        const todos = await listarContratos();
+        contratos = todos.filter((c) => ids.includes(c.id)).sort((x, y) => ids.indexOf(x.id) - ids.indexOf(y.id));
+      } else {
+        contratos = (await listarContratos()).slice(0, 8);
+      }
+      return contratos.length > 0
+        ? contratos.map((c) => ({
+            id: c.id,
+            numero: c.numero,
+            status: c.status,
+            negocio: c.negocio.titulo,
+            cliente: c.negocio.contato?.nome ?? "sem cliente",
+            criadoEm: c.criadoEm.toLocaleDateString("pt-BR"),
+          }))
+        : "Nenhum contrato encontrado.";
+    },
+  },
+  {
     name: "resumo_do_dia",
     description: "Dá um resumo rápido: tarefas com prazo pra hoje/atrasadas e orçamentos em rascunho ou enviados aguardando resposta.",
     input_schema: { type: "object", properties: {} },
@@ -1047,7 +1121,7 @@ Regras:
 - A resposta pode ir pro WhatsApp de verdade — formate como WhatsApp, não como Markdown: *asterisco simples* pra negrito (nunca **duplo**), _underline_ pra itálico, sem títulos com #, sem tabelas.
 - Os comandos costumam vir de um áudio transcrito, não de texto digitado com cuidado — então venha sem pontuação, com repetições, "é... tipo...", correções no meio ("não, deixa isso pra depois, na verdade quero..."), ou mais de um pedido emendado na mesma frase. Interprete a intenção real por trás da fala solta, ignore as hesitações, e priorize a versão final quando o Marcos se corrigir no meio da frase.
 - Se o áudio/comando pedir várias coisas (ex: "cria uma tarefa pra ligar pro João amanhã e já muda o negócio da Apromes pra etapa de fechamento"), execute todas em sequência, uma ferramenta por vez, sem parar no meio pra perguntar "posso continuar?" — só pare de verdade nas ferramentas sensíveis, que já pedem confirmação sozinhas.
-- Sempre que o comando envolver um cliente, produto, negócio ou tarefa por nome, use a ferramenta de busca correspondente primeiro (busca aproximada, tolera erro de digitação) pra achar o ID certo antes de criar ou editar algo.
+- Sempre que o comando envolver um cliente, produto, negócio, tarefa, cotação ou contrato por nome, use a ferramenta de busca correspondente primeiro (busca aproximada, tolera erro de digitação) pra achar o ID certo antes de criar ou editar algo. Antes de responder qualquer pergunta que dependa de dado do CRM (preço, orçamento, cotação, contato, contrato, negócio...), busque de verdade com a ferramenta certa em vez de responder de memória ou chutar — o Marcos pode te pedir pra cruzar informação de vários lugares (ex: "qual o preço desse produto na lista e o que tem cotado pra esse cliente") numa mesma pergunta.
 - Se o resultado de uma ferramenta vier com "ambiguo": true e uma lista de "opcoes", isso significa que a busca achou mais de um resultado parecido — liste as opções pro Marcos escolher, não tente adivinhar qual ele quis dizer.
 - Antes de criar ou mover um negócio, use buscar_funis_etapas pra saber os IDs certos de funil/etapa.
 - Você tem acesso ao histórico recente da conversa — "esse orçamento", "ele", "o cliente que acabei de criar" etc. se referem ao que apareceu nas mensagens anteriores. Não peça pra repetir uma informação que já foi dada antes.
@@ -1056,6 +1130,7 @@ Regras:
 - Enviar orçamento por WhatsApp ou e-mail já manda o PDF de verdade anexado, automaticamente — não precisa de um comando separado pra "mandar em PDF". Se o Marcos pedir só o link/arquivo pra ver aqui no chat mesmo (sem mandar pro cliente), use obter_link_pdf_orcamento.
 - Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
+- Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 
@@ -1082,6 +1157,7 @@ async function rodarAgenteClaude(
   textoComando: string,
   usuarioId: string,
   identificador: string,
+  anexoPdf?: { base64: string; nomeArquivo: string },
 ): Promise<{ texto: string; ferramentaPendente: { nome: string; args: unknown; descricao: string } | null; ferramentasChamadas: string[] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -1094,7 +1170,16 @@ async function rodarAgenteClaude(
 
   const client = new Anthropic({ apiKey });
   const historico = await buscarHistoricoRecente(identificador);
-  const messages: Anthropic.MessageParam[] = [...historico, { role: "user", content: textoComando }];
+  // Com PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada
+  // etc.), manda o documento de verdade pro Claude ler — suporte nativo a
+  // PDF da API da Anthropic, sem precisar de OCR/parsing à parte.
+  const conteudoUsuario: Anthropic.MessageParam["content"] = anexoPdf
+    ? [
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: anexoPdf.base64 } },
+        { type: "text", text: textoComando },
+      ]
+    : textoComando;
+  const messages: Anthropic.MessageParam[] = [...historico, { role: "user", content: conteudoUsuario }];
   let ferramentaPendente: { nome: string; args: unknown; descricao: string } | null = null;
   const ferramentasChamadas: string[] = [];
 
@@ -1179,6 +1264,7 @@ export async function processarComandoAgente(input: {
   origem: OrigemComando;
   identificador: string;
   usuarioId: string;
+  anexoPdf?: { base64: string; nomeArquivo: string };
 }): Promise<{ resposta: string }> {
   const pendente = await buscarPendenteAtivo(input.identificador);
 
@@ -1214,14 +1300,16 @@ export async function processarComandoAgente(input: {
     // expira sozinho pela janela de 10min (JANELA_PENDENTE_MS) se ninguém confirmar.
   }
 
-  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador);
+  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf);
 
   await prisma.comandoAgente.create({
     data: {
       origem: input.origem,
       identificador: input.identificador,
       usuarioId: input.usuarioId,
-      textoComando: input.texto,
+      // Não guarda os bytes do PDF (só o nome) — o anexo só importa pro
+      // turno em que foi mandado, não precisa persistir no histórico.
+      textoComando: input.anexoPdf ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]` : input.texto,
       resposta: resultado.texto,
       status: resultado.ferramentaPendente ? "AGUARDANDO_CONFIRMACAO" : "CONCLUIDO",
       ferramentaPendente: resultado.ferramentaPendente?.nome,

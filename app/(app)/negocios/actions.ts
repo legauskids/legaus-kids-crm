@@ -83,12 +83,17 @@ export async function atualizarDadosNegocioAction(
   formData: FormData,
 ): Promise<AtualizarDadosState> {
   await requireUser();
-  const parsed = atualizarDadosNegocioSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData);
+  if (raw.contatoId === "__nenhum__") raw.contatoId = "";
+  if (raw.origem === "__nenhuma__") raw.origem = "";
+  const parsed = atualizarDadosNegocioSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
   await atualizarDadosNegocio(parsed.data.negocioId, {
+    titulo: parsed.data.titulo || undefined,
+    contatoId: parsed.data.contatoId === "" ? null : parsed.data.contatoId,
     valorCentavos: parsed.data.valorReais != null ? reaisParaCentavos(parsed.data.valorReais) : undefined,
     produto: parsed.data.produto || undefined,
     descricao: parsed.data.descricao || undefined,
@@ -101,6 +106,7 @@ export async function atualizarDadosNegocioAction(
     equipeInstalacao: parsed.data.equipeInstalacao || undefined,
   });
 
+  revalidatePath("/negocios");
   revalidatePath(`/negocios/${parsed.data.negocioId}`);
   return { success: true };
 }

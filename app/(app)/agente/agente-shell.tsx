@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Mic, Square, Send, Loader2, Bot, User as UserIcon, FileText } from "lucide-react";
+import { Mic, Square, Send, Loader2, Bot, User as UserIcon, FileText, Paperclip, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { enviarComandoAgenteAction, enviarComandoAudioAction } from "@/app/(app)/agente/actions";
 
@@ -65,6 +65,7 @@ export type MensagemAgenteVM = {
   resposta: string | null;
   status: string;
   criadoEm: string;
+  anexoNome?: string;
 };
 
 const SUGESTOES = [
@@ -83,11 +84,13 @@ function novaChaveTemp() {
 export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAgenteVM[] }) {
   const [mensagens, setMensagens] = useState<MensagemAgenteVM[]>(historicoInicial);
   const [texto, setTexto] = useState("");
+  const [arquivoPdf, setArquivoPdf] = useState<File | null>(null);
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [gravando, setGravando] = useState(false);
   const [segundosGravando, setSegundosGravando] = useState(0);
   const fimRef = useRef<HTMLDivElement>(null);
+  const inputPdfRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -172,18 +175,28 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
 
   function enviar(comandoForcado?: string) {
     const comando = (comandoForcado ?? texto).trim();
-    if (!comando || pending) return;
+    const pdf = comandoForcado ? null : arquivoPdf;
+    if ((!comando && !pdf) || pending) return;
     setErro(null);
     setTexto("");
+    setArquivoPdf(null);
 
     const idTemp = novaChaveTemp();
     setMensagens((atual) => [
       ...atual,
-      { id: idTemp, textoComando: comando, resposta: null, status: "PENDENTE", criadoEm: new Date().toISOString() },
+      {
+        id: idTemp,
+        textoComando: comando || "(PDF anexado)",
+        anexoNome: pdf?.name,
+        resposta: null,
+        status: "PENDENTE",
+        criadoEm: new Date().toISOString(),
+      },
     ]);
 
     startTransition(async () => {
-      const resultado = await enviarComandoAgenteAction(comando);
+      const anexoPdf = pdf ? { base64: await blobParaBase64(pdf), nomeArquivo: pdf.name } : undefined;
+      const resultado = await enviarComandoAgenteAction(comando, anexoPdf);
       if ("error" in resultado) {
         setErro(resultado.error);
         setMensagens((atual) => atual.filter((m) => m.id !== idTemp));
@@ -229,7 +242,15 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
             {mensagens.map((m) => (
               <div key={m.id} className="space-y-2">
                 <div className="flex items-start justify-end gap-2">
-                  <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">{m.textoComando}</div>
+                  <div className="max-w-[80%] space-y-1.5 rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+                    {m.anexoNome && (
+                      <div className="flex items-center gap-1.5 rounded-lg bg-primary-foreground/15 px-2 py-1 text-xs">
+                        <FileText className="size-3.5 shrink-0" />
+                        {m.anexoNome}
+                      </div>
+                    )}
+                    {m.textoComando}
+                  </div>
                   <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
                     <UserIcon className="size-4 text-muted-foreground" />
                   </div>
@@ -271,7 +292,40 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
             <span className="text-muted-foreground">(clique de novo pra parar e enviar)</span>
           </div>
         )}
+        {arquivoPdf && (
+          <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2">
+            <div className="flex items-center gap-1.5 rounded-lg border bg-muted px-2.5 py-1.5 text-xs text-foreground">
+              <FileText className="size-3.5 shrink-0" />
+              {arquivoPdf.name}
+              <button type="button" onClick={() => setArquivoPdf(null)} className="text-muted-foreground hover:text-destructive">
+                <X className="size-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
         <div className="mx-auto flex max-w-2xl items-end gap-2">
+          <input
+            ref={inputPdfRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const arquivo = e.target.files?.[0];
+              if (arquivo) setArquivoPdf(arquivo);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            title="Anexar PDF (cartão CNPJ, orçamento, cotação...)"
+            disabled={pending}
+            onClick={() => inputPdfRef.current?.click()}
+          >
+            <Paperclip className="size-4" />
+          </Button>
           <Button
             type="button"
             variant={gravando ? "destructive" : "ghost"}
@@ -296,7 +350,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
             rows={1}
             className="min-h-10 resize-none"
           />
-          <Button onClick={() => enviar()} disabled={pending || !texto.trim()} size="icon">
+          <Button onClick={() => enviar()} disabled={pending || (!texto.trim() && !arquivoPdf)} size="icon">
             <Send className="size-4" />
           </Button>
         </div>

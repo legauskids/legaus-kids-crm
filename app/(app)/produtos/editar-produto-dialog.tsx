@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -14,8 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2 } from "lucide-react";
-import { atualizarProdutoAction, excluirProdutoAction, type ProdutoFormState } from "@/app/(app)/produtos/actions";
+import { Trash2, Upload, Loader2 } from "lucide-react";
+import {
+  atualizarProdutoAction,
+  excluirProdutoAction,
+  uploadFotoProdutoAction,
+  type ProdutoFormState,
+} from "@/app/(app)/produtos/actions";
 import type { ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 
 const initialState: ProdutoFormState = {};
@@ -32,6 +37,30 @@ export function EditarProdutoDialog({
   const [ativo, setAtivo] = useState(produto?.ativo ?? true);
   const [imagemUrl, setImagemUrl] = useState(produto?.imagemUrl ?? "");
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [enviandoFoto, startEnvioFoto] = useTransition();
+  const [erroFoto, setErroFoto] = useState<string | null>(null);
+  // Separado de `imagemUrl` (o valor de verdade, submetido no form) — só pra
+  // furar o cache do navegador na prévia assim que uma foto nova é enviada,
+  // já que a rota /api/imagem/produto/{id} sempre serve a mesma URL.
+  const [previewCacheBust, setPreviewCacheBust] = useState<string | null>(null);
+  const inputFotoRef = useRef<HTMLInputElement>(null);
+
+  function enviarFoto(arquivo: File) {
+    if (!produto) return;
+    setErroFoto(null);
+    startEnvioFoto(async () => {
+      const formData = new FormData();
+      formData.append("foto", arquivo);
+      const resultado = await uploadFotoProdutoAction(produto.id, formData);
+      if ("error" in resultado) {
+        setErroFoto(resultado.error);
+        return;
+      }
+      setImagemUrl(resultado.imagemUrl);
+      setPreviewCacheBust(`${resultado.imagemUrl}?t=${Date.now()}`);
+      router.refresh();
+    });
+  }
 
   useEffect(() => {
     if (state.success) onOpenChange(false);
@@ -53,13 +82,38 @@ export function EditarProdutoDialog({
               <div className="flex justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={imagemUrl}
+                  src={previewCacheBust ?? imagemUrl}
                   alt={produto.nome}
                   className="h-32 w-32 rounded-lg border object-contain bg-muted/30"
                   onError={(e) => (e.currentTarget.style.display = "none")}
                 />
               </div>
             )}
+
+            <div className="flex items-center justify-center gap-2">
+              <input
+                ref={inputFotoRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const arquivo = e.target.files?.[0];
+                  if (arquivo) enviarFoto(arquivo);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={enviandoFoto}
+                onClick={() => inputFotoRef.current?.click()}
+              >
+                {enviandoFoto ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                {enviandoFoto ? "Enviando..." : "Enviar foto"}
+              </Button>
+            </div>
+            {erroFoto && <p className="text-center text-xs text-destructive">{erroFoto}</p>}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

@@ -61,6 +61,15 @@ export function NegociosBoardShell({
   const etapasOrdenadas = [...funilSelecionado.etapas].sort((a, b) => a.ordem - b.ordem);
   const etapaPorId = new Map(etapasOrdenadas.map((e) => [e.id, e]));
 
+  const totalPorEtapa = new Map<string, number>();
+  for (const negocio of negocios) {
+    totalPorEtapa.set(negocio.etapaId, (totalPorEtapa.get(negocio.etapaId) ?? 0) + negocio.valorCentavos);
+  }
+  // Não soma a etapa Perdido — negócio perdido não conta pro valor do funil.
+  const totalFunil = etapasOrdenadas
+    .filter((e) => e.tipo !== "PERDIDO")
+    .reduce((soma, e) => soma + (totalPorEtapa.get(e.id) ?? 0), 0);
+
   function commitMove(negocioId: string, novaEtapaId: string) {
     const itemsAntes = items;
     setItems((prev) => prev.map((i) => (i.id === negocioId ? { ...i, columnId: novaEtapaId } : i)));
@@ -104,10 +113,15 @@ export function NegociosBoardShell({
             </Link>
           ))}
         </div>
-        <Button size="sm" onClick={() => setNovoOpen(true)}>
-          <Plus className="size-4" />
-          Novo negócio
-        </Button>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">
+            Total do funil: <span className="font-semibold text-success">{centavosParaReais(totalFunil)}</span>
+          </span>
+          <Button size="sm" onClick={() => setNovoOpen(true)}>
+            <Plus className="size-4" />
+            Novo negócio
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-hidden">
@@ -115,7 +129,14 @@ export function NegociosBoardShell({
           id={`negocios-${funilSelecionado.id}`}
           columns={etapasOrdenadas.map((e, indice) => ({
             id: e.id,
-            label: <EtapaColunaLabel key={e.id} etapa={e} onSlaChange={() => router.refresh()} />,
+            label: (
+              <EtapaColunaLabel
+                key={e.id}
+                etapa={e}
+                totalCentavos={totalPorEtapa.get(e.id) ?? 0}
+                onSlaChange={() => router.refresh()}
+              />
+            ),
             accent: e.tipo === "PERDIDO" ? "danger" : "default",
             cor: corDoIndice(indice),
           }))}
@@ -180,40 +201,53 @@ function toItems(negocios: NegocioCard[]): KanbanItemDef<NegocioCard>[] {
   return negocios.map((n) => ({ id: n.id, columnId: n.etapaId, data: n }));
 }
 
-function EtapaColunaLabel({ etapa, onSlaChange }: { etapa: Etapa; onSlaChange: () => void }) {
+function EtapaColunaLabel({
+  etapa,
+  totalCentavos,
+  onSlaChange,
+}: {
+  etapa: Etapa;
+  totalCentavos: number;
+  onSlaChange: () => void;
+}) {
   const [, startTransition] = useTransition();
 
   return (
-    <span className="flex items-center gap-1 text-sm font-medium">
-      {etapa.nome}
-      <span
-        className="flex items-center gap-0.5 text-xs font-normal text-muted-foreground"
-        onClick={(e) => e.stopPropagation()}
-      >
-        · SLA
-        <input
-          type="number"
-          min={0}
-          // key força o input (não controlado) a refletir o valor do servidor
-          // se ele mudar por fora, ex. editado em /negocios/funis.
-          key={etapa.slaDias}
-          defaultValue={etapa.slaDias ?? ""}
-          placeholder="–"
-          onBlur={(e) => {
-            const value = e.target.value.trim();
-            const slaDias = value ? Number(value) : null;
-            if (slaDias !== etapa.slaDias) {
-              startTransition(async () => {
-                await atualizarEtapaAction(etapa.id, { slaDias });
-                onSlaChange();
-              });
-            }
-          }}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          className="w-8 rounded border bg-transparent px-0.5 text-center outline-none focus:ring-1 focus:ring-primary"
-        />
-        d
+    <div className="flex flex-col gap-0.5">
+      <span className="flex items-center gap-1 text-sm font-medium">
+        {etapa.nome}
+        <span
+          className="flex items-center gap-0.5 text-xs font-normal text-muted-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
+          · SLA
+          <input
+            type="number"
+            min={0}
+            // key força o input (não controlado) a refletir o valor do servidor
+            // se ele mudar por fora, ex. editado em /negocios/funis.
+            key={etapa.slaDias}
+            defaultValue={etapa.slaDias ?? ""}
+            placeholder="–"
+            onBlur={(e) => {
+              const value = e.target.value.trim();
+              const slaDias = value ? Number(value) : null;
+              if (slaDias !== etapa.slaDias) {
+                startTransition(async () => {
+                  await atualizarEtapaAction(etapa.id, { slaDias });
+                  onSlaChange();
+                });
+              }
+            }}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            className="w-8 rounded border bg-transparent px-0.5 text-center outline-none focus:ring-1 focus:ring-primary"
+          />
+          d
+        </span>
       </span>
-    </span>
+      {totalCentavos > 0 && (
+        <span className="text-xs font-semibold text-success">{centavosParaReais(totalCentavos)}</span>
+      )}
+    </div>
   );
 }

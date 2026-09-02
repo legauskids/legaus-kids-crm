@@ -6,10 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { atualizarDadosNegocioAction, type AtualizarDadosState } from "@/app/(app)/negocios/actions";
+
+const OPCOES_ORIGEM = ["Visitas", "Campanhas", "Prospecção"];
 
 type Negocio = {
   id: string;
+  titulo: string;
+  contatoId: string | null;
   valorCentavos: number;
   produto: string | null;
   descricao: string | null;
@@ -33,10 +44,12 @@ const initialState: AtualizarDadosState = {};
 
 export function DadosTab({
   negocio,
+  contatos,
   usuarios,
   isFunilPosVenda,
 }: {
   negocio: Negocio;
+  contatos: { id: string; nome: string }[];
   usuarios: { id: string; nome: string }[];
   isFunilPosVenda: boolean;
 }) {
@@ -47,6 +60,34 @@ export function DadosTab({
       <CardContent className="pt-6">
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="negocioId" value={negocio.id} />
+
+          <div className="space-y-2">
+            <Label htmlFor="titulo">Título</Label>
+            <Input id="titulo" name="titulo" defaultValue={negocio.titulo} required />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="contatoId">Contato</Label>
+              <Select name="contatoId" defaultValue={negocio.contatoId ?? "__nenhum__"}>
+                <SelectTrigger id="contatoId" className="w-full">
+                  <SelectValue placeholder="Selecione um contato" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__nenhum__">Sem contato</SelectItem>
+                  {contatos.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Responsável</Label>
+              <Input value={negocio.responsavel.nome} disabled />
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -61,16 +102,12 @@ export function DadosTab({
               />
             </div>
             <div className="space-y-2">
-              <Label>Responsável</Label>
-              <Input value={negocio.responsavel.nome} disabled />
+              <Label>Data de início</Label>
+              <Input value={toDateInputValue(negocio.dataInicio)} disabled />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Data de início</Label>
-              <Input value={toDateInputValue(negocio.dataInicio)} disabled />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="previsaoFechamento">Previsão de fechamento</Label>
               <Input
@@ -80,16 +117,28 @@ export function DadosTab({
                 defaultValue={toDateInputValue(negocio.previsaoFechamento)}
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="produto">Produto</Label>
               <Input id="produto" name="produto" defaultValue={negocio.produto ?? ""} />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="origem">Origem</Label>
-              <Input id="origem" name="origem" defaultValue={negocio.origem ?? ""} />
+              <Select name="origem" defaultValue={negocio.origem ?? "__nenhuma__"}>
+                <SelectTrigger id="origem" className="w-full">
+                  <SelectValue placeholder="Selecione a origem" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__nenhuma__">Sem origem definida</SelectItem>
+                  {OPCOES_ORIGEM.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

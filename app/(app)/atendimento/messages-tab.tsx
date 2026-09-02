@@ -1,13 +1,60 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
-import { FileText } from "lucide-react";
+import { FileText, UserPlus, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Composer } from "@/app/(app)/atendimento/composer";
+import { adicionarContatoCompartilhadoAction } from "@/app/(app)/atendimento/actions";
 import type {
   ConversaDetalhada,
   RespostaRapidaVM,
   NegocioLinkVM,
 } from "@/app/(app)/atendimento/types";
+
+function ContatoCompartilhadoCard({ nome, telefone, corTexto }: { nome: string; telefone: string; corTexto: string }) {
+  const [resultado, setResultado] = useState<{ jaExistia: boolean } | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <div className={cn("mt-1.5 rounded-md border px-2.5 py-2 text-xs", corTexto)}>
+      <p className="flex items-center gap-1.5 font-medium">
+        <UserPlus className="size-3.5 shrink-0" />
+        Contato compartilhado
+      </p>
+      <p className="mt-0.5">{nome}</p>
+      <p className="opacity-80">{telefone}</p>
+      {resultado ? (
+        <p className="mt-1.5 flex items-center gap-1 font-medium">
+          <Check className="size-3.5" />
+          {resultado.jaExistia ? "Já estava no CRM" : "Adicionado ao CRM"}
+        </p>
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="mt-1.5 h-6 px-2 text-[11px]"
+          disabled={pending}
+          onClick={() =>
+            startTransition(async () => {
+              const resposta = await adicionarContatoCompartilhadoAction(nome, telefone);
+              if ("error" in resposta) {
+                setErro(resposta.error);
+                return;
+              }
+              setResultado(resposta);
+            })
+          }
+        >
+          {pending ? "Adicionando..." : "Adicionar ao CRM"}
+        </Button>
+      )}
+      {erro && <p className="mt-1 text-destructive">{erro}</p>}
+    </div>
+  );
+}
 
 type Funil = { id: string; nome: string; etapas: { id: string; nome: string }[] };
 
@@ -54,6 +101,15 @@ export function MessagesTab({
                   <FileText className="size-3.5 shrink-0" />
                   {m.anexoNome ?? "Arquivo anexado"}
                 </a>
+              )}
+              {m.contatoCompartilhadoNome && m.contatoCompartilhadoTelefone && (
+                <ContatoCompartilhadoCard
+                  nome={m.contatoCompartilhadoNome}
+                  telefone={m.contatoCompartilhadoTelefone}
+                  corTexto={
+                    m.direcao === "SAIDA" ? "border-primary-foreground/30 text-primary-foreground" : "border-foreground/15 text-foreground"
+                  }
+                />
               )}
               <p
                 className={cn(

@@ -8,6 +8,7 @@ import {
   excluirProduto,
   atualizarPrecoProduto,
   aplicarPrecoEmMassa,
+  atualizarFotoProduto,
   type CampoPrecoProduto,
 } from "@/lib/server/produtos";
 import { criarProdutoSchema, atualizarProdutoSchema } from "@/lib/validators/produto";
@@ -62,6 +63,27 @@ export async function atualizarProdutoAction(
   revalidatePath("/produtos");
   revalidatePath("/cadastros");
   return { success: true };
+}
+
+export async function uploadFotoProdutoAction(
+  produtoId: string,
+  formData: FormData,
+): Promise<{ imagemUrl: string } | { error: string }> {
+  await requireUser();
+  const arquivo = formData.get("foto");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { error: "Escolha uma foto." };
+  }
+  if (!arquivo.type.startsWith("image/")) {
+    return { error: "O arquivo precisa ser uma imagem." };
+  }
+
+  const buffer = Buffer.from(await arquivo.arrayBuffer());
+  const imagemUrl = await atualizarFotoProduto(produtoId, buffer);
+
+  revalidatePath("/produtos");
+  revalidatePath("/cadastros");
+  return { imagemUrl };
 }
 
 export async function excluirProdutoAction(produtoId: string): Promise<void> {
