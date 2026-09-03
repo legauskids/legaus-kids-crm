@@ -205,6 +205,12 @@ model Mensagem {
   anexoUrl       String?
   anexoNome      String?
   anexoMimetype  String?
+  // Marca quando o relay do WhatsApp pegou essa mensagem da fila pra
+  // mandar de verdade — evita reenviar (duplicar de verdade no WhatsApp do
+  // cliente) se a confirmação de envio falhar/demorar antes do próximo
+  // ciclo de 5s do relay pegar a mesma mensagem de novo achando que ainda
+  // não foi tentada.
+  tentativaEnvioEm DateTime?
 
   // Preenchidos quando a mensagem é um contato compartilhado pelo WhatsApp
   // (vCard) — deixa a UI mostrar um card com botão "Adicionar ao CRM" em vez

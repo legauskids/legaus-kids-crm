@@ -89,18 +89,41 @@ export function encontrarMensagemPorExternalId(externalId: string) {
   return prisma.mensagem.findUnique({ where: { externalId } });
 }
 
+// Se uma mensagem foi entregue de verdade pelo Baileys mas a chamada de
+// confirmar-envio falhou/demorou (rede instável, por exemplo), ela ainda
+// aparece como "pendente" pro relay — sem essa janela, o próximo ciclo de
+// 5s a reenviaria de verdade pro cliente. Visto ao vivo em 2026-09-03:
+// 2 clientes reais receberam orçamento duplicado por causa disso.
+const JANELA_TENTATIVA_ENVIO_MS = 90 * 1000;
+
 /**
  * Mensagens de saída que ainda não foram de fato entregues pelo WhatsApp
  * real (criadas pelo composer do Atendimento ou por uma mensagem agendada
- * que venceu) — a extensão consome essa fila e retransmite pra conversa
- * real, depois confirma via `confirmarEnvioMensagem`.
+ * que venceu) — o relay do WhatsApp consome essa fila e retransmite pra
+ * conversa real, depois confirma via `confirmarEnvioMensagem`. "Reserva"
+ * (marca `tentativaEnvioEm`) cada mensagem retornada, pra não entregar a
+ * mesma pendência de novo pro relay antes de dar tempo da confirmação
+ * chegar — ver `JANELA_TENTATIVA_ENVIO_MS`.
  */
-export function listMensagensPendentesDeRelay() {
-  return prisma.mensagem.findMany({
-    where: { direcao: "SAIDA", origem: { not: "WHATSAPP" }, externalId: null },
+export async function listMensagensPendentesDeRelay() {
+  const limiteTentativa = new Date(Date.now() - JANELA_TENTATIVA_ENVIO_MS);
+  const pendentes = await prisma.mensagem.findMany({
+    where: {
+      direcao: "SAIDA",
+      origem: { not: "WHATSAPP" },
+      externalId: null,
+      OR: [{ tentativaEnvioEm: null }, { tentativaEnvioEm: { lt: limiteTentativa } }],
+    },
     include: { conversa: { include: { contato: true } } },
     orderBy: { enviadaEm: "asc" },
   });
+  if (pendentes.length > 0) {
+    await prisma.mensagem.updateMany({
+      where: { id: { in: pendentes.map((m) => m.id) } },
+      data: { tentativaEnvioEm: new Date() },
+    });
+  }
+  return pendentes;
 }
 
 export function confirmarEnvioMensagem(mensagemId: string, externalId: string) {
