@@ -40,7 +40,20 @@ function ArquivoCard({ url }: { url: string }) {
   );
 }
 
-/** O agente às vezes manda um link na resposta em texto puro — link de PDF vira um card de arquivo, o resto vira link clicável normal. */
+function CardProdutoImagem({ url }: { url: string }) {
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="mt-1.5 block w-fit">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="Card do produto"
+        className="h-56 w-56 rounded-lg border border-current/20 object-cover"
+      />
+    </a>
+  );
+}
+
+/** O agente às vezes manda um link na resposta em texto puro — link de PDF vira um card de arquivo, card de produto vira a imagem de verdade, o resto vira link clicável normal. */
 function RespostaComLinks({ texto }: { texto: string }) {
   // split com 1 grupo de captura alterna [texto, url, texto, url, ...] — índice ímpar é sempre a URL capturada.
   const partes = texto.split(/(https?:\/\/[^\s]+)/g);
@@ -49,6 +62,7 @@ function RespostaComLinks({ texto }: { texto: string }) {
       {partes.map((parte, i) => {
         if (i % 2 !== 1) return parte ? <span key={i}>{parte}</span> : null;
         if (parte.includes("/api/pdf/")) return <ArquivoCard key={i} url={parte} />;
+        if (parte.includes("/api/imagem/produto-card/")) return <CardProdutoImagem key={i} url={parte} />;
         return (
           <a key={i} href={parte} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:no-underline">
             {parte}
@@ -288,7 +302,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
                   {m.resposta != null ? (
                     <div
                       className={cn(
-                        "max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm",
+                        "max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm",
                         m.status === "AGUARDANDO_CONFIRMACAO" ? "bg-warning/15 text-foreground" : "bg-muted text-foreground",
                       )}
                     >

@@ -390,7 +390,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "gerar_cards_produtos",
     description:
-      "Gera um card de imagem (foto + nome + descrição + preço, com a marca Legaus Kids) pra cada produto encontrado — um card por produto, pra mostrar aqui no chat antes de decidir mandar pro cliente. Informe termo (busca por nome/código, ex: 'playground') OU produtoIds (se já sabe os IDs exatos, ex: de uma busca anterior nessa conversa).",
+      "Gera um card de imagem (foto + nome + descrição + preço, com a marca Legaus Kids) pra cada produto encontrado — um card por produto, pra mostrar aqui no chat antes de decidir mandar pro cliente. Informe termo (busca por nome/código, ex: 'playground') OU produtoIds (se já sabe os IDs exatos, ex: de uma busca anterior nessa conversa). IMPORTANTE: coloque o link do campo `card` de CADA produto, sozinho numa linha, na sua resposta em texto — é assim que a imagem aparece de verdade aqui no chat (o link vira o card visualmente, não precisa descrever como link).",
     input_schema: {
       type: "object",
       properties: {
