@@ -26,7 +26,12 @@ export async function criarProdutoAction(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
-  await criarProduto({
+  const foto = formData.get("foto");
+  if (foto instanceof File && foto.size > 0 && !foto.type.startsWith("image/")) {
+    return { error: "O arquivo da foto precisa ser uma imagem." };
+  }
+
+  const produto = await criarProduto({
     nome: parsed.data.nome,
     codigo: parsed.data.codigo || null,
     categoria: parsed.data.categoria,
@@ -34,6 +39,11 @@ export async function criarProdutoAction(
     imagemUrl: parsed.data.imagemUrl || null,
     valorCentavos: parsed.data.valorReais != null ? reaisParaCentavos(parsed.data.valorReais) : null,
   });
+
+  if (foto instanceof File && foto.size > 0) {
+    const buffer = Buffer.from(await foto.arrayBuffer());
+    await atualizarFotoProduto(produto.id, buffer);
+  }
 
   revalidatePath("/produtos");
   revalidatePath("/cadastros");
