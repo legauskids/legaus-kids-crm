@@ -30,12 +30,15 @@ async function processarFila(sock) {
       let enviada;
       if (item.anexoUrl) {
         const arquivo = await baixarArquivo(item.anexoUrl);
-        enviada = await sock.sendMessage(jid, {
-          document: arquivo,
-          mimetype: item.anexoMimetype || "application/pdf",
-          fileName: item.anexoNome || "arquivo.pdf",
-          caption: item.texto,
-        });
+        const ehImagem = (item.anexoMimetype || "").startsWith("image/");
+        enviada = ehImagem
+          ? await sock.sendMessage(jid, { image: arquivo, caption: item.texto })
+          : await sock.sendMessage(jid, {
+              document: arquivo,
+              mimetype: item.anexoMimetype || "application/pdf",
+              fileName: item.anexoNome || "arquivo.pdf",
+              caption: item.texto,
+            });
       } else {
         enviada = await sock.sendMessage(jid, { text: item.texto });
       }

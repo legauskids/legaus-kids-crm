@@ -116,6 +116,30 @@ async function resolverPorBusca(
   return { ambiguo: true, ids };
 }
 
+/** Usado pelas ferramentas de card de produto — aceita IDs já conhecidos ou um termo de busca livre. */
+async function resolverIdsDeProdutos(args: { termo?: string; produtoIds?: string[] }): Promise<string[]> {
+  if (args.produtoIds && args.produtoIds.length > 0) return [...new Set(args.produtoIds)].slice(0, 10);
+  if (args.termo) return (await buscarProdutosSimilar(args.termo, 10)).map((p) => p.id);
+  return [];
+}
+
+/** Usado pra mandar algo pro WhatsApp de um cliente — aceita telefone direto ou busca por nome. */
+async function resolverTelefoneCliente(args: {
+  telefone?: string;
+  clienteNomeBusca?: string;
+}): Promise<{ telefone: string | null; nomeExibicao: string }> {
+  if (args.telefone) {
+    const digitos = args.telefone.replace(/\D/g, "");
+    return { telefone: digitos.length >= 10 ? digitos : null, nomeExibicao: args.telefone };
+  }
+  if (args.clienteNomeBusca) {
+    const [cliente] = await buscarClientesSimilar(args.clienteNomeBusca, 1);
+    if (cliente?.telefone) return { telefone: cliente.telefone, nomeExibicao: cliente.nome };
+    return { telefone: null, nomeExibicao: args.clienteNomeBusca };
+  }
+  return { telefone: null, nomeExibicao: "cliente não identificado" };
+}
+
 const FERRAMENTAS: Ferramenta[] = [
   {
     name: "buscar_clientes",
@@ -361,6 +385,76 @@ const FERRAMENTAS: Ferramenta[] = [
         campoAlterado: a.campo,
         novoValorVenda: produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "sem custo lançado ainda",
       };
+    },
+  },
+  {
+    name: "gerar_cards_produtos",
+    description:
+      "Gera um card de imagem (foto + nome + descrição + preço, com a marca Legaus Kids) pra cada produto encontrado — um card por produto, pra mostrar aqui no chat antes de decidir mandar pro cliente. Informe termo (busca por nome/código, ex: 'playground') OU produtoIds (se já sabe os IDs exatos, ex: de uma busca anterior nessa conversa).",
+    input_schema: {
+      type: "object",
+      properties: {
+        termo: { type: "string" },
+        produtoIds: { type: "array", items: { type: "string" } },
+      },
+    },
+    async executar(args) {
+      const ids = await resolverIdsDeProdutos(args as { termo?: string; produtoIds?: string[] });
+      if (ids.length === 0) return "Nenhum produto encontrado.";
+      const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true, valorCentavos: true } });
+      return produtos.map((p) => ({
+        produtoId: p.id,
+        nome: p.nome,
+        valor: p.valorCentavos != null ? centavosParaReais(p.valorCentavos) : "sem valor cadastrado",
+        card: `${URL_BASE}/api/imagem/produto-card/${p.id}`,
+      }));
+    },
+  },
+  {
+    name: "enviar_cards_produtos_whatsapp",
+    description:
+      "Manda pro WhatsApp de um cliente um card de imagem (foto + nome + descrição + preço) de cada produto encontrado — um card por produto, cada um numa mensagem separada. Ação sensível — sempre pede confirmação antes. Informe termo (busca por nome/código) OU produtoIds, e telefone OU clienteNomeBusca pra identificar o destinatário.",
+    input_schema: {
+      type: "object",
+      properties: {
+        termo: { type: "string" },
+        produtoIds: { type: "array", items: { type: "string" } },
+        telefone: { type: "string", description: "Com DDD, só números" },
+        clienteNomeBusca: { type: "string", description: "Nome do cliente, alternativa a telefone — usa o telefone cadastrado dele" },
+      },
+    },
+    sensivel: true,
+    async descreverAcao(args) {
+      const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string };
+      const ids = await resolverIdsDeProdutos(a);
+      if (ids.length === 0) return "nenhum produto encontrado";
+      const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { nome: true } });
+      const destino = await resolverTelefoneCliente(a);
+      const nomesProdutos = produtos.map((p) => p.nome).join(", ");
+      return `mandar ${produtos.length} card(s) de produto (${nomesProdutos}) pro WhatsApp de ${destino.nomeExibicao}`;
+    },
+    async executar(args) {
+      const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string };
+      const ids = await resolverIdsDeProdutos(a);
+      if (ids.length === 0) throw new Error("Nenhum produto encontrado.");
+      const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true, valorCentavos: true } });
+      const destino = await resolverTelefoneCliente(a);
+      if (!destino.telefone) throw new Error("Não tenho um telefone válido pra esse cliente.");
+
+      const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: destino.telefone, nomeContato: destino.nomeExibicao });
+      for (const produto of produtos) {
+        const precoTexto = produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "Consulte";
+        await registrarMensagem({
+          conversaId: conversa.id,
+          texto: `${produto.nome} — ${precoTexto}`,
+          direcao: "SAIDA",
+          origem: "SISTEMA",
+          anexoUrl: `${URL_BASE}/api/imagem/produto-card/${produto.id}`,
+          anexoNome: `${produto.nome}.jpg`,
+          anexoMimetype: "image/jpeg",
+        });
+      }
+      return { enviado: true, quantidade: produtos.length, produtos: produtos.map((p) => p.nome) };
     },
   },
   {
