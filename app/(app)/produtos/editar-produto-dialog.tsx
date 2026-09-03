@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -43,22 +44,37 @@ export function EditarProdutoDialog({
   // furar o cache do navegador na prévia assim que uma foto nova é enviada,
   // já que a rota /api/imagem/produto/{id} sempre serve a mesma URL.
   const [previewCacheBust, setPreviewCacheBust] = useState<string | null>(null);
+  const [arrastandoFoto, setArrastandoFoto] = useState(false);
   const inputFotoRef = useRef<HTMLInputElement>(null);
+
+  const MAX_FOTO_BYTES = 6 * 1024 * 1024;
 
   function enviarFoto(arquivo: File) {
     if (!produto) return;
     setErroFoto(null);
+    if (!arquivo.type.startsWith("image/")) {
+      setErroFoto("Só é possível enviar arquivos de imagem.");
+      return;
+    }
+    if (arquivo.size > MAX_FOTO_BYTES) {
+      setErroFoto(`Essa imagem tem ${(arquivo.size / 1024 / 1024).toFixed(1)}MB — o máximo é 6MB.`);
+      return;
+    }
     startEnvioFoto(async () => {
-      const formData = new FormData();
-      formData.append("foto", arquivo);
-      const resultado = await uploadFotoProdutoAction(produto.id, formData);
-      if ("error" in resultado) {
-        setErroFoto(resultado.error);
-        return;
+      try {
+        const formData = new FormData();
+        formData.append("foto", arquivo);
+        const resultado = await uploadFotoProdutoAction(produto.id, formData);
+        if ("error" in resultado) {
+          setErroFoto(resultado.error);
+          return;
+        }
+        setImagemUrl(resultado.imagemUrl);
+        setPreviewCacheBust(`${resultado.imagemUrl}?t=${Date.now()}`);
+        router.refresh();
+      } catch {
+        setErroFoto("Não consegui enviar a foto — tenta de novo.");
       }
-      setImagemUrl(resultado.imagemUrl);
-      setPreviewCacheBust(`${resultado.imagemUrl}?t=${Date.now()}`);
-      router.refresh();
     });
   }
 
@@ -74,44 +90,77 @@ export function EditarProdutoDialog({
           <DialogTitle>Editar produto</DialogTitle>
         </DialogHeader>
         {produto && (
-          <form action={formAction} className="space-y-4" key={produto.id}>
+          <form
+            action={formAction}
+            className="space-y-4"
+            key={produto.id}
+            onPaste={(e) => {
+              const arquivo = Array.from(e.clipboardData.files).find((f) => f.type.startsWith("image/"));
+              if (arquivo) {
+                e.preventDefault();
+                enviarFoto(arquivo);
+              }
+            }}
+          >
             <input type="hidden" name="produtoId" value={produto.id} />
             <input type="hidden" name="ativo" value={String(ativo)} />
 
-            {imagemUrl && (
-              <div className="flex justify-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewCacheBust ?? imagemUrl}
-                  alt={produto.nome}
-                  className="h-32 w-32 rounded-lg border object-contain bg-muted/30"
-                  onError={(e) => (e.currentTarget.style.display = "none")}
-                />
-              </div>
-            )}
+            <div
+              className={cn(
+                "space-y-2 rounded-lg border-2 border-dashed p-3 transition-colors",
+                arrastandoFoto ? "border-primary bg-primary/5" : "border-transparent",
+              )}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer.types.includes("Files")) setArrastandoFoto(true);
+              }}
+              onDragLeave={() => setArrastandoFoto(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setArrastandoFoto(false);
+                const arquivo = e.dataTransfer.files?.[0];
+                if (arquivo) enviarFoto(arquivo);
+              }}
+            >
+              {imagemUrl && (
+                <div className="flex justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewCacheBust ?? imagemUrl}
+                    alt={produto.nome}
+                    className="h-32 w-32 rounded-lg border object-contain bg-muted/30"
+                    onError={(e) => (e.currentTarget.style.display = "none")}
+                  />
+                </div>
+              )}
 
-            <div className="flex items-center justify-center gap-2">
-              <input
-                ref={inputFotoRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const arquivo = e.target.files?.[0];
-                  if (arquivo) enviarFoto(arquivo);
-                  e.target.value = "";
-                }}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={enviandoFoto}
-                onClick={() => inputFotoRef.current?.click()}
-              >
-                {enviandoFoto ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-                {enviandoFoto ? "Enviando..." : "Enviar foto"}
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                <input
+                  ref={inputFotoRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const arquivo = e.target.files?.[0];
+                    if (arquivo) enviarFoto(arquivo);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={enviandoFoto}
+                  title="Também aceita arrastar e soltar, ou colar (Ctrl+V)"
+                  onClick={() => inputFotoRef.current?.click()}
+                >
+                  {enviandoFoto ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                  {enviandoFoto ? "Enviando..." : "Enviar foto"}
+                </Button>
+              </div>
+              <p className="text-center text-[11px] text-muted-foreground">
+                {arrastandoFoto ? "Solte a imagem aqui" : "ou arraste uma imagem, ou cole com Ctrl+V"}
+              </p>
             </div>
             {erroFoto && <p className="text-center text-xs text-destructive">{erroFoto}</p>}
 

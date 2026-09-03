@@ -87,6 +87,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
   const [arquivoPdf, setArquivoPdf] = useState<File | null>(null);
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
+  const [arrastando, setArrastando] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [segundosGravando, setSegundosGravando] = useState(0);
   const fimRef = useRef<HTMLDivElement>(null);
@@ -158,18 +159,23 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
     ]);
 
     startTransition(async () => {
-      const base64 = await blobParaBase64(blob);
-      const resultado = await enviarComandoAudioAction(base64, mimeType);
-      if ("error" in resultado) {
-        setErro(resultado.error);
+      try {
+        const base64 = await blobParaBase64(blob);
+        const resultado = await enviarComandoAudioAction(base64, mimeType);
+        if ("error" in resultado) {
+          setErro(resultado.error);
+          setMensagens((atual) => atual.filter((m) => m.id !== idTemp));
+          return;
+        }
+        setMensagens((atual) =>
+          atual.map((m) =>
+            m.id === idTemp ? { ...m, textoComando: resultado.transcricao, resposta: resultado.resposta, status: "CONCLUIDO" } : m,
+          ),
+        );
+      } catch {
+        setErro("Não consegui enviar o áudio — tenta de novo.");
         setMensagens((atual) => atual.filter((m) => m.id !== idTemp));
-        return;
       }
-      setMensagens((atual) =>
-        atual.map((m) =>
-          m.id === idTemp ? { ...m, textoComando: resultado.transcricao, resposta: resultado.resposta, status: "CONCLUIDO" } : m,
-        ),
-      );
     });
   }
 
@@ -195,17 +201,37 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
     ]);
 
     startTransition(async () => {
-      const anexoPdf = pdf ? { base64: await blobParaBase64(pdf), nomeArquivo: pdf.name } : undefined;
-      const resultado = await enviarComandoAgenteAction(comando, anexoPdf);
-      if ("error" in resultado) {
-        setErro(resultado.error);
+      try {
+        const anexoPdf = pdf ? { base64: await blobParaBase64(pdf), nomeArquivo: pdf.name } : undefined;
+        const resultado = await enviarComandoAgenteAction(comando, anexoPdf);
+        if ("error" in resultado) {
+          setErro(resultado.error);
+          setMensagens((atual) => atual.filter((m) => m.id !== idTemp));
+          return;
+        }
+        setMensagens((atual) =>
+          atual.map((m) => (m.id === idTemp ? { ...m, resposta: resultado.resposta, status: "CONCLUIDO" } : m)),
+        );
+      } catch {
+        setErro("Não consegui enviar — tenta de novo. Se anexou um PDF grande, tenta um arquivo menor (até 6MB).");
         setMensagens((atual) => atual.filter((m) => m.id !== idTemp));
-        return;
       }
-      setMensagens((atual) =>
-        atual.map((m) => (m.id === idTemp ? { ...m, resposta: resultado.resposta, status: "CONCLUIDO" } : m)),
-      );
     });
+  }
+
+  const MAX_PDF_BYTES = 6 * 1024 * 1024;
+
+  function selecionarPdf(arquivo: File) {
+    setErro(null);
+    if (arquivo.type !== "application/pdf") {
+      setErro("Só é possível anexar arquivos PDF.");
+      return;
+    }
+    if (arquivo.size > MAX_PDF_BYTES) {
+      setErro(`Esse PDF tem ${(arquivo.size / 1024 / 1024).toFixed(1)}MB — o máximo é 6MB.`);
+      return;
+    }
+    setArquivoPdf(arquivo);
   }
 
   return (
@@ -284,7 +310,25 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
 
       {erro && <p className="px-6 text-sm text-destructive">{erro}</p>}
 
-      <div className="border-t bg-card p-4">
+      <div
+        className={cn("border-t bg-card p-4 transition-colors", arrastando && "bg-primary/5")}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer.types.includes("Files")) setArrastando(true);
+        }}
+        onDragLeave={() => setArrastando(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setArrastando(false);
+          const arquivo = e.dataTransfer.files?.[0];
+          if (arquivo) selecionarPdf(arquivo);
+        }}
+      >
+        {arrastando && (
+          <div className="mx-auto mb-2 max-w-2xl rounded-lg border-2 border-dashed border-primary px-3 py-2 text-center text-xs font-medium text-primary">
+            Solte o PDF aqui
+          </div>
+        )}
         {gravando && (
           <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2 text-sm text-destructive">
             <span className="size-2 animate-pulse rounded-full bg-destructive" />
@@ -311,7 +355,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
             className="hidden"
             onChange={(e) => {
               const arquivo = e.target.files?.[0];
-              if (arquivo) setArquivoPdf(arquivo);
+              if (arquivo) selecionarPdf(arquivo);
               e.target.value = "";
             }}
           />
@@ -320,7 +364,7 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
             variant="ghost"
             size="icon"
             className="shrink-0"
-            title="Anexar PDF (cartão CNPJ, orçamento, cotação...)"
+            title="Anexar PDF — também aceita arrastar e soltar, ou colar (Ctrl+V)"
             disabled={pending}
             onClick={() => inputPdfRef.current?.click()}
           >
@@ -346,7 +390,14 @@ export function AgenteShell({ historicoInicial }: { historicoInicial: MensagemAg
                 enviar();
               }
             }}
-            placeholder="Digite um comando, ou grave por voz..."
+            onPaste={(e) => {
+              const arquivo = Array.from(e.clipboardData.files).find((f) => f.type === "application/pdf");
+              if (arquivo) {
+                e.preventDefault();
+                selecionarPdf(arquivo);
+              }
+            }}
+            placeholder="Digite um comando, ou grave por voz... (dá pra arrastar ou colar um PDF também)"
             rows={1}
             className="min-h-10 resize-none"
           />

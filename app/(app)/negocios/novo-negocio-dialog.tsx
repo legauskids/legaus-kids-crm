@@ -21,7 +21,7 @@ import {
 import { criarNegocioAction, type CriarNegocioState } from "@/app/(app)/negocios/actions";
 
 const initialState: CriarNegocioState = {};
-const OPCOES_ORIGEM = ["Visitas", "Campanhas", "Prospecção"];
+const OPCOES_ORIGEM = ["Visitas", "Campanhas", "Prospecção", "Google"];
 
 export function NovoNegocioDialog({
   open,
