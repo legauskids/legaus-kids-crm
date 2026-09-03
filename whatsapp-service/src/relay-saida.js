@@ -2,6 +2,19 @@ import { chamarApi, baixarArquivo } from "./crm-api.js";
 
 const INTERVALO_MS = 5000;
 
+// index.js chama iniciarRelayDeSaida de novo a cada reconexão (comum — ver
+// os comentários sobre instabilidade em index.js). Sem isso, cada
+// reconexão empilhava mais um setInterval rodando em paralelo com o(s)
+// anterior(es), todos pollando a fila ao mesmo tempo — o que reabre risco
+// de mandar a mesma mensagem em duplicidade de verdade mesmo com a
+// "reserva" de 90s do lado do CRM (duas consultas simultâneas podem pegar
+// a mesma mensagem antes de qualquer uma marcar a tentativa). Só um
+// intervalo por vez, sempre com o `sock` mais recente.
+let intervaloAtual = null;
+// Mesmo com um único intervalo, se processarFila demorar mais que 5s (fila
+// grande, rede lenta) o próximo tick não pode começar em cima do anterior.
+let processandoAgora = false;
+
 /**
  * Poll na fila de envio do CRM (mesma rota que extension/background.js já
  * usava, GET /fila-envio — inclui negócios, notas, respostas rápidas,
@@ -10,11 +23,22 @@ const INTERVALO_MS = 5000;
  * bem mais rápido que o alarme de 1 min da extensão.
  */
 export function iniciarRelayDeSaida(sock) {
-  setInterval(() => processarFila(sock), INTERVALO_MS);
+  if (intervaloAtual) clearInterval(intervaloAtual);
+  intervaloAtual = setInterval(() => processarFila(sock), INTERVALO_MS);
   processarFila(sock);
 }
 
 async function processarFila(sock) {
+  if (processandoAgora) return;
+  processandoAgora = true;
+  try {
+    await processarFilaAgora(sock);
+  } finally {
+    processandoAgora = false;
+  }
+}
+
+async function processarFilaAgora(sock) {
   let pendentes;
   try {
     const dados = await chamarApi("/api/integracoes/whatsapp/fila-envio");
