@@ -781,27 +781,30 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "enviar_orcamento_whatsapp",
     description:
-      "Envia um orçamento já criado pro WhatsApp do cliente — manda o ARQUIVO PDF de verdade anexado na mensagem (não um link pra clicar). Use essa ferramenta (não obter_link_pdf_orcamento) sempre que alguém pedir pra 'mandar', 'enviar' ou 'anexar' o PDF/arquivo pra um cliente, ou pedir explicitamente 'o arquivo, não o link' — isso vale tanto pro cliente final quanto quando o próprio Marcos/Dani pede o PDF de volta pelo WhatsApp da Legaus Kids. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
+      "Envia um orçamento já criado pro WhatsApp — manda o ARQUIVO PDF de verdade anexado na mensagem (não um link pra clicar). Use essa ferramenta (não obter_link_pdf_orcamento) sempre que alguém pedir pra 'mandar', 'enviar' ou 'anexar' o PDF/arquivo, ou pedir explicitamente 'o arquivo, não o link'. Por padrão manda pro telefone do CLIENTE vinculado ao orçamento. Se o pedido for pra mandar PRA VOCÊ MESMO (o Marcos/Dani pedindo de volta pelo WhatsApp da Legaus Kids, ex: 'manda aqui pra mim', 'me manda o PDF'), passe paraMim:true — não deixe telefone em branco achando que resolve sozinho: sem paraMim, em branco cai no telefone do CLIENTE do orçamento (pode ser um terceiro, ex: pedir o orçamento do Fulano e mandar 'pra mim' erraria pro telefone do Fulano). E nunca invente/redigite um número de telefone de memória — use paraMim, ou peça o número. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
     input_schema: {
       type: "object",
       properties: {
         orcamentoId: { type: "string" },
         numero: { type: "integer", description: "Número do orçamento (ex: 8), alternativa ao orcamentoId" },
-        telefone: { type: "string", description: "Com DDD, só números — usa o telefone do cliente vinculado se não informado" },
+        telefone: { type: "string", description: "Com DDD, só números — copie exatamente se o usuário informou um; não invente" },
+        paraMim: { type: "boolean", description: "true quando o pedido é pra mandar pro WhatsApp de quem está pedindo (não pro cliente do orçamento)" },
       },
     },
     sensivel: true,
     async descreverAcao(args) {
-      const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
+      const a = args as { orcamentoId?: string; numero?: number; paraMim?: boolean };
+      const orcamento = await resolverOrcamento(a);
       if (!orcamento) return "orçamento não encontrado";
       const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
-      return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}), com o PDF anexado, pro WhatsApp de ${orcamento.contato?.nome ?? "cliente sem nome vinculado"}`;
+      const destino = a.paraMim ? "você" : (orcamento.contato?.nome ?? "cliente sem nome vinculado");
+      return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}), com o PDF anexado, pro WhatsApp de ${destino}`;
     },
     async executar(args, ctx) {
-      const { telefone } = args as { telefone?: string };
+      const { telefone, paraMim } = args as { telefone?: string; paraMim?: boolean };
       const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) throw new Error("Orçamento não encontrado.");
-      const telefoneFinal = (telefone || orcamento.contato?.telefone || ctx.telefoneOrigem || "").replace(/\D/g, "");
+      const telefoneFinal = (telefone || (paraMim ? ctx.telefoneOrigem : undefined) || orcamento.contato?.telefone || ctx.telefoneOrigem || "").replace(/\D/g, "");
       if (telefoneFinal.length < 10) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
       const token = await garantirTokenPublico(orcamento.id);
