@@ -1,5 +1,6 @@
 import { downloadMediaMessage } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
+import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
 
 // Números autorizados a dar comando (voz, texto ou PDF) pro agente de IA —
 // só dígitos, com DDI, ver .env.example. Vale nas duas direções: mensagem
@@ -21,9 +22,27 @@ const TELEFONES_AUTORIZADOS = new Set(
     .filter(Boolean),
 );
 
+// Mesma resolução de LID que relay-entrada.js já faz (ver o comentário
+// detalhado lá) — sem isso, qualquer mensagem endereçada por LID em vez de
+// telefone puro (comum em self-chat e cada vez mais comum em geral) nunca
+// batia com WHATSAPP_COMANDO_TELEFONES e o comando era ignorado em
+// silêncio, mesmo vindo de um número autorizado de verdade.
 function extrairTelefoneRemetente(key) {
+  if (key?.senderPn && key?.senderLid) registrarMapeamento(key.senderLid, key.senderPn);
+  if (key?.participantPn && key?.participantLid) registrarMapeamento(key.participantLid, key.participantPn);
+
   const jid = key?.senderPn || key?.remoteJid;
   if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return null;
+
+  if (jid.endsWith("@lid")) {
+    const resolvido = resolverTelefonePorLid(jid);
+    if (!resolvido) {
+      console.warn(`[relay-comando-agente] LID ${jid} ainda não tem telefone real conhecido — não dá pra checar autorização, ignorando como comando.`);
+      return null;
+    }
+    return resolvido;
+  }
+
   return jid.split("@")[0];
 }
 
