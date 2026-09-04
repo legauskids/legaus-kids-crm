@@ -68,3 +68,12 @@ export function aprenderDeContatos(contatos) {
 export function resolverTelefonePorLid(lid) {
   return mapa.get(soDigitos(lid)) ?? null;
 }
+
+/** Direção contrária — telefone -> LID, usado por relay-saida.js pra mandar mensagem pelo identificador que o WhatsApp espera de verdade. */
+export function resolverLidPorTelefone(telefone) {
+  const alvo = soDigitos(telefone);
+  for (const [lid, tel] of mapa.entries()) {
+    if (tel === alvo) return lid;
+  }
+  return null;
+}

@@ -38,6 +38,41 @@ async function processarFila(sock) {
   }
 }
 
+/**
+ * Visto ao vivo em 2026-09-04: mandar direto pra `${telefone}@s.whatsapp.net`
+ * fazia o Baileys devolver um key.id válido (status "PENDING") — parecendo
+ * sucesso — mas a mensagem nunca chegava de verdade no celular de destino
+ * (confirmado com o Marcos testando na hora, várias vezes).
+ *
+ * Causa raiz encontrada com log de diagnóstico: `sock.onWhatsApp(telefone)`
+ * — a forma oficialmente documentada de resolver o destino antes de mandar
+ * (README.md, "Check If ID Exists in Whatsapp") — devolveu um `jid`
+ * (`result.jid`) com um dígito a menos que o telefone real (perdeu o "9"
+ * extra do celular brasileiro: "5555999603257" virou "555599603257"),
+ * quase certamente uma normalização antiga do WhatsApp pra números do
+ * Brasil (o país adicionou o 9º dígito nos celulares há alguns anos, e
+ * lógica mais velha às vezes ainda assume o formato de 8 dígitos). Mandar
+ * pra esse JID errado nunca daria erro (o número pode nem existir, ou
+ * existir como outra coisa) — só nunca chegava a lugar nenhum.
+ *
+ * `result.lid`, por outro lado, veio consistente com o LID que já
+ * tínhamos resolvido por outro caminho (ver lid-cache.js) — não passa
+ * pela mesma normalização de telefone, então usa o LID como destino
+ * quando disponível, e só cai pro telefone (como veio, sem reformatar)
+ * quando não há LID pra esse contato.
+ */
+async function resolverJidParaEnvio(sock, telefone) {
+  const jidIngenuo = `${telefone}@s.whatsapp.net`;
+  try {
+    const [resultado] = (await sock.onWhatsApp(telefone)) ?? [];
+    console.log(`[relay-saida] onWhatsApp(${telefone}) ->`, JSON.stringify(resultado));
+    if (resultado?.exists && resultado.lid) return resultado.lid;
+  } catch (erro) {
+    console.error(`[relay-saida] Falha ao resolver JID de ${telefone} via onWhatsApp, usando o telefone direto:`, erro.message);
+  }
+  return jidIngenuo;
+}
+
 async function processarFilaAgora(sock) {
   let pendentes;
   try {
@@ -50,7 +85,8 @@ async function processarFilaAgora(sock) {
 
   for (const item of pendentes) {
     try {
-      const jid = `${item.telefone}@s.whatsapp.net`;
+      const jid = await resolverJidParaEnvio(sock, item.telefone);
+      console.log(`[relay-saida] Mandando pra jid resolvido: ${jid}`);
       let enviada;
       if (item.anexoUrl) {
         const arquivo = await baixarArquivo(item.anexoUrl);
@@ -66,6 +102,7 @@ async function processarFilaAgora(sock) {
       } else {
         enviada = await sock.sendMessage(jid, { text: item.texto });
       }
+      console.log(`[relay-saida] Retorno do sendMessage:`, JSON.stringify(enviada));
       if (!enviada?.key?.id) {
         console.error(`[relay-saida] Envio pra ${item.telefone} não retornou id de mensagem.`);
         continue;

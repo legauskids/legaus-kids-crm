@@ -7,7 +7,7 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import { ligarRelayDeEntrada } from "./relay-entrada.js";
 import { iniciarRelayDeSaida } from "./relay-saida.js";
 import { ligarRelayDeComandoDeVoz } from "./relay-comando-voz.js";
-import { aprenderDeContatos } from "./lid-cache.js";
+import { aprenderDeContatos, registrarMapeamento } from "./lid-cache.js";
 
 const ARQUIVO_QR = "ultimo-qr.png";
 
@@ -84,6 +84,29 @@ function limparAuthSeNaoRegistrado() {
   if (credsAtuais && !credsAtuais.registered && fs.existsSync(PASTA_AUTH)) {
     fs.rmSync(PASTA_AUTH, { recursive: true, force: true });
     console.warn("[whatsapp-service] Pareamento nunca completou — apagando e gerando um QR code/código novo.");
+  }
+}
+
+/**
+ * O celular pessoal do Marcos (mesmo número usado pro pareamento por
+ * código, `WHATSAPP_PAREAMENTO_TELEFONE`) é justamente quem ele testa
+ * mandando mensagem do WhatsApp da Legaus Kids pra si mesmo — e é
+ * exatamente esse tipo de conversa (self-chat entre dois números do
+ * mesmo ecossistema) que mais aparece endereçada por LID em vez de
+ * telefone. Como já SABEMOS o telefone real, dá pra resolver o LID dele
+ * de forma proativa aqui (telefone -> LID é a direção que o Baileys
+ * suporta de verdade, via onWhatsApp/USync) em vez de esperar passivamente
+ * a sincronização de contatos aprender essa correspondência sozinha.
+ */
+async function resolverLidDoProprioNumero(sock) {
+  if (!TELEFONE_PAREAMENTO) return;
+  try {
+    const resultados = await sock.onWhatsApp(TELEFONE_PAREAMENTO);
+    for (const r of resultados ?? []) {
+      if (r.lid) registrarMapeamento(r.lid, TELEFONE_PAREAMENTO);
+    }
+  } catch (erro) {
+    console.error("[whatsapp-service] Falha ao resolver LID do próprio número:", erro.message);
   }
 }
 
@@ -178,6 +201,7 @@ async function conectar() {
       iniciarRelayDeSaida(sock);
       ligarRelayDeComandoDeVoz(sock);
       iniciarWatchdog(sock);
+      resolverLidDoProprioNumero(sock);
     }
 
     if (connection === "close") {

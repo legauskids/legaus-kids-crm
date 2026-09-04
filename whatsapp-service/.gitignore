@@ -4,3 +4,4 @@ auth-antiga-*/
 .env
 *.log
 ultimo-qr.png
+lid-cache.json
