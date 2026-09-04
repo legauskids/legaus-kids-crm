@@ -190,7 +190,11 @@ const FERRAMENTAS: Ferramenta[] = [
       type: "object",
       properties: {
         nome: { type: "string" },
-        telefone: { type: "string", description: "Com DDD, só números, opcional" },
+        telefone: {
+          type: "string",
+          description:
+            "Com DDD, opcional. Copie os dígitos EXATAMENTE como o usuário mandou (pode incluir DDI, espaços, hífen — são limpos automaticamente). Nunca redigite/reformate/complete de memória: um dígito a mais ou a menos manda a mensagem pro número errado.",
+        },
       },
       required: ["nome"],
     },
@@ -210,7 +214,11 @@ const FERRAMENTAS: Ferramenta[] = [
         clienteId: { type: "string" },
         nomeBusca: { type: "string", description: "Nome do cliente, alternativa a clienteId" },
         novoNome: { type: "string" },
-        novoTelefone: { type: "string" },
+        novoTelefone: {
+          type: "string",
+          description:
+            "Copie os dígitos EXATAMENTE como o usuário mandou, sem redigitar/reformatar/completar de memória — um dígito a mais ou a menos manda a mensagem pro número errado.",
+        },
         novoEmail: { type: "string" },
         novaEmpresa: { type: "string" },
         novoCnpj: { type: "string" },
