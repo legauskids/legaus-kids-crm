@@ -707,7 +707,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "enviar_orcamento_whatsapp",
     description:
-      "Envia um orçamento já criado pro WhatsApp do cliente. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
+      "Envia um orçamento já criado pro WhatsApp do cliente — manda o ARQUIVO PDF de verdade anexado na mensagem (não um link pra clicar). Use essa ferramenta (não obter_link_pdf_orcamento) sempre que alguém pedir pra 'mandar', 'enviar' ou 'anexar' o PDF/arquivo pra um cliente, ou pedir explicitamente 'o arquivo, não o link' — isso vale tanto pro cliente final quanto quando o próprio Marcos/Dani pede o PDF de volta pelo WhatsApp da Legaus Kids. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
     input_schema: {
       type: "object",
       properties: {
@@ -811,7 +811,7 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "obter_link_pdf_orcamento",
-    description: "Gera o link de download do PDF de um orçamento, pra mandar aqui mesmo no chat (não é uma ação sensível, só um link de leitura). Informe orcamentoId ou numero.",
+    description: "Gera só o LINK de download do PDF (não o arquivo em si) — útil quando alguém só quer conferir o orçamento rapidinho aqui no chat (não é uma ação sensível). Se pedirem pra mandar/enviar/anexar o PDF de verdade pra um cliente, ou o arquivo em vez do link, use enviar_orcamento_whatsapp — essa aqui não anexa nada, só devolve o endereço do PDF. Informe orcamentoId ou numero.",
     input_schema: {
       type: "object",
       properties: { orcamentoId: { type: "string" }, numero: { type: "integer" } },
