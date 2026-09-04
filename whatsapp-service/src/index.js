@@ -6,7 +6,7 @@ import qrcode from "qrcode";
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
 import { ligarRelayDeEntrada } from "./relay-entrada.js";
 import { iniciarRelayDeSaida } from "./relay-saida.js";
-import { ligarRelayDeComandoDeVoz } from "./relay-comando-voz.js";
+import { ligarRelayDeComandoAgente } from "./relay-comando-agente.js";
 import { aprenderDeContatos, registrarMapeamento } from "./lid-cache.js";
 
 const ARQUIVO_QR = "ultimo-qr.png";
@@ -199,7 +199,7 @@ async function conectar() {
       console.log("[whatsapp-service] Conectado! Sincronizando com o CRM.");
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);
-      ligarRelayDeComandoDeVoz(sock);
+      ligarRelayDeComandoAgente(sock);
       iniciarWatchdog(sock);
       resolverLidDoProprioNumero(sock);
     }
