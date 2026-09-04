@@ -59,6 +59,7 @@ export default async function AtendimentoPage({
           enviadaEm: m.enviadaEm.toISOString(),
           anexoUrl: m.anexoUrl,
           anexoNome: m.anexoNome,
+          anexoMimetype: m.anexoMimetype,
           contatoCompartilhadoNome: m.contatoCompartilhadoNome,
           contatoCompartilhadoTelefone: m.contatoCompartilhadoTelefone,
         })),

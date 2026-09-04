@@ -1,4 +1,5 @@
 import { chamarApi, baixarArquivo } from "./crm-api.js";
+import { registrarMapeamento } from "./lid-cache.js";
 
 const INTERVALO_MS = 5000;
 
@@ -66,7 +67,15 @@ async function resolverJidParaEnvio(sock, telefone) {
   try {
     const [resultado] = (await sock.onWhatsApp(telefone)) ?? [];
     console.log(`[relay-saida] onWhatsApp(${telefone}) ->`, JSON.stringify(resultado));
-    if (resultado?.exists && resultado.lid) return resultado.lid;
+    if (resultado?.exists && resultado.lid) {
+      // Alimenta o mesmo cache que relay-entrada.js usa pra resolver
+      // mensagem RECEBIDA — sem isso, o LID só ficava conhecido no sentido
+      // de envio, e a próxima mensagem que esse mesmo contato mandasse de
+      // volta continuava sem telefone conhecido (visto ao vivo logo depois
+      // desse fix: mensagem da Jessica ainda foi ignorada uma vez).
+      registrarMapeamento(resultado.lid, telefone);
+      return resultado.lid;
+    }
   } catch (erro) {
     console.error(`[relay-saida] Falha ao resolver JID de ${telefone} via onWhatsApp, usando o telefone direto:`, erro.message);
   }

@@ -87,20 +87,34 @@ export function MessagesTab({
                 m.direcao === "SAIDA" ? "bg-primary text-primary-foreground" : "bg-muted",
               )}
             >
-              <p className="whitespace-pre-wrap">{m.texto}</p>
-              {m.anexoUrl && (
-                <a
-                  href={m.anexoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={cn(
-                    "mt-1.5 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs underline underline-offset-2",
-                    m.direcao === "SAIDA" ? "border-primary-foreground/30 text-primary-foreground" : "border-foreground/15 text-foreground",
-                  )}
-                >
-                  <FileText className="size-3.5 shrink-0" />
-                  {m.anexoNome ?? "Arquivo anexado"}
+              {/* Legenda automática ("📎 nome-do-arquivo") só existe pra dar um texto à mensagem — some quando a imagem já aparece sozinha, senão fica redundante. */}
+              {!(m.anexoUrl && m.anexoMimetype?.startsWith("image/") && m.texto.startsWith("📎 ")) && (
+                <p className="whitespace-pre-wrap">{m.texto}</p>
+              )}
+              {m.anexoUrl && m.anexoMimetype?.startsWith("image/") ? (
+                <a href={m.anexoUrl} target="_blank" rel="noreferrer" className="mt-1.5 block w-fit">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={m.anexoUrl}
+                    alt={m.anexoNome ?? "Imagem anexada"}
+                    className="max-h-64 max-w-full rounded-md border border-current/15 object-contain"
+                  />
                 </a>
+              ) : (
+                m.anexoUrl && (
+                  <a
+                    href={m.anexoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(
+                      "mt-1.5 flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs underline underline-offset-2",
+                      m.direcao === "SAIDA" ? "border-primary-foreground/30 text-primary-foreground" : "border-foreground/15 text-foreground",
+                    )}
+                  >
+                    <FileText className="size-3.5 shrink-0" />
+                    {m.anexoNome ?? "Arquivo anexado"}
+                  </a>
+                )
               )}
               {m.contatoCompartilhadoNome && m.contatoCompartilhadoTelefone && (
                 <ContatoCompartilhadoCard

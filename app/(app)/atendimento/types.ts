@@ -18,6 +18,7 @@ export type MensagemVM = {
   enviadaEm: string;
   anexoUrl: string | null;
   anexoNome: string | null;
+  anexoMimetype: string | null;
   contatoCompartilhadoNome: string | null;
   contatoCompartilhadoTelefone: string | null;
 };
