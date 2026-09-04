@@ -9,9 +9,10 @@ const bodySchema = z
     telefone: z.string().min(8),
     texto: z.string().optional(),
     anexoPdf: z.object({ base64: z.string().min(1), nomeArquivo: z.string().optional() }).optional(),
+    anexoImagem: z.object({ base64: z.string().min(1), mimetype: z.string().min(1) }).optional(),
   })
-  .refine((d) => (d.texto && d.texto.trim().length > 0) || d.anexoPdf, {
-    message: "Informe texto ou anexoPdf.",
+  .refine((d) => (d.texto && d.texto.trim().length > 0) || d.anexoPdf || d.anexoImagem, {
+    message: "Informe texto, anexoPdf ou anexoImagem.",
   });
 
 /**
@@ -38,12 +39,15 @@ export async function POST(request: Request) {
 
   try {
     const resultado = await processarComandoAgente({
-      texto: parsed.data.texto?.trim() || "Segue o PDF anexado.",
+      texto: parsed.data.texto?.trim() || (parsed.data.anexoPdf ? "Segue o PDF anexado." : "Segue a imagem anexada."),
       origem: "WHATSAPP",
       identificador: telefone,
       usuarioId: usuario.id,
       anexoPdf: parsed.data.anexoPdf
         ? { base64: parsed.data.anexoPdf.base64, nomeArquivo: parsed.data.anexoPdf.nomeArquivo || "documento.pdf" }
+        : undefined,
+      anexoImagem: parsed.data.anexoImagem
+        ? { base64: parsed.data.anexoImagem.base64, mimetype: parsed.data.anexoImagem.mimetype }
         : undefined,
     });
 

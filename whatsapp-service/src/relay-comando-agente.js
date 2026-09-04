@@ -64,8 +64,14 @@ export function ligarRelayDeComandoAgente(sock) {
 
         const audioMessage = msg.message?.audioMessage;
         const documentMessage = msg.message?.documentMessage;
+        const imageMessage = msg.message?.imageMessage;
         const ehPdf = documentMessage?.mimetype === "application/pdf";
-        const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || documentMessage?.caption || null;
+        const texto =
+          msg.message?.conversation ||
+          msg.message?.extendedTextMessage?.text ||
+          documentMessage?.caption ||
+          imageMessage?.caption ||
+          null;
 
         // Nota de voz não passa pela palavra-gatilho (não dá pra checar o
         // texto sem transcrever antes) — continua só por número autorizado.
@@ -92,6 +98,18 @@ export function ligarRelayDeComandoAgente(sock) {
             }),
           });
           console.log(`[relay-comando-agente] Comando (PDF) processado -> ${resultado.resposta}`);
+        } else if (imageMessage) {
+          console.log(`[relay-comando-agente] Imagem de comando recebida (${telefone}), baixando...`);
+          const buffer = await downloadMediaMessage(msg, "buffer", {});
+          const resultado = await chamarApi("/api/agente/comando-whatsapp", {
+            method: "POST",
+            body: JSON.stringify({
+              telefone,
+              texto: texto || undefined,
+              anexoImagem: { base64: buffer.toString("base64"), mimetype: imageMessage.mimetype || "image/jpeg" },
+            }),
+          });
+          console.log(`[relay-comando-agente] Comando (imagem) processado -> ${resultado.resposta}`);
         } else if (texto) {
           console.log(`[relay-comando-agente] Comando de texto recebido (${telefone}): "${texto.slice(0, 60)}"`);
           const resultado = await chamarApi("/api/agente/comando-whatsapp", {

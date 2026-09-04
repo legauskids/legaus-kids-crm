@@ -15,6 +15,7 @@ import { criarTarefa, listTarefas, atualizarTarefa } from "@/lib/server/tarefas"
 import {
   criarProduto,
   atualizarProduto,
+  atualizarFotoProduto,
   atualizarPrecoProduto,
   type CampoPrecoProduto,
 } from "@/lib/server/produtos";
@@ -75,7 +76,7 @@ type Ferramenta = {
   description: string;
   input_schema: EsquemaEntrada;
   sensivel?: boolean;
-  descreverAcao?: (args: ArgsFerramenta, ctx: { usuarioId: string; telefoneOrigem?: string }) => Promise<string>;
+  descreverAcao?: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<string>;
   // telefoneOrigem: quando o comando veio pelo WhatsApp, é o telefone de
   // quem mandou (o "identificador" da conversa) — permite ferramentas tipo
   // enviar_orcamento_whatsapp caírem pro telefone de quem está pedindo
@@ -83,7 +84,18 @@ type Ferramenta = {
   // cadastrado (ex: "manda esse orçamento aqui" sem precisar dizer o
   // número). Undefined quando o comando veio do chat do CRM (sem telefone
   // associado).
-  executar: (args: ArgsFerramenta, ctx: { usuarioId: string; telefoneOrigem?: string }) => Promise<unknown>;
+  executar: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<unknown>;
+};
+
+type CtxFerramenta = {
+  usuarioId: string;
+  telefoneOrigem?: string;
+  // Bytes da imagem anexada a ESSE comando (foto mandada junto no WhatsApp,
+  // com ou sem legenda) — só existe no turno em que a imagem chegou, não
+  // sobrevive pro turno de confirmação de uma ferramenta sensível. Por isso
+  // anexar_foto_produto não é sensível: precisa executar direto, enquanto
+  // os bytes ainda estão disponíveis.
+  anexoImagem?: { bytes: Buffer; mimetype: string };
 };
 
 /**
@@ -370,6 +382,33 @@ const FERRAMENTAS: Ferramenta[] = [
         ativo: a.ativo,
       });
       return { id: produto.id, nome: produto.nome };
+    },
+  },
+  {
+    name: "anexar_foto_produto",
+    description:
+      "Salva como foto de um produto do catálogo a imagem que veio anexada JUNTO com esse comando (foto mandada no WhatsApp, com ou sem legenda). Só funciona quando o comando atual tem uma imagem anexada de verdade — se não tiver (comando só de texto/voz pedindo pra anexar uma foto sem mandar nenhuma), não chame essa ferramenta: explique que precisa mandar a foto anexada na mesma mensagem do pedido.",
+    input_schema: {
+      type: "object",
+      properties: {
+        produtoId: { type: "string" },
+        nomeBusca: { type: "string", description: "Nome ou código do produto, alternativa a produtoId" },
+      },
+    },
+    async executar(args, ctx) {
+      if (!ctx.anexoImagem) throw new Error("Não tem nenhuma imagem anexada nesse comando pra salvar.");
+      const a = args as { produtoId?: string; nomeBusca?: string };
+      const resolvido = await resolverPorBusca(a.produtoId, a.nomeBusca, (t) =>
+        buscarProdutosSimilar(t, 5).then((p) => p.map((x) => x.id)),
+      );
+      if (!resolvido) throw new Error(`Não achei nenhum produto parecido com "${a.nomeBusca}".`);
+      if ("ambiguo" in resolvido) {
+        const opcoes = await prisma.produto.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, nome: true, codigo: true } });
+        return { ambiguo: true, opcoes };
+      }
+      const produto = await prisma.produto.findUnique({ where: { id: resolvido.id }, select: { nome: true } });
+      await atualizarFotoProduto(resolvido.id, ctx.anexoImagem.bytes);
+      return { id: resolvido.id, nome: produto?.nome, fotoSalva: true };
     },
   },
   {
@@ -1286,6 +1325,7 @@ Regras:
 - Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
+- Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto — ela usa a imagem anexada nesse mesmo comando, não peça a foto de outro jeito. Se vier um pedido de anexar foto SEM nenhuma imagem anexada, avise que precisa mandar a foto junto (anexada na mesma mensagem), não invente que não consegue anexar fotos.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 
@@ -1308,11 +1348,14 @@ async function buscarHistoricoRecente(identificador: string): Promise<Anthropic.
   return mensagens;
 }
 
+const MEDIA_TYPES_IMAGEM = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
 async function rodarAgenteClaude(
   textoComando: string,
   usuarioId: string,
   identificador: string,
   anexoPdf?: { base64: string; nomeArquivo: string },
+  anexoImagem?: { base64: string; mimetype: string },
 ): Promise<{ texto: string; ferramentaPendente: { nome: string; args: unknown; descricao: string } | null; ferramentasChamadas: string[] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -1327,16 +1370,30 @@ async function rodarAgenteClaude(
   const historico = await buscarHistoricoRecente(identificador);
   // Com PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada
   // etc.), manda o documento de verdade pro Claude ler — suporte nativo a
-  // PDF da API da Anthropic, sem precisar de OCR/parsing à parte.
+  // PDF da API da Anthropic, sem precisar de OCR/parsing à parte. Com foto
+  // anexada (ex: foto de um produto pra cadastrar), manda como imagem —
+  // além de dar pra ferramenta anexar_foto_produto salvar os bytes de
+  // verdade (via ctx.anexoImagem), deixa o Claude "ver" a foto e comentar
+  // sobre ela na resposta.
+  const mediaTypeImagem = anexoImagem && MEDIA_TYPES_IMAGEM.has(anexoImagem.mimetype) ? anexoImagem.mimetype : "image/jpeg";
   const conteudoUsuario: Anthropic.MessageParam["content"] = anexoPdf
     ? [
         { type: "document", source: { type: "base64", media_type: "application/pdf", data: anexoPdf.base64 } },
         { type: "text", text: textoComando },
       ]
-    : textoComando;
+    : anexoImagem
+      ? [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaTypeImagem as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: anexoImagem.base64 },
+          },
+          { type: "text", text: textoComando },
+        ]
+      : textoComando;
   const messages: Anthropic.MessageParam[] = [...historico, { role: "user", content: conteudoUsuario }];
   let ferramentaPendente: { nome: string; args: unknown; descricao: string } | null = null;
   const ferramentasChamadas: string[] = [];
+  const ctxAnexoImagem = anexoImagem ? { bytes: Buffer.from(anexoImagem.base64, "base64"), mimetype: anexoImagem.mimetype } : undefined;
 
   // 8 turnos (não 5) porque um único áudio costuma emendar várias tarefas
   // diferentes ("cria isso, muda aquilo, e já lembra de ligar pro fulano") —
@@ -1373,7 +1430,7 @@ async function rodarAgenteClaude(
       const entrada = uso.input as ArgsFerramenta;
       if (ferramenta.sensivel) {
         const descricao = ferramenta.descreverAcao
-          ? await ferramenta.descreverAcao(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador) })
+          ? await ferramenta.descreverAcao(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador), anexoImagem: ctxAnexoImagem })
           : ferramenta.name;
         ferramentaPendente = { nome: uso.name, args: entrada, descricao };
         resultadosFerramenta.push({
@@ -1384,7 +1441,7 @@ async function rodarAgenteClaude(
         continue;
       }
       try {
-        const resultado = await ferramenta.executar(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador) });
+        const resultado = await ferramenta.executar(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador), anexoImagem: ctxAnexoImagem });
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado) });
       } catch (erro) {
         resultadosFerramenta.push({
@@ -1422,6 +1479,7 @@ export async function processarComandoAgente(input: {
   identificador: string;
   usuarioId: string;
   anexoPdf?: { base64: string; nomeArquivo: string };
+  anexoImagem?: { base64: string; mimetype: string };
 }): Promise<{ resposta: string }> {
   const pendente = await buscarPendenteAtivo(input.identificador);
 
@@ -1460,16 +1518,21 @@ export async function processarComandoAgente(input: {
     // expira sozinho pela janela de 10min (JANELA_PENDENTE_MS) se ninguém confirmar.
   }
 
-  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf);
+  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem);
 
   await prisma.comandoAgente.create({
     data: {
       origem: input.origem,
       identificador: input.identificador,
       usuarioId: input.usuarioId,
-      // Não guarda os bytes do PDF (só o nome) — o anexo só importa pro
-      // turno em que foi mandado, não precisa persistir no histórico.
-      textoComando: input.anexoPdf ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]` : input.texto,
+      // Não guarda os bytes do PDF/imagem (só uma marca textual) — o anexo
+      // só importa pro turno em que foi mandado, não precisa persistir no
+      // histórico.
+      textoComando: input.anexoPdf
+        ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]`
+        : input.anexoImagem
+          ? `${input.texto}\n[Imagem anexada]`
+          : input.texto,
       resposta: resultado.texto,
       status: resultado.ferramentaPendente ? "AGUARDANDO_CONFIRMACAO" : "CONCLUIDO",
       ferramentaPendente: resultado.ferramentaPendente?.nome,
