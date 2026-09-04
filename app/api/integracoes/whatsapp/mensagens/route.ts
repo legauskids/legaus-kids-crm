@@ -9,6 +9,7 @@ import {
 import { existeContatoComTelefone } from "@/lib/server/contatos";
 import { notificarNovoLead } from "@/lib/server/agente-atendimento";
 import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
+import { transcreverAudio, transcricaoConfigurada } from "@/lib/server/transcricao";
 
 const bodySchema = z.object({
   telefone: z.string().min(1),
@@ -53,9 +54,24 @@ export async function POST(request: Request) {
     nomeContato: parsed.data.nomeContato,
   });
 
+  // Nota de voz recebida chegava aqui só como "📎 audio-xxx.ogg" — nem o
+  // Atendimento, nem a sugestão automática de lead novo, nem o agente
+  // conseguiam entender o que a pessoa disse. Transcreve (mesmo motor já
+  // usado pro comando de voz do agente) e usa a transcrição como texto da
+  // mensagem — o áudio original continua salvo/acessível via anexoUrl.
+  let texto = parsed.data.texto;
+  if (parsed.data.anexo?.mimetype.startsWith("audio/") && transcricaoConfigurada()) {
+    try {
+      const transcricao = await transcreverAudio(Buffer.from(parsed.data.anexo.base64, "base64"), parsed.data.anexo.mimetype);
+      if (transcricao) texto = `🎤 ${transcricao}`;
+    } catch (erro) {
+      console.error("Falha ao transcrever áudio recebido:", erro);
+    }
+  }
+
   const mensagem = await registrarMensagem({
     conversaId: conversa.id,
-    texto: parsed.data.texto,
+    texto,
     direcao: parsed.data.direcao,
     origem: "WHATSAPP",
     externalId: parsed.data.externalId,
