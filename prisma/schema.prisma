@@ -205,6 +205,11 @@ model Mensagem {
   anexoUrl       String?
   anexoNome      String?
   anexoMimetype  String?
+  // Só preenchido pra anexo que CHEGOU do WhatsApp (o CRM guarda os bytes de
+  // verdade aqui) — anexo que o CRM MANDA nunca usa isso, o anexoUrl aponta
+  // pra uma rota que já sabe gerar o conteúdo (PDF do orçamento, card de
+  // produto etc.), sem precisar duplicar os bytes na própria Mensagem.
+  anexoBytes     Bytes?
   // Marca quando o relay do WhatsApp pegou essa mensagem da fila pra
   // mandar de verdade — evita reenviar (duplicar de verdade no WhatsApp do
   // cliente) se a confirmação de envio falhar/demorar antes do próximo

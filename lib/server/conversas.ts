@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { URL_BASE } from "@/lib/constants/app";
 
 /**
  * Única superfície que deve tocar as tabelas Conversa/Mensagem. Quando a
@@ -89,6 +90,13 @@ export function encontrarMensagemPorExternalId(externalId: string) {
   return prisma.mensagem.findUnique({ where: { externalId } });
 }
 
+export function buscarAnexoDaMensagem(mensagemId: string) {
+  return prisma.mensagem.findUnique({
+    where: { id: mensagemId },
+    select: { anexoBytes: true, anexoMimetype: true, anexoNome: true },
+  });
+}
+
 // Se uma mensagem foi entregue de verdade pelo Baileys mas a chamada de
 // confirmar-envio falhou/demorou (rede instável, por exemplo), ela ainda
 // aparece como "pendente" pro relay — sem essa janela, o próximo ciclo de
@@ -141,6 +149,11 @@ export async function registrarMensagem(input: {
   anexoUrl?: string;
   anexoNome?: string;
   anexoMimetype?: string;
+  // Bytes de verdade de um anexo que CHEGOU do WhatsApp (foto, PDF, áudio
+  // que um cliente mandou) — o anexoUrl é montado automaticamente a partir
+  // do ID da mensagem depois de criada (ver rota /api/integracoes/whatsapp/
+  // anexo/[mensagemId]), não precisa informar os dois.
+  anexoBytes?: Buffer;
   contatoCompartilhadoNome?: string;
   contatoCompartilhadoTelefone?: string;
 }) {
@@ -156,12 +169,21 @@ export async function registrarMensagem(input: {
       anexoUrl: input.anexoUrl,
       anexoNome: input.anexoNome,
       anexoMimetype: input.anexoMimetype,
+      anexoBytes: input.anexoBytes ? new Uint8Array(input.anexoBytes) : undefined,
       contatoCompartilhadoNome: input.contatoCompartilhadoNome,
       contatoCompartilhadoTelefone: input.contatoCompartilhadoTelefone,
     },
   });
+
+  const mensagemFinal = input.anexoBytes
+    ? await prisma.mensagem.update({
+        where: { id: mensagem.id },
+        data: { anexoUrl: `${URL_BASE}/api/integracoes/whatsapp/anexo/${mensagem.id}` },
+      })
+    : mensagem;
+
   await prisma.conversa.update({ where: { id: input.conversaId }, data: { updatedAt: new Date() } });
-  return mensagem;
+  return mensagemFinal;
 }
 
 export function assumirConversa(conversaId: string, userId: string) {

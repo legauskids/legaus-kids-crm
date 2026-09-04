@@ -1,15 +1,62 @@
+import { downloadMediaMessage, getContentType } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
 import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
 
+// Limite pensado pro tamanho que a hospedagem do CRM aceita num POST só
+// (base64 infla o tamanho em ~33%, e isso tudo vai num único corpo JSON) —
+// cobre foto/PDF normal de celular com folga, sem arriscar um vídeo grande
+// estourar o limite da rota no meio do caminho.
+const TAMANHO_MAXIMO_ANEXO_BYTES = 8 * 1024 * 1024;
+
 /**
- * Extrai o texto de uma mensagem do Baileys. Só cobre mensagem de texto
- * simples (os dois formatos mais comuns) — mesmo escopo que a extensão
- * antiga já tinha (ela só lia `span.selectable-text` no DOM, ou seja,
- * também só texto). Mídia (áudio, imagem, figurinha) fica de fora por
- * enquanto; dá pra ampliar depois se precisar.
+ * Extrai o texto de uma mensagem do Baileys — texto simples ou a legenda de
+ * uma foto/vídeo/documento (áudio e figurinha não têm legenda no WhatsApp).
  */
 function extrairTexto(msg) {
-  return msg.message?.conversation || msg.message?.extendedTextMessage?.text || null;
+  const m = msg.message;
+  return (
+    m?.conversation ||
+    m?.extendedTextMessage?.text ||
+    m?.imageMessage?.caption ||
+    m?.videoMessage?.caption ||
+    m?.documentMessage?.caption ||
+    null
+  );
+}
+
+const TIPOS_MIDIA = new Set(["imageMessage", "videoMessage", "documentMessage", "audioMessage", "stickerMessage"]);
+
+/**
+ * Baixa e descriptografa a mídia de uma mensagem recebida (o Baileys só
+ * entrega uma referência criptografada — o conteúdo de verdade precisa ser
+ * baixado do CDN do WhatsApp à parte). Devolve null pra mensagem sem mídia,
+ * mídia maior que o limite, ou qualquer falha no download (mídia expirada,
+ * por exemplo) — nesses casos o texto, se houver, ainda é reportado
+ * normalmente pro CRM, só sem o anexo.
+ */
+async function extrairMidia(sock, msg) {
+  const tipo = getContentType(msg.message);
+  if (!tipo || !TIPOS_MIDIA.has(tipo)) return null;
+
+  const conteudo = msg.message[tipo];
+  const tamanhoEsperado = Number(conteudo?.fileLength ?? 0);
+  if (tamanhoEsperado > TAMANHO_MAXIMO_ANEXO_BYTES) {
+    console.warn(`[relay-entrada] Anexo de ${tipo} maior que o limite (${tamanhoEsperado} bytes) — mensagem reportada só com o texto, se tiver.`);
+    return null;
+  }
+
+  try {
+    const buffer = await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage });
+    const extensao = (conteudo.mimetype || "").split("/")[1]?.split(";")[0] || "bin";
+    return {
+      base64: buffer.toString("base64"),
+      nome: conteudo.fileName || `${tipo.replace("Message", "")}-${msg.key.id}.${extensao}`,
+      mimetype: conteudo.mimetype || "application/octet-stream",
+    };
+  } catch (erro) {
+    console.error(`[relay-entrada] Falha ao baixar mídia (${tipo}) da mensagem ${msg.key.id}:`, erro.message);
+    return null;
+  }
 }
 
 /** Pega o telefone de dentro do vCard (linha "TEL..."), só dígitos — mesmo formato que extrairTelefone já usa pro remetente. */
@@ -96,9 +143,15 @@ export function ligarRelayDeEntrada(sock) {
         if (!telefone || !msg.key?.id) continue;
 
         const contatoCompartilhado = extrairContatoCompartilhado(msg);
+        const tipoMidia = contatoCompartilhado ? null : getContentType(msg.message);
+        const anexo = tipoMidia && TIPOS_MIDIA.has(tipoMidia) ? await extrairMidia(sock, msg) : null;
+        // Mensagem só com mídia (sem legenda) ainda precisa de algum texto —
+        // usa o nome do anexo baixado, ou um aviso genérico quando a mídia
+        // era grande/expirada demais pra baixar (pelo menos o contato não
+        // some da fila de atendimento).
         const texto = contatoCompartilhado
           ? `📇 Contato compartilhado: ${contatoCompartilhado.nome} — ${contatoCompartilhado.telefone}`
-          : extrairTexto(msg);
+          : extrairTexto(msg) || (anexo ? `📎 ${anexo.nome}` : tipoMidia ? "📎 Arquivo recebido (não foi possível baixar automaticamente)" : null);
         if (!texto) continue;
 
         await chamarApi("/api/integracoes/whatsapp/mensagens", {
@@ -112,6 +165,7 @@ export function ligarRelayDeEntrada(sock) {
             // pushName é o nome do Marcos/Dani, não do contato.
             nomeContato: !msg.key.fromMe ? msg.pushName || undefined : undefined,
             texto,
+            anexo: anexo || undefined,
             direcao: msg.key.fromMe ? "SAIDA" : "ENTRADA",
             externalId: msg.key.id,
             enviadaEm: msg.messageTimestamp
