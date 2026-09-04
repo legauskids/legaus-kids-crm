@@ -34,11 +34,13 @@ const styles = StyleSheet.create({
   tabela: { marginTop: 18 },
   linhaCabecalho: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: cores.cinza300, paddingBottom: 5 },
   linhaItem: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: cores.cinza100, paddingVertical: 6 },
-  colItem: { flex: 5 },
+  colItem: { flex: 5, flexDirection: "row", alignItems: "center", gap: 8 },
   colQtd: { flex: 1, textAlign: "right" },
   colValor: { flex: 1.4, textAlign: "right" },
   colSubtotal: { flex: 1.4, textAlign: "right" },
   cabecalhoTexto: { fontSize: 7.5, textTransform: "uppercase", color: cores.cinza500, letterSpacing: 0.5 },
+  itemFoto: { width: 32, height: 32, borderRadius: 4, objectFit: "cover" },
+  itemTextos: { flex: 1 },
   itemNome: { fontSize: 9.5 },
   itemDescricao: { fontSize: 7.5, color: cores.cinza500, marginTop: 2 },
   totais: { marginTop: 12, alignItems: "flex-end" },
@@ -71,7 +73,7 @@ type OrcamentoPdfVM = {
   descontoCentavos: number;
   contato: { nome: string; razaoSocial: string | null; cnpj: string | null; telefone: string | null; endereco: string | null; cidade: string | null; uf: string | null } | null;
   responsavel: { nome: string };
-  itens: { nome: string; descricao: string | null; quantidade: number; valorUnitarioCentavos: number }[];
+  itens: { nome: string; descricao: string | null; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
 };
 
 function OrcamentoPdfDocument({ orcamento }: { orcamento: OrcamentoPdfVM }) {
@@ -128,8 +130,14 @@ function OrcamentoPdfDocument({ orcamento }: { orcamento: OrcamentoPdfVM }) {
           {orcamento.itens.map((item, i) => (
             <View key={i} style={styles.linhaItem} wrap={false}>
               <View style={styles.colItem}>
-                <Text style={styles.itemNome}>{item.nome}</Text>
-                {item.descricao && <Text style={styles.itemDescricao}>{compactarDescricao(item.descricao)}</Text>}
+                {item.imagemUrl && (
+                  // eslint-disable-next-line jsx-a11y/alt-text -- Image aqui é do @react-pdf/renderer (destino é PDF), não HTML img
+                  <Image src={item.imagemUrl} style={styles.itemFoto} />
+                )}
+                <View style={styles.itemTextos}>
+                  <Text style={styles.itemNome}>{item.nome}</Text>
+                  {item.descricao && <Text style={styles.itemDescricao}>{compactarDescricao(item.descricao)}</Text>}
+                </View>
               </View>
               <Text style={styles.colQtd}>{item.quantidade}</Text>
               <Text style={styles.colValor}>{centavosParaReais(item.valorUnitarioCentavos)}</Text>
@@ -197,7 +205,13 @@ export async function gerarPdfOrcamento(orcamentoId: string): Promise<{ buffer: 
             }
           : null,
         responsavel: { nome: orcamento.responsavel.nome },
-        itens: orcamento.itens.map((i) => ({ nome: i.nome, descricao: i.descricao, quantidade: i.quantidade, valorUnitarioCentavos: i.valorUnitarioCentavos })),
+        itens: orcamento.itens.map((i) => ({
+          nome: i.nome,
+          descricao: i.descricao,
+          quantidade: i.quantidade,
+          valorUnitarioCentavos: i.valorUnitarioCentavos,
+          imagemUrl: i.produto?.imagemUrl ?? null,
+        })),
       }}
     />,
   );
