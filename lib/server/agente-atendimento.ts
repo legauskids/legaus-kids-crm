@@ -1,11 +1,12 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { getConversaDetalhada } from "@/lib/server/conversas";
+import { getConversaDetalhada, encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
 import { listNegociosPorContato } from "@/lib/server/negocios";
 import { listarOrcamentos } from "@/lib/server/orcamentos";
 import { buscarProdutosSimilar } from "@/lib/server/busca-similar";
 import { centavosParaReais } from "@/lib/utils/money";
 import { EMPRESA } from "@/lib/constants/empresa";
+import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
 
 const MODELO = "claude-sonnet-5";
 
@@ -123,4 +124,45 @@ ${conversa.mensagens.map((m) => `[${m.direcao === "ENTRADA" ? "Cliente" : EMPRES
   }
 
   throw new Error("Não consegui gerar uma sugestão dessa vez — tenta de novo.");
+}
+
+/**
+ * Chamado quando chega a PRIMEIRA mensagem de um contato novo pelo
+ * WhatsApp (ver app/api/integracoes/whatsapp/mensagens/route.ts) — gera
+ * uma sugestão de resposta (mesmo motor de gerarSugestaoResposta) e manda
+ * uma notificação pro WhatsApp de quem está em WHATSAPP_NOTIFICAR_TELEFONES
+ * (Marcos/Dani), com quem é o contato, o que ele mandou, e a sugestão
+ * pronta pra aprovar. Nunca manda nada pro lead sozinho — só avisa e
+ * sugere; o agente de comando (lib/server/agente.ts, ferramenta
+ * enviar_mensagem_whatsapp) manda de verdade quando alguém confirmar.
+ */
+export async function notificarNovoLead(conversaId: string): Promise<void> {
+  if (WHATSAPP_NOTIFICAR_TELEFONES.length === 0) return;
+
+  const conversa = await getConversaDetalhada(conversaId);
+  if (!conversa || conversa.mensagens.length === 0) return;
+
+  const primeiraMensagem = conversa.mensagens[0];
+  let sugestao: string;
+  try {
+    sugestao = await gerarSugestaoResposta(conversaId);
+  } catch (erro) {
+    sugestao = `(não consegui gerar uma sugestão automática: ${erro instanceof Error ? erro.message : "erro desconhecido"})`;
+  }
+
+  const texto =
+    `🆕 *Lead novo pelo WhatsApp*\n` +
+    `${conversa.contato.nome} — ${conversa.contato.telefone}\n\n` +
+    `Mensagem: "${primeiraMensagem.texto}"\n\n` +
+    `*Sugestão de resposta:*\n${sugestao}\n\n` +
+    `Responde aqui pra eu mandar a sugestão (ou me diz o que prefere responder).`;
+
+  for (const telefoneNotificar of WHATSAPP_NOTIFICAR_TELEFONES) {
+    try {
+      const conversaNotificacao = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneNotificar });
+      await registrarMensagem({ conversaId: conversaNotificacao.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
+    } catch {
+      // Falha ao notificar um número não deve impedir de tentar os outros.
+    }
+  }
 }

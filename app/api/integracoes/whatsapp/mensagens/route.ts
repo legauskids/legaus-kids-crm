@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { requireApiUser } from "@/lib/auth/api-token";
 import {
@@ -6,6 +6,9 @@ import {
   encontrarMensagemPorExternalId,
   registrarMensagem,
 } from "@/lib/server/conversas";
+import { existeContatoComTelefone } from "@/lib/server/contatos";
+import { notificarNovoLead } from "@/lib/server/agente-atendimento";
+import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
 
 const bodySchema = z.object({
   telefone: z.string().min(1),
@@ -42,6 +45,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, mensagemId: existente.id, duplicada: true });
   }
 
+  const telefoneNormalizado = parsed.data.telefone.replace(/\D/g, "");
+  const jaEraContato = await existeContatoComTelefone(telefoneNormalizado);
+
   const conversa = await encontrarOuCriarConversaPorTelefone({
     telefone: parsed.data.telefone,
     nomeContato: parsed.data.nomeContato,
@@ -60,6 +66,21 @@ export async function POST(request: Request) {
     anexoNome: parsed.data.anexo?.nome,
     anexoMimetype: parsed.data.anexo?.mimetype,
   });
+
+  // Lead novo: primeira mensagem já de um contato que não existia antes,
+  // recebida (não fromMe), e não é um dos próprios números que dão comando
+  // pro agente (senão o primeiro teste do Marcos/Dani já dispararia uma
+  // notificação de "lead novo" sobre eles mesmos). `after()` roda depois da
+  // resposta já ter sido mandada pro whatsapp-service, sem atrasá-la por
+  // causa da chamada à IA — e, diferente de um fire-and-forget comum, o
+  // Vercel mantém a função viva até terminar (waitUntil por baixo).
+  if (!jaEraContato && parsed.data.direcao === "ENTRADA" && !WHATSAPP_NOTIFICAR_TELEFONES.includes(telefoneNormalizado)) {
+    after(() =>
+      notificarNovoLead(conversa.id).catch((erro) => {
+        console.error("Falha ao notificar lead novo:", erro);
+      }),
+    );
+  }
 
   return NextResponse.json({ ok: true, mensagemId: mensagem.id, conversaId: conversa.id });
 }

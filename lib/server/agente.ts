@@ -679,6 +679,32 @@ const FERRAMENTAS: Ferramenta[] = [
     },
   },
   {
+    name: "enviar_mensagem_whatsapp",
+    description:
+      "Manda uma mensagem de texto direto pro WhatsApp de um contato/cliente — use principalmente pra mandar a sugestão de resposta de um lead novo depois que o Marcos/Dani confirmar (a notificação de lead novo já traz nome, telefone e a sugestão pronta; se a pessoa só disser 'manda'/'pode enviar', use o telefone e o texto da sugestão que já apareceram nessa conversa). Também serve pra responder qualquer conversa do WhatsApp por pedido direto. Ação sensível — sempre pede confirmação antes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        telefone: { type: "string", description: "Com DDI, só números — o telefone do CLIENTE/lead, não o de quem está dando o comando" },
+        texto: { type: "string" },
+      },
+      required: ["telefone", "texto"],
+    },
+    sensivel: true,
+    async descreverAcao(args) {
+      const { telefone, texto } = args as { telefone: string; texto: string };
+      return `mandar pro WhatsApp de ${telefone}: "${texto.length > 80 ? `${texto.slice(0, 80)}…` : texto}"`;
+    },
+    async executar(args) {
+      const { telefone, texto } = args as { telefone: string; texto: string };
+      const telefoneFinal = telefone.replace(/\D/g, "");
+      if (telefoneFinal.length < 10) throw new Error("Telefone inválido.");
+      const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal });
+      await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
+      return { enviado: true, telefone: telefoneFinal };
+    },
+  },
+  {
     name: "enviar_orcamento_whatsapp",
     description:
       "Envia um orçamento já criado pro WhatsApp do cliente. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
