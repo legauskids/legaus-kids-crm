@@ -7,6 +7,7 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import { ligarRelayDeEntrada } from "./relay-entrada.js";
 import { iniciarRelayDeSaida } from "./relay-saida.js";
 import { ligarRelayDeComandoDeVoz } from "./relay-comando-voz.js";
+import { aprenderDeContatos } from "./lid-cache.js";
 
 const ARQUIVO_QR = "ultimo-qr.png";
 
@@ -123,6 +124,13 @@ async function conectar() {
   });
 
   sock.ev.on("creds.update", saveCreds);
+
+  // Aprende a correspondência LID -> telefone real conforme o Baileys vai
+  // sincronizando contatos (normalmente logo após conectar) — usado por
+  // relay-entrada.js pra resolver mensagens que chegam com LID no lugar do
+  // telefone (ver lid-cache.js pro porquê disso ser necessário).
+  sock.ev.on("contacts.upsert", aprenderDeContatos);
+  sock.ev.on("contacts.update", aprenderDeContatos);
 
   // Pareamento por código (alternativa ao QR). Diferente do QR — que o
   // próprio Baileys renova sozinho a cada conexão.update —, um código pedido

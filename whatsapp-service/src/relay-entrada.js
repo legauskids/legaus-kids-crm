@@ -1,4 +1,5 @@
 import { chamarApi } from "./crm-api.js";
+import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
 
 /**
  * Extrai o texto de uma mensagem do Baileys. Só cobre mensagem de texto
@@ -37,17 +38,42 @@ function extrairContatoCompartilhado(msg) {
 /**
  * Contas WhatsApp mais novas às vezes identificam o contato por um "LID"
  * (Linked ID, identificador interno de privacidade que o WhatsApp foi
- * introduzindo aos poucos) em vez do número de telefone real no
- * `remoteJid` — foi isso que causou mensagens chegando com um número
- * completamente diferente do de quem mandou (visto ao vivo em 2026-08-24).
- * `key.senderPn` é o campo que o próprio Baileys expõe com o número de
- * telefone de verdade nesse caso (ver WAMessageKey em
- * node_modules/@whiskeysockets/baileys/lib/Types/Message.d.ts); cai pro
- * `remoteJid` quando ele não vem preenchido (contas mais antigas, sem LID).
+ * introduzindo aos poucos) em vez do número de telefone real — foi isso
+ * que causou mensagens chegando (e sendo mandadas!) com um número sem
+ * sentido de 15 dígitos em vez do telefone de verdade (visto ao vivo em
+ * 2026-08-24 e de novo em 2026-09-03/04).
+ *
+ * `key.senderPn` resolve o REMETENTE (`key.senderLid`) — funciona bem pra
+ * mensagem recebida (`fromMe: false`), onde o remetente É o contato que
+ * importa. Mas pra mensagem ENVIADA por nós (`fromMe: true`), o que
+ * importa é o DESTINATÁRIO (`remoteJid`), e `senderPn` não ajuda em nada
+ * nesse caso (resolve a nossa própria identidade, que já conhecemos) —
+ * foi exatamente esse caso (mandar do WhatsApp da Legaus Kids pro próprio
+ * número pessoal) que continuou quebrado mesmo com o fix de 2026-08-24.
+ * Por isso, quando `remoteJid` termina em "@lid", usa o cache aprendido
+ * em lid-cache.js (alimentado pela sincronização de contatos do Baileys)
+ * pra resolver o telefone de verdade nas duas direções.
+ *
+ * Se nada resolver, devolve null de propósito — em vez de criar um
+ * "contato" fantasma com o LID cru como telefone (o que gerava um número
+ * inválido pro qual nenhuma mensagem futura conseguia ser entregue).
  */
 function extrairTelefone(key) {
+  if (key?.senderPn && key?.senderLid) registrarMapeamento(key.senderLid, key.senderPn);
+  if (key?.participantPn && key?.participantLid) registrarMapeamento(key.participantLid, key.participantPn);
+
   const jid = key?.senderPn || key?.remoteJid;
   if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return null;
+
+  if (jid.endsWith("@lid")) {
+    const resolvido = resolverTelefonePorLid(jid);
+    if (!resolvido) {
+      console.warn(`[relay-entrada] Ignorando mensagem — LID ${jid} ainda não tem telefone real conhecido (sincronização de contatos ainda não chegou a esse contato).`);
+      return null;
+    }
+    return resolvido;
+  }
+
   return jid.split("@")[0];
 }
 
