@@ -75,8 +75,15 @@ type Ferramenta = {
   description: string;
   input_schema: EsquemaEntrada;
   sensivel?: boolean;
-  descreverAcao?: (args: ArgsFerramenta) => Promise<string>;
-  executar: (args: ArgsFerramenta, ctx: { usuarioId: string }) => Promise<unknown>;
+  descreverAcao?: (args: ArgsFerramenta, ctx: { usuarioId: string; telefoneOrigem?: string }) => Promise<string>;
+  // telefoneOrigem: quando o comando veio pelo WhatsApp, é o telefone de
+  // quem mandou (o "identificador" da conversa) — permite ferramentas tipo
+  // enviar_orcamento_whatsapp caírem pro telefone de quem está pedindo
+  // quando não informam telefone explícito nem o cliente/orçamento tem um
+  // cadastrado (ex: "manda esse orçamento aqui" sem precisar dizer o
+  // número). Undefined quando o comando veio do chat do CRM (sem telefone
+  // associado).
+  executar: (args: ArgsFerramenta, ctx: { usuarioId: string; telefoneOrigem?: string }) => Promise<unknown>;
 };
 
 /**
@@ -123,11 +130,30 @@ async function resolverIdsDeProdutos(args: { termo?: string; produtoIds?: string
   return [];
 }
 
-/** Usado pra mandar algo pro WhatsApp de um cliente — aceita telefone direto ou busca por nome. */
-async function resolverTelefoneCliente(args: {
-  telefone?: string;
-  clienteNomeBusca?: string;
-}): Promise<{ telefone: string | null; nomeExibicao: string }> {
+/**
+ * O identificador de uma conversa é o telefone puro (só dígitos) quando o
+ * comando veio do WhatsApp, ou "crm:<userId>" quando veio do chat do CRM —
+ * essa função devolve o telefone só no primeiro caso, pra ferramentas tipo
+ * enviar_orcamento_whatsapp usarem como destino de fallback.
+ */
+function telefoneDeIdentificador(identificador: string): string | undefined {
+  return /^\d{10,}$/.test(identificador) ? identificador : undefined;
+}
+
+/**
+ * Usado pra mandar algo pro WhatsApp de um cliente — aceita telefone
+ * direto, busca por nome, ou (quando nenhum dos dois vem preenchido) cai
+ * pro telefoneOrigem — o telefone de quem está dando o comando agora,
+ * pro caso "manda pra mim"/"me manda aqui" sem precisar que o modelo
+ * "lembre"/adivinhe um número de algum ponto anterior da conversa (visto
+ * ao vivo: o Claude uma vez errou um dígito tentando reconstruir de
+ * memória um telefone mencionado antes, e a mensagem foi pro número
+ * errado sem dar erro nenhum).
+ */
+async function resolverTelefoneCliente(
+  args: { telefone?: string; clienteNomeBusca?: string },
+  telefoneOrigem?: string,
+): Promise<{ telefone: string | null; nomeExibicao: string }> {
   if (args.telefone) {
     const digitos = args.telefone.replace(/\D/g, "");
     return { telefone: digitos.length >= 10 ? digitos : null, nomeExibicao: args.telefone };
@@ -137,6 +163,7 @@ async function resolverTelefoneCliente(args: {
     if (cliente?.telefone) return { telefone: cliente.telefone, nomeExibicao: cliente.nome };
     return { telefone: null, nomeExibicao: args.clienteNomeBusca };
   }
+  if (telefoneOrigem) return { telefone: telefoneOrigem, nomeExibicao: "você" };
   return { telefone: null, nomeExibicao: "cliente não identificado" };
 }
 
@@ -413,7 +440,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "enviar_cards_produtos_whatsapp",
     description:
-      "Manda pro WhatsApp de um cliente um card de imagem (foto + nome + descrição + preço) de cada produto encontrado — um card por produto, cada um numa mensagem separada. Ação sensível — sempre pede confirmação antes. Informe termo (busca por nome/código) OU produtoIds, e telefone OU clienteNomeBusca pra identificar o destinatário.",
+      "Manda pro WhatsApp de um cliente um card de imagem (foto + nome + descrição + preço) de cada produto encontrado — um card por produto, cada um numa mensagem separada. Ação sensível — sempre pede confirmação antes. Informe termo (busca por nome/código) OU produtoIds. Pra destinatário: telefone OU clienteNomeBusca; se o pedido for pra mandar pro PRÓPRIO remetente (\"manda pra mim\", \"me manda aqui\"), deixe telefone e clienteNomeBusca em branco — resolve sozinho pro WhatsApp de quem está pedindo. Nunca tente adivinhar/lembrar um telefone de algum ponto anterior da conversa — se não for nem pra si mesmo nem tiver telefone/nome claro, pergunte.",
     input_schema: {
       type: "object",
       properties: {
@@ -424,21 +451,21 @@ const FERRAMENTAS: Ferramenta[] = [
       },
     },
     sensivel: true,
-    async descreverAcao(args) {
+    async descreverAcao(args, ctx) {
       const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string };
       const ids = await resolverIdsDeProdutos(a);
       if (ids.length === 0) return "nenhum produto encontrado";
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { nome: true } });
-      const destino = await resolverTelefoneCliente(a);
+      const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
       const nomesProdutos = produtos.map((p) => p.nome).join(", ");
       return `mandar ${produtos.length} card(s) de produto (${nomesProdutos}) pro WhatsApp de ${destino.nomeExibicao}`;
     },
-    async executar(args) {
+    async executar(args, ctx) {
       const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string };
       const ids = await resolverIdsDeProdutos(a);
       if (ids.length === 0) throw new Error("Nenhum produto encontrado.");
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true, valorCentavos: true } });
-      const destino = await resolverTelefoneCliente(a);
+      const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
       if (!destino.telefone) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: destino.telefone, nomeContato: destino.nomeExibicao });
@@ -723,11 +750,11 @@ const FERRAMENTAS: Ferramenta[] = [
       const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
       return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}), com o PDF anexado, pro WhatsApp de ${orcamento.contato?.nome ?? "cliente sem nome vinculado"}`;
     },
-    async executar(args) {
+    async executar(args, ctx) {
       const { telefone } = args as { telefone?: string };
       const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) throw new Error("Orçamento não encontrado.");
-      const telefoneFinal = (telefone || orcamento.contato?.telefone || "").replace(/\D/g, "");
+      const telefoneFinal = (telefone || orcamento.contato?.telefone || ctx.telefoneOrigem || "").replace(/\D/g, "");
       if (telefoneFinal.length < 10) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
       const token = await garantirTokenPublico(orcamento.id);
@@ -1337,7 +1364,9 @@ async function rodarAgenteClaude(
       }
       const entrada = uso.input as ArgsFerramenta;
       if (ferramenta.sensivel) {
-        const descricao = ferramenta.descreverAcao ? await ferramenta.descreverAcao(entrada) : ferramenta.name;
+        const descricao = ferramenta.descreverAcao
+          ? await ferramenta.descreverAcao(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador) })
+          : ferramenta.name;
         ferramentaPendente = { nome: uso.name, args: entrada, descricao };
         resultadosFerramenta.push({
           type: "tool_result",
@@ -1347,7 +1376,7 @@ async function rodarAgenteClaude(
         continue;
       }
       try {
-        const resultado = await ferramenta.executar(entrada, { usuarioId });
+        const resultado = await ferramenta.executar(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador) });
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado) });
       } catch (erro) {
         resultadosFerramenta.push({
@@ -1395,7 +1424,10 @@ export async function processarComandoAgente(input: {
       let resposta: string;
       try {
         if (ferramenta) {
-          await ferramenta.executar((pendente.argumentosPendentes ?? {}) as ArgsFerramenta, { usuarioId: input.usuarioId });
+          await ferramenta.executar((pendente.argumentosPendentes ?? {}) as ArgsFerramenta, {
+            usuarioId: input.usuarioId,
+            telefoneOrigem: telefoneDeIdentificador(input.identificador),
+          });
         }
         resposta = `Feito — ${pendente.descricaoPendente}.`;
       } catch (erro) {
