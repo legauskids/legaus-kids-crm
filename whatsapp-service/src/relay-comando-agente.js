@@ -27,8 +27,22 @@ function extrairTelefoneRemetente(key) {
   return jid.split("@")[0];
 }
 
-function autorizado(telefone) {
-  return TELEFONES_AUTORIZADOS.has(telefone);
+// Palavra-gatilho alternativa: manter WHATSAPP_COMANDO_TELEFONES em dia com
+// o número exato de cada dispositivo do Marcos/Dani é frágil (o número
+// pessoal que ele passou de cabeça tinha um dígito errado — o de verdade só
+// apareceu no log). Digitar/começar a mensagem com "agente" funciona
+// independente de qual número mandou, então não trava de novo por causa de
+// número desatualizado ou dispositivo novo. Só vale pra mensagem RECEBIDA
+// (fromMe:false) — nunca pro sentido "Legaus Kids -> alguém", senão o
+// Marcos mencionar a palavra "agente" numa conversa de verdade com um
+// CLIENTE (ex: "vou perguntar pro nosso agente de vendas") viraria comando
+// por engano.
+const PALAVRA_GATILHO = /\bagente\b/i;
+
+function autorizado(telefone, { fromMe, texto }) {
+  if (TELEFONES_AUTORIZADOS.has(telefone)) return true;
+  if (!fromMe && texto && PALAVRA_GATILHO.test(texto)) return true;
+  return false;
 }
 
 /**
@@ -46,12 +60,17 @@ export function ligarRelayDeComandoAgente(sock) {
     for (const msg of messages) {
       try {
         const telefone = extrairTelefoneRemetente(msg.key);
-        if (!telefone || !autorizado(telefone)) continue;
+        if (!telefone) continue;
 
         const audioMessage = msg.message?.audioMessage;
         const documentMessage = msg.message?.documentMessage;
         const ehPdf = documentMessage?.mimetype === "application/pdf";
         const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || documentMessage?.caption || null;
+
+        // Nota de voz não passa pela palavra-gatilho (não dá pra checar o
+        // texto sem transcrever antes) — continua só por número autorizado.
+        const podeSerGatilho = !audioMessage;
+        if (!autorizado(telefone, { fromMe: !!msg.key.fromMe, texto: podeSerGatilho ? texto : null })) continue;
 
         if (audioMessage) {
           console.log(`[relay-comando-agente] Nota de voz de comando recebida (${telefone}), baixando e transcrevendo...`);
