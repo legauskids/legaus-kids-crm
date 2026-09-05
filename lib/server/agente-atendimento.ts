@@ -7,6 +7,7 @@ import { buscarProdutosSimilar } from "@/lib/server/busca-similar";
 import { centavosParaReais } from "@/lib/utils/money";
 import { EMPRESA } from "@/lib/constants/empresa";
 import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
+import { registrarEventoNoHistorico } from "@/lib/server/agente";
 
 const MODELO = "claude-sonnet-5";
 
@@ -161,6 +162,14 @@ export async function notificarNovoLead(conversaId: string): Promise<void> {
     try {
       const conversaNotificacao = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneNotificar });
       await registrarMensagem({ conversaId: conversaNotificacao.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
+      // Sem isso, o agente de comando não tem como saber o telefone/texto
+      // da sugestão quando o Marcos só responde "pode enviar assim" —
+      // ver o comentário de registrarEventoNoHistorico pro porquê.
+      await registrarEventoNoHistorico(
+        telefoneNotificar,
+        "[sistema] Lead novo detectado — notificação enviada",
+        texto,
+      );
     } catch {
       // Falha ao notificar um número não deve impedir de tentar os outros.
     }

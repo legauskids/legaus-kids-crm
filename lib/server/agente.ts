@@ -1547,6 +1547,25 @@ export async function processarComandoAgente(input: {
   return { resposta: resultado.texto };
 }
 
+/**
+ * Registra um evento do sistema (ex: notificação de lead novo) no mesmo
+ * histórico que buscarHistoricoRecente usa pra dar memória de curto prazo
+ * ao agente. Sem isso, uma notificação de lead novo (mandada direto via
+ * registrarMensagem, fora do fluxo de processarComandoAgente) nunca entra
+ * na "memória" do agente — quando o Marcos respondia só "pode enviar
+ * assim" na mesma conversa, o agente não tinha como saber qual telefone
+ * ou qual texto de sugestão isso se referia, e "Feito." virava uma
+ * alucinação (nenhuma ferramenta era chamada de verdade). Guardar a
+ * notificação como se fosse uma troca (usuário: marcador interno,
+ * assistente: o texto da notificação com telefone+sugestão) dá ao modelo
+ * o contexto que falta pra chamar enviar_mensagem_whatsapp de verdade.
+ */
+export async function registrarEventoNoHistorico(identificador: string, textoComando: string, resposta: string): Promise<void> {
+  await prisma.comandoAgente.create({
+    data: { origem: "WHATSAPP", identificador, textoComando, resposta, status: "CONCLUIDO" },
+  });
+}
+
 export function listarHistoricoComandos(identificador: string, limite = 30) {
   return prisma.comandoAgente.findMany({
     where: { identificador },
