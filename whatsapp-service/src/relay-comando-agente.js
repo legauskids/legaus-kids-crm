@@ -1,6 +1,7 @@
 import { downloadMediaMessage } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
 import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
+import { foiEnviadoPeloRelay } from "./ids-relay.js";
 
 // Números autorizados a dar comando (voz, texto ou PDF) pro agente de IA —
 // só dígitos, com DDI, ver .env.example. Vale nas duas direções: mensagem
@@ -78,6 +79,14 @@ export function ligarRelayDeComandoAgente(sock) {
 
     for (const msg of messages) {
       try {
+        // A própria resposta automática do agente pra um número autorizado
+        // (ex: o Marcos) aparece aqui de novo via sync do WhatsApp
+        // (fromMe:true, mesmo remoteJid) — sem esse filtro ela seria
+        // reprocessada como um comando novo, o agente responderia de novo,
+        // essa resposta ecoaria de novo, e por aí vai (loop infinito visto
+        // ao vivo em 2026-09-05 com "Até mais!" se repetindo sem parar).
+        if (msg.key.fromMe && foiEnviadoPeloRelay(msg.key.id)) continue;
+
         const telefone = extrairTelefoneRemetente(msg.key);
         if (!telefone) continue;
 

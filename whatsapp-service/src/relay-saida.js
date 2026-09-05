@@ -1,5 +1,6 @@
 import { chamarApi, baixarArquivo } from "./crm-api.js";
 import { registrarMapeamento } from "./lid-cache.js";
+import { marcarComoEnviadoPeloRelay } from "./ids-relay.js";
 
 const INTERVALO_MS = 5000;
 
@@ -116,6 +117,11 @@ async function processarFilaAgora(sock) {
         console.error(`[relay-saida] Envio pra ${item.telefone} não retornou id de mensagem.`);
         continue;
       }
+      // Registra ANTES de confirmar — o eco desse envio pode chegar via
+      // messages.upsert a qualquer momento depois do sendMessage, inclusive
+      // antes da confirmação terminar. Ver ids-relay.js pro porquê disso
+      // existir (evita o agente reprocessar a própria resposta como comando).
+      marcarComoEnviadoPeloRelay(enviada.key.id);
       await chamarApi("/api/integracoes/whatsapp/confirmar-envio", {
         method: "POST",
         body: JSON.stringify({ mensagemId: item.mensagemId, externalId: enviada.key.id }),
