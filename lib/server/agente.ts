@@ -464,30 +464,57 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "gerar_cards_produtos",
     description:
-      "Gera um card de imagem (foto + nome + descrição + preço, com a marca Legaus Kids) pra cada produto encontrado — um card por produto, pra mostrar aqui no chat antes de decidir mandar pro cliente. Informe termo (busca por nome/código, ex: 'playground') OU produtoIds (se já sabe os IDs exatos, ex: de uma busca anterior nessa conversa). IMPORTANTE: coloque o link do campo `card` de CADA produto, sozinho numa linha, na sua resposta em texto — é assim que a imagem aparece de verdade aqui no chat (o link vira o card visualmente, não precisa descrever como link).",
+      "Gera um card de imagem (foto + nome + descrição + preço, com a marca Legaus Kids) pra cada produto encontrado — um card por produto, pra mostrar antes de decidir mandar pro cliente. Informe termo (busca por nome/código, ex: 'playground') OU produtoIds (se já sabe os IDs exatos, ex: de uma busca anterior nessa conversa). Opcional ocultarValor:true pra gerar o card SEM o preço (não altera o cadastro do produto, só tira do card). Quando o comando veio do WhatsApp, os cards já são mandados de verdade como imagem pro WhatsApp de quem pediu — o WhatsApp não mostra várias imagens a partir de links soltos numa mensagem de texto, então não tente descrever/listar links, só confirme que mandou. Quando vier do chat do CRM, a resposta traz os links pra você mostrar na conversa (coloque o link do campo `card` de cada produto, sozinho numa linha).",
     input_schema: {
       type: "object",
       properties: {
         termo: { type: "string" },
         produtoIds: { type: "array", items: { type: "string" } },
+        ocultarValor: { type: "boolean", description: "true pra gerar o card sem mostrar o preço" },
       },
     },
-    async executar(args) {
-      const ids = await resolverIdsDeProdutos(args as { termo?: string; produtoIds?: string[] });
+    async executar(args, ctx) {
+      const a = args as { termo?: string; produtoIds?: string[]; ocultarValor?: boolean };
+      const ids = await resolverIdsDeProdutos(a);
       if (ids.length === 0) return "Nenhum produto encontrado.";
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true, valorCentavos: true } });
+      const sufixo = a.ocultarValor ? "?ocultarValor=1" : "";
+
+      // Sem isso: várias URLs de imagem soltas num texto de WhatsApp viram
+      // só UM preview de link na tela do celular, não vários cards visuais
+      // — visto ao vivo em 2026-09-06 ("gerou um link mas só tinha 1 card,
+      // deveria ter 8"). Quando o pedido veio do WhatsApp (telefoneOrigem
+      // presente), manda cada card como imagem de verdade pra quem pediu,
+      // igual enviar_cards_produtos_whatsapp já faz pro cliente.
+      if (ctx.telefoneOrigem) {
+        const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: ctx.telefoneOrigem });
+        for (const produto of produtos) {
+          const precoTexto = produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "Consulte";
+          await registrarMensagem({
+            conversaId: conversa.id,
+            texto: a.ocultarValor ? produto.nome : `${produto.nome} — ${precoTexto}`,
+            direcao: "SAIDA",
+            origem: "SISTEMA",
+            anexoUrl: `${URL_BASE}/api/imagem/produto-card/${produto.id}${sufixo}`,
+            anexoNome: `${produto.nome}.jpg`,
+            anexoMimetype: "image/jpeg",
+          });
+        }
+        return { mostrado: true, quantidade: produtos.length, produtos: produtos.map((p) => p.nome) };
+      }
+
       return produtos.map((p) => ({
         produtoId: p.id,
         nome: p.nome,
-        valor: p.valorCentavos != null ? centavosParaReais(p.valorCentavos) : "sem valor cadastrado",
-        card: `${URL_BASE}/api/imagem/produto-card/${p.id}`,
+        valor: a.ocultarValor ? "oculto no card" : p.valorCentavos != null ? centavosParaReais(p.valorCentavos) : "sem valor cadastrado",
+        card: `${URL_BASE}/api/imagem/produto-card/${p.id}${sufixo}`,
       }));
     },
   },
   {
     name: "enviar_cards_produtos_whatsapp",
     description:
-      "Manda pro WhatsApp de um cliente um card de imagem (foto + nome + descrição + preço) de cada produto encontrado — um card por produto, cada um numa mensagem separada. Ação sensível — sempre pede confirmação antes. Informe termo (busca por nome/código) OU produtoIds. Pra destinatário: telefone OU clienteNomeBusca; se o pedido for pra mandar pro PRÓPRIO remetente (\"manda pra mim\", \"me manda aqui\"), deixe telefone e clienteNomeBusca em branco — resolve sozinho pro WhatsApp de quem está pedindo. Nunca tente adivinhar/lembrar um telefone de algum ponto anterior da conversa — se não for nem pra si mesmo nem tiver telefone/nome claro, pergunte.",
+      "Manda pro WhatsApp de um cliente um card de imagem (foto + nome + descrição + preço) de cada produto encontrado — um card por produto, cada um numa mensagem separada. Ação sensível — sempre pede confirmação antes. Informe termo (busca por nome/código) OU produtoIds. Opcional ocultarValor:true pra mandar o card SEM o preço (não altera o cadastro do produto, só tira do card — use isso em vez de mudar o preço do produto temporariamente). Pra destinatário: telefone OU clienteNomeBusca; se o pedido for pra mandar pro PRÓPRIO remetente (\"manda pra mim\", \"me manda aqui\"), deixe telefone e clienteNomeBusca em branco — resolve sozinho pro WhatsApp de quem está pedindo. Nunca tente adivinhar/lembrar um telefone de algum ponto anterior da conversa — se não for nem pra si mesmo nem tiver telefone/nome claro, pergunte.",
     input_schema: {
       type: "object",
       properties: {
@@ -495,20 +522,21 @@ const FERRAMENTAS: Ferramenta[] = [
         produtoIds: { type: "array", items: { type: "string" } },
         telefone: { type: "string", description: "Com DDD, só números" },
         clienteNomeBusca: { type: "string", description: "Nome do cliente, alternativa a telefone — usa o telefone cadastrado dele" },
+        ocultarValor: { type: "boolean", description: "true pra mandar o card sem mostrar o preço" },
       },
     },
     sensivel: true,
     async descreverAcao(args, ctx) {
-      const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string };
+      const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string; ocultarValor?: boolean };
       const ids = await resolverIdsDeProdutos(a);
       if (ids.length === 0) return "nenhum produto encontrado";
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { nome: true } });
       const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
       const nomesProdutos = produtos.map((p) => p.nome).join(", ");
-      return `mandar ${produtos.length} card(s) de produto (${nomesProdutos}) pro WhatsApp de ${destino.nomeExibicao}`;
+      return `mandar ${produtos.length} card(s) de produto (${nomesProdutos})${a.ocultarValor ? ", sem preço," : ""} pro WhatsApp de ${destino.nomeExibicao}`;
     },
     async executar(args, ctx) {
-      const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string };
+      const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string; ocultarValor?: boolean };
       const ids = await resolverIdsDeProdutos(a);
       if (ids.length === 0) throw new Error("Nenhum produto encontrado.");
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true, valorCentavos: true } });
@@ -516,14 +544,15 @@ const FERRAMENTAS: Ferramenta[] = [
       if (!destino.telefone) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: destino.telefone, nomeContato: destino.nomeExibicao });
+      const sufixo = a.ocultarValor ? "?ocultarValor=1" : "";
       for (const produto of produtos) {
         const precoTexto = produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "Consulte";
         await registrarMensagem({
           conversaId: conversa.id,
-          texto: `${produto.nome} — ${precoTexto}`,
+          texto: a.ocultarValor ? produto.nome : `${produto.nome} — ${precoTexto}`,
           direcao: "SAIDA",
           origem: "SISTEMA",
-          anexoUrl: `${URL_BASE}/api/imagem/produto-card/${produto.id}`,
+          anexoUrl: `${URL_BASE}/api/imagem/produto-card/${produto.id}${sufixo}`,
           anexoNome: `${produto.nome}.jpg`,
           anexoMimetype: "image/jpeg",
         });
