@@ -30,7 +30,11 @@ let reconexaoAgendada = false;
 // Sem isso o serviço parecia "ligado" por horas sem sincronizar nada. Uma
 // prova de vida periódica (pedido leve e real pro WhatsApp, com timeout
 // próprio) detecta esse travamento e força a reconexão.
-const INTERVALO_PROVA_DE_VIDA_MS = 3 * 60 * 1000;
+// Era 3 minutos — apertado pra 1 depois de ver ao vivo em 2026-09-06 que 3
+// minutos de espera parada (sem processar nada) é tempo demais quando o
+// Marcos está usando de verdade: ele já tinha notado e me avisado antes do
+// watchdog sequer detectar o travamento sozinho.
+const INTERVALO_PROVA_DE_VIDA_MS = 60 * 1000;
 const TIMEOUT_PROVA_DE_VIDA_MS = 20 * 1000;
 let watchdogInterval = null;
 
