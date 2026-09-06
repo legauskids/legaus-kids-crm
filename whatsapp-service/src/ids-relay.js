@@ -34,3 +34,39 @@ export function foiEnviadoPeloRelay(id) {
   }
   return true;
 }
+
+// Registro separado (TTL bem mais longo) dos IDs de mensagem de COMANDO já
+// processados por relay-comando-agente.js — visto ao vivo em 2026-09-05/06:
+// a conexão cai e reconecta com frequência (erro de stream do próprio
+// WhatsApp, fora do nosso controle — ver connection.update em index.js), e
+// o Baileys reentrega mensagens recentes na resincronização depois de
+// reconectar. Sem isso, um comando de voz/texto já processado (ex:
+// "Encerrar atendimento", "Manda o orçamento de novo") era reprocessado do
+// zero a cada reconexão — risco real de duplicar uma ação sensível (mandar
+// o mesmo orçamento pro cliente de novo) se o Marcos confirmasse mais de
+// uma vez sem perceber que eram pedidos duplicados. TTL de 6h cobre bem
+// mais que qualquer janela de resync do WhatsApp, sem acumular memória
+// indefinidamente.
+const TTL_COMANDO_MS = 6 * 60 * 60 * 1000;
+const idsComandoProcessados = new Map();
+
+export function marcarComandoProcessado(id) {
+  if (!id) return;
+  idsComandoProcessados.set(id, Date.now());
+  if (idsComandoProcessados.size > 5000) {
+    const limite = Date.now() - TTL_COMANDO_MS;
+    for (const [chave, quando] of idsComandoProcessados) {
+      if (quando < limite) idsComandoProcessados.delete(chave);
+    }
+  }
+}
+
+export function comandoJaProcessado(id) {
+  if (!id || !idsComandoProcessados.has(id)) return false;
+  const quando = idsComandoProcessados.get(id);
+  if (Date.now() - quando > TTL_COMANDO_MS) {
+    idsComandoProcessados.delete(id);
+    return false;
+  }
+  return true;
+}

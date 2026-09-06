@@ -1,7 +1,7 @@
 import { downloadMediaMessage } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
 import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
-import { foiEnviadoPeloRelay } from "./ids-relay.js";
+import { foiEnviadoPeloRelay, comandoJaProcessado, marcarComandoProcessado } from "./ids-relay.js";
 
 // Números autorizados a dar comando (voz, texto ou PDF) pro agente de IA —
 // só dígitos, com DDI, ver .env.example. Vale nas duas direções: mensagem
@@ -105,6 +105,17 @@ export function ligarRelayDeComandoAgente(sock) {
         // texto sem transcrever antes) — continua só por número autorizado.
         const podeSerGatilho = !audioMessage;
         if (!autorizado(telefone, { fromMe: !!msg.key.fromMe, texto: podeSerGatilho ? texto : null })) continue;
+
+        // A conexão cai e reconecta com frequência (erro de stream do
+        // próprio WhatsApp — ver ids-relay.js pro detalhe), e o Baileys
+        // reentrega mensagens recentes ao resincronizar depois de
+        // reconectar. Sem isso, um comando já processado (voz, PDF, texto)
+        // era reprocessado do zero a cada reconexão — risco real de
+        // duplicar uma ação sensível. Marca ANTES de chamar a API, não
+        // depois: fecha a janela mesmo se uma redelivery chegar bem no
+        // meio do processamento (download de mídia, chamada à API).
+        if (comandoJaProcessado(msg.key.id)) continue;
+        marcarComandoProcessado(msg.key.id);
 
         if (audioMessage) {
           console.log(`[relay-comando-agente] Nota de voz de comando recebida (${telefone}), baixando e transcrevendo...`);
