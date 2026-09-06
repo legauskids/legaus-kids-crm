@@ -34,7 +34,7 @@ async function carregarFotoProduto(produto: { imagemBytes: Uint8Array | null; im
  * preço e descrição sempre refletem o cadastro atual, sem precisar
  * regenerar quando o produto muda.
  */
-export async function gerarCardProdutoBuffer(produtoId: string): Promise<Buffer> {
+export async function gerarCardProdutoBuffer(produtoId: string, opcoes?: { ocultarValor?: boolean }): Promise<Buffer> {
   const produto = await prisma.produto.findUniqueOrThrow({
     where: { id: produtoId },
     select: { nome: true, descricao: true, valorCentavos: true, imagemUrl: true, imagemBytes: true },
@@ -125,8 +125,10 @@ export async function gerarCardProdutoBuffer(produtoId: string): Promise<Buffer>
                     style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto" },
                     children: [
                       { type: "img", key: "logo", props: { src: logoDataUri, style: { height: 58 } } },
-                      { type: "div", key: "preco", props: { style: { display: "flex", fontSize: 42, fontWeight: 800, color: COR_MARCA_ESCURA }, children: precoTexto } },
-                    ],
+                      opcoes?.ocultarValor
+                        ? null
+                        : { type: "div", key: "preco", props: { style: { display: "flex", fontSize: 42, fontWeight: 800, color: COR_MARCA_ESCURA }, children: precoTexto } },
+                    ].filter(Boolean),
                   },
                 },
               ].filter(Boolean),
