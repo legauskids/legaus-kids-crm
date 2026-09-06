@@ -41,6 +41,14 @@ export type ProdutoSimilar = {
 
 export async function buscarProdutosSimilar(termo: string, limite = 8): Promise<ProdutoSimilar[]> {
   const curinga = `%${termo}%`;
+  // Além de nome/código (similaridade + ILIKE), também casa por trecho da
+  // descrição — visto ao vivo em 2026-09-05: buscar "duas torres" não
+  // achava nada porque isso só existe na descrição do produto, nunca no
+  // nome/código. Descrição usa só ILIKE (não similarity()): é um campo
+  // longo, e trigram similarity contra um termo curto tende a dar score
+  // baixo mesmo quando o termo aparece de verdade no meio do texto —
+  // ILIKE (contém) é o critério certo aqui, diferente de nome/código onde
+  // tolerar erro de digitação importa mais que "contém exatamente".
   return prisma.$queryRaw<ProdutoSimilar[]>`
     SELECT id, nome, codigo, categoria, "valorCentavos"
     FROM "Produto"
@@ -50,6 +58,7 @@ export async function buscarProdutosSimilar(termo: string, limite = 8): Promise<
         OR similarity(COALESCE(codigo, ''), ${termo}) > ${LIMIAR_SIMILARIDADE}
         OR nome ILIKE ${curinga}
         OR codigo ILIKE ${curinga}
+        OR descricao ILIKE ${curinga}
       )
     ORDER BY GREATEST(similarity(nome, ${termo}), similarity(COALESCE(codigo, ''), ${termo})) DESC
     LIMIT ${limite}
