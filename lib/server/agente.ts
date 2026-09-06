@@ -1461,8 +1461,22 @@ async function rodarAgenteClaude(
   return { texto: "Não consegui concluir — o comando ficou grande demais pra resolver em uma rodada. Tenta dividir em partes.", ferramentaPendente, ferramentasChamadas };
 }
 
+// Limite de tamanho pra evitar que uma frase NOVA e longa que só COMEÇA com
+// uma palavra de confirmação ("manda", "pode", "envia"...) seja confundida
+// com um "sim" pro que já estava pendente. Bug real visto ao vivo em
+// 2026-09-05: "Manda essa mensagem para a Laisa" (um pedido novo, pra
+// mandar um TEXTO diferente) batia na mesma regex de "sim" só por começar
+// com "manda", e reexecutava o pendente ANTIGO (os cards de produto, já
+// mandados antes) — o cliente recebeu o mesmo arquivo de novo, sem
+// nenhuma confirmação de verdade pro pedido novo. Uma confirmação de
+// verdade é curta ("sim", "pode", "pode enviar", "isso mesmo"); qualquer
+// coisa mais longa que isso quase certamente carrega conteúdo novo e
+// precisa passar pela interpretação completa do modelo, não pelo atalho.
+const TAMANHO_MAX_CONFIRMACAO_CURTA = 25;
+
 function interpretarConfirmacao(texto: string): "sim" | "nao" | "ambiguo" {
   const t = texto.trim().toLowerCase();
+  if (t.length > TAMANHO_MAX_CONFIRMACAO_CURTA) return "ambiguo";
   if (/^(sim|s|ss|confirmo|confirma(do)?|pode|manda|mandar|enviar?|isso|ok|okay|beleza|exato|é isso|isso mesmo|correto)\b/.test(t)) return "sim";
   if (/^(n[aã]o|n|cancela(r)?|para|deixa|esquece)\b/.test(t)) return "nao";
   return "ambiguo";
