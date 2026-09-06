@@ -1,4 +1,4 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiUser } from "@/lib/auth/api-token";
 import {
@@ -7,7 +7,7 @@ import {
   registrarMensagem,
 } from "@/lib/server/conversas";
 import { existeContatoComTelefone } from "@/lib/server/contatos";
-import { notificarNovoLead } from "@/lib/server/agente-atendimento";
+import { avisarNovaMensagem } from "@/lib/server/agente-atendimento";
 import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
 import { transcreverAudio, transcricaoConfigurada } from "@/lib/server/transcricao";
 
@@ -83,19 +83,29 @@ export async function POST(request: Request) {
     anexoMimetype: parsed.data.anexo?.mimetype,
   });
 
-  // Lead novo: primeira mensagem já de um contato que não existia antes,
-  // recebida (não fromMe), e não é um dos próprios números que dão comando
-  // pro agente (senão o primeiro teste do Marcos/Dani já dispararia uma
-  // notificação de "lead novo" sobre eles mesmos). `after()` roda depois da
-  // resposta já ter sido mandada pro whatsapp-service, sem atrasá-la por
-  // causa da chamada à IA — e, diferente de um fire-and-forget comum, o
-  // Vercel mantém a função viva até terminar (waitUntil por baixo).
-  if (!jaEraContato && parsed.data.direcao === "ENTRADA" && !WHATSAPP_NOTIFICAR_TELEFONES.includes(telefoneNormalizado)) {
-    after(() =>
-      notificarNovoLead(conversa.id).catch((erro) => {
-        console.error("Falha ao notificar lead novo:", erro);
-      }),
-    );
+  // Avisa em TODA mensagem recebida (não só a primeira de um contato novo —
+  // pedido explícito do Marcos em 2026-09-05, pra acompanhar a conversa
+  // inteira, não só o primeiro contato), desde que seja recebida (não
+  // fromMe) e não venha de um dos próprios números que dão comando pro
+  // agente (senão qualquer teste do Marcos/Dani já dispararia uma
+  // notificação sobre eles mesmos).
+  //
+  // Antes rodava via after() (depois da resposta já ter sido mandada pro
+  // whatsapp-service, sem atrasá-la). Trocado pra await: visto ao vivo em
+  // 2026-09-05, um "pode enviar assim" mandado rápido demais vencia a
+  // corrida contra avisarNovaMensagem ainda rodando em segundo plano — a
+  // notificação (com telefone+sugestão) só entrava no histórico do agente
+  // DEPOIS da primeira tentativa de aprovação, que então falhava por falta
+  // de contexto. Pior: essa falha ficava gravada no histórico, e o modelo
+  // "grudava" nela nas tentativas seguintes (viés de repetir a própria
+  // resposta anterior), mesmo já com o contexto certo disponível. Esperar
+  // avisarNovaMensagem terminar de verdade antes de responder ao
+  // whatsapp-service elimina a corrida — custa alguns segundos a mais em
+  // toda mensagem recebida (chama a IA pra gerar a sugestão).
+  if (parsed.data.direcao === "ENTRADA" && !WHATSAPP_NOTIFICAR_TELEFONES.includes(telefoneNormalizado)) {
+    await avisarNovaMensagem(conversa.id, !jaEraContato).catch((erro) => {
+      console.error("Falha ao avisar nova mensagem:", erro);
+    });
   }
 
   return NextResponse.json({ ok: true, mensagemId: mensagem.id, conversaId: conversa.id });

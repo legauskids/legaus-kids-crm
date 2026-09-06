@@ -128,22 +128,23 @@ ${conversa.mensagens.map((m) => `[${m.direcao === "ENTRADA" ? "Cliente" : EMPRES
 }
 
 /**
- * Chamado quando chega a PRIMEIRA mensagem de um contato novo pelo
- * WhatsApp (ver app/api/integracoes/whatsapp/mensagens/route.ts) — gera
- * uma sugestão de resposta (mesmo motor de gerarSugestaoResposta) e manda
- * uma notificação pro WhatsApp de quem está em WHATSAPP_NOTIFICAR_TELEFONES
+ * Chamado a cada mensagem nova recebida pelo WhatsApp (ver
+ * app/api/integracoes/whatsapp/mensagens/route.ts) — não só a primeira de
+ * um contato novo, qualquer mensagem de qualquer conversa. Gera uma
+ * sugestão de resposta (mesmo motor de gerarSugestaoResposta) e manda uma
+ * notificação pro WhatsApp de quem está em WHATSAPP_NOTIFICAR_TELEFONES
  * (Marcos/Dani), com quem é o contato, o que ele mandou, e a sugestão
- * pronta pra aprovar. Nunca manda nada pro lead sozinho — só avisa e
+ * pronta pra aprovar. Nunca manda nada pro cliente sozinho — só avisa e
  * sugere; o agente de comando (lib/server/agente.ts, ferramenta
  * enviar_mensagem_whatsapp) manda de verdade quando alguém confirmar.
  */
-export async function notificarNovoLead(conversaId: string): Promise<void> {
+export async function avisarNovaMensagem(conversaId: string, ehContatoNovo: boolean): Promise<void> {
   if (WHATSAPP_NOTIFICAR_TELEFONES.length === 0) return;
 
   const conversa = await getConversaDetalhada(conversaId);
   if (!conversa || conversa.mensagens.length === 0) return;
 
-  const primeiraMensagem = conversa.mensagens[0];
+  const ultimaMensagem = conversa.mensagens[conversa.mensagens.length - 1];
   let sugestao: string;
   try {
     sugestao = await gerarSugestaoResposta(conversaId);
@@ -152,9 +153,9 @@ export async function notificarNovoLead(conversaId: string): Promise<void> {
   }
 
   const texto =
-    `🆕 *Lead novo pelo WhatsApp*\n` +
+    `${ehContatoNovo ? "🆕 *Lead novo pelo WhatsApp*" : `💬 *Nova mensagem de ${conversa.contato.nome}*`}\n` +
     `${conversa.contato.nome} — ${conversa.contato.telefone}\n\n` +
-    `Mensagem: "${primeiraMensagem.texto}"\n\n` +
+    `Mensagem: "${ultimaMensagem.texto}"\n\n` +
     `*Sugestão de resposta:*\n${sugestao}\n\n` +
     `Responde aqui pra eu mandar a sugestão (ou me diz o que prefere responder).`;
 
@@ -167,7 +168,7 @@ export async function notificarNovoLead(conversaId: string): Promise<void> {
       // ver o comentário de registrarEventoNoHistorico pro porquê.
       await registrarEventoNoHistorico(
         telefoneNotificar,
-        "[sistema] Lead novo detectado — notificação enviada",
+        ehContatoNovo ? "[sistema] Lead novo detectado — notificação enviada" : "[sistema] Nova mensagem recebida — notificação enviada",
         texto,
       );
     } catch {
