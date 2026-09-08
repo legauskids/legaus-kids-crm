@@ -5,6 +5,8 @@
 // serviço: ele só substitui quem fala com essas rotas (antes era
 // extension/background.js).
 
+import { Agent, setGlobalDispatcher } from "undici";
+
 const CRM_API_URL = process.env.CRM_API_URL || "https://crm.legauskids.com.br";
 const CRM_API_TOKEN = process.env.CRM_API_TOKEN || "";
 
@@ -13,16 +15,19 @@ if (!CRM_API_TOKEN) {
   process.exit(1);
 }
 
-/**
- * "fetch failed" (falha de rede, não HTTP — ex: TypeError do fetch) visto
- * ao vivo em 2026-09-06/08 acontecendo em sequência, minutos seguidos, num
- * processo que já estava rodando há um tempo — enquanto um processo Node
- * novo, na mesma hora, conectava na primeira tentativa. Tudo indica uma
- * conexão HTTP reaproveitada (keep-alive) que morreu sem avisar o pool do
- * Node — só descobria na próxima tentativa de usar ela. Uma única
- * retentativa (com uma pausa curta) resolve isso sem precisar reiniciar o
- * processo inteiro só por causa de uma conexão específica ruim.
- */
+// "fetch failed" (falha de rede, não erro HTTP) visto ao vivo em
+// 2026-09-06/08 acontecendo em sequência, minutos seguidos, num processo
+// que já estava rodando há um tempo — enquanto um processo Node novo, na
+// mesma hora, conectava na primeira tentativa. Indício forte de uma
+// conexão HTTP mantida viva (keep-alive) pelo pool do undici que morreu
+// silenciosamente (a rede/proxy no meio do caminho derrubou uma conexão
+// ociosa sem avisar o cliente) e só falhava na próxima tentativa de
+// reusá-la. keepAliveTimeout curto (bem menor que o intervalo de 5s do
+// relay-saida) faz o undici descartar a conexão ociosa e abrir uma nova
+// antes dela ter chance de ficar velha o bastante pra isso acontecer.
+setGlobalDispatcher(new Agent({ keepAliveTimeout: 3000, keepAliveMaxTimeout: 3000 }));
+
+/** Retentativa pro caso raro de mesmo assim pegar uma conexão morta no meio da janela. */
 async function fetchComRetry(url, options) {
   try {
     return await fetch(url, options);
