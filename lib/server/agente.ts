@@ -1037,7 +1037,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "atualizar_negocio",
     description:
-      "Edita valor, produto, descrição ou forma de pagamento de um negócio já existente. Informe negocioId ou tituloBusca. A forma de pagamento é exigida antes de marcar o negócio como Ganho (vai pro contrato).",
+      "Edita valor, produto, descrição, forma de pagamento ou dados de produção/instalação de um negócio já existente. Informe negocioId ou tituloBusca. A forma de pagamento é exigida antes de marcar o negócio como Ganho (vai pro contrato). Datas em formato AAAA-MM-DD.",
     input_schema: {
       type: "object",
       properties: {
@@ -1047,6 +1047,10 @@ const FERRAMENTAS: Ferramenta[] = [
         novoProduto: { type: "string" },
         novaDescricao: { type: "string" },
         novaFormaPagamento: { type: "string", description: "ex: à vista via PIX, no ato da assinatura" },
+        novoProgressoProducao: { type: "number", description: "Percentual de progresso da produção, 0 a 100" },
+        novaPrevisaoProducao: { type: "string", description: "Data prevista de produção, AAAA-MM-DD" },
+        novaDataInstalacao: { type: "string", description: "Data agendada de instalação, AAAA-MM-DD" },
+        novaEquipeInstalacao: { type: "string", description: "Nome da equipe/terceirizada responsável pela instalação" },
       },
     },
     async executar(args) {
@@ -1057,6 +1061,10 @@ const FERRAMENTAS: Ferramenta[] = [
         novoProduto?: string;
         novaDescricao?: string;
         novaFormaPagamento?: string;
+        novoProgressoProducao?: number;
+        novaPrevisaoProducao?: string;
+        novaDataInstalacao?: string;
+        novaEquipeInstalacao?: string;
       };
       const resolvido = await resolverPorBusca(a.negocioId, a.tituloBusca, buscarNegociosSimilarIds);
       if (!resolvido) throw new Error(`Não achei nenhum negócio parecido com "${a.tituloBusca}".`);
@@ -1069,6 +1077,10 @@ const FERRAMENTAS: Ferramenta[] = [
         produto: a.novoProduto,
         descricao: a.novaDescricao,
         formaPagamento: a.novaFormaPagamento,
+        progressoProducao: a.novoProgressoProducao,
+        previsaoProducao: a.novaPrevisaoProducao ? new Date(a.novaPrevisaoProducao) : undefined,
+        dataInstalacao: a.novaDataInstalacao ? new Date(a.novaDataInstalacao) : undefined,
+        equipeInstalacao: a.novaEquipeInstalacao,
       });
       return { id: negocio.id, titulo: negocio.titulo };
     },
