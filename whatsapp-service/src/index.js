@@ -45,12 +45,28 @@ function pararWatchdog() {
   }
 }
 
+// Prova de vida real precisa de round-trip até o servidor do WhatsApp e
+// resposta de volta — sendPresenceUpdate (usado antes) só escreve a
+// stanza no socket local e resolve, sem esperar confirmação nenhuma do
+// outro lado; por isso o watchdog nunca detectava uma conexão zumbi de
+// verdade (visto ao vivo em 2026-09-06: mais de 20min parado sem nenhum
+// aviso de "conexão travada"). onWhatsApp() exige resposta do servidor
+// pra existir (é como o resto do código já resolve telefone -> LID em
+// outros lugares), então serve como prova de vida de verdade.
+function numeroParaProvaDeVida(sock) {
+  if (TELEFONE_PAREAMENTO) return TELEFONE_PAREAMENTO;
+  const idProprio = sock.user?.id || "";
+  return idProprio.split(":")[0].split("@")[0] || null;
+}
+
 function iniciarWatchdog(sock) {
   pararWatchdog();
   watchdogInterval = setInterval(async () => {
     try {
+      const numero = numeroParaProvaDeVida(sock);
+      if (!numero) throw new Error("sem número pra testar");
       await Promise.race([
-        sock.sendPresenceUpdate("available"),
+        sock.onWhatsApp(numero),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("sem resposta do WhatsApp")), TIMEOUT_PROVA_DE_VIDA_MS),
         ),
