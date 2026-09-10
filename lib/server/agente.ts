@@ -27,7 +27,7 @@ import {
   marcarNegocioPerdido,
   adicionarNotaHistorico,
 } from "@/lib/server/negocios";
-import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
+import { encontrarOuCriarConversaPorTelefone, registrarMensagem, criarMensagemAgendada } from "@/lib/server/conversas";
 import { enviarEmail, emailConfigurado } from "@/lib/server/email";
 import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/lib/server/orcamento-email";
 import { gerarPdfOrcamento } from "@/lib/server/pdf/orcamento-pdf";
@@ -177,6 +177,20 @@ async function resolverTelefoneCliente(
   }
   if (telefoneOrigem) return { telefone: telefoneOrigem, nomeExibicao: "você" };
   return { telefone: null, nomeExibicao: "cliente não identificado" };
+}
+
+/**
+ * "AAAA-MM-DDTHH:mm" (o formato pedido pro agente, mesmo padrão de
+ * criar_tarefa) não tem timezone — sem isso o servidor (Vercel, roda em
+ * UTC) interpretaria como UTC em vez de horário de Brasília, mandando a
+ * mensagem 3h adiantada. Brasil não tem mais horário de verão desde 2019,
+ * então "-03:00" fixo é seguro o ano inteiro.
+ */
+function parseDataHoraBrasilia(valor: string): Date {
+  const comOffset = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(valor) ? `${valor}-03:00` : valor;
+  const data = new Date(comOffset);
+  if (isNaN(data.getTime())) throw new Error("Data/hora inválida.");
+  return data;
 }
 
 const FERRAMENTAS: Ferramenta[] = [
@@ -805,6 +819,36 @@ const FERRAMENTAS: Ferramenta[] = [
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal });
       await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
       return { enviado: true, telefone: telefoneFinal };
+    },
+  },
+  {
+    name: "agendar_mensagem_whatsapp",
+    description:
+      "Agenda uma mensagem de texto pro WhatsApp de um contato/cliente pra ser enviada automaticamente numa data/hora futura — usa a mesma fila de 'Mensagem agendada' que já existe na aba Atendimento do CRM (aparece lá, pode ser cancelada por lá também). Use quando o pedido for pra mandar depois ('mais tarde', 'amanhã de manhã', 'sexta às 14h'). Se for pra mandar AGORA, use enviar_mensagem_whatsapp em vez dessa. Ação sensível — sempre pede confirmação antes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        telefone: { type: "string", description: "Com DDI, só números — o telefone do CLIENTE/lead, não o de quem está dando o comando" },
+        texto: { type: "string" },
+        dataHora: { type: "string", description: "Data e hora exata (horário de Brasília) no formato AAAA-MM-DDTHH:mm, ex: 2026-09-01T09:30" },
+      },
+      required: ["telefone", "texto", "dataHora"],
+    },
+    sensivel: true,
+    async descreverAcao(args) {
+      const { telefone, texto, dataHora } = args as { telefone: string; texto: string; dataHora: string };
+      const quando = parseDataHoraBrasilia(dataHora).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      return `agendar pro WhatsApp de ${telefone}, pra ${quando}: "${texto.length > 80 ? `${texto.slice(0, 80)}…` : texto}"`;
+    },
+    async executar(args, { usuarioId }) {
+      const { telefone, texto, dataHora } = args as { telefone: string; texto: string; dataHora: string };
+      const telefoneFinal = telefone.replace(/\D/g, "");
+      if (telefoneFinal.length < 10) throw new Error("Telefone inválido.");
+      const agendadaPara = parseDataHoraBrasilia(dataHora);
+      if (agendadaPara.getTime() <= Date.now()) throw new Error("A data/hora precisa ser no futuro.");
+      const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal });
+      const agendada = await criarMensagemAgendada({ conversaId: conversa.id, texto, agendadaPara, criadaPorId: usuarioId });
+      return { agendado: true, id: agendada.id, para: agendadaPara.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
     },
   },
   {
