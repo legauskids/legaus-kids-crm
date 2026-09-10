@@ -27,15 +27,36 @@ if (!CRM_API_TOKEN) {
 // antes dela ter chance de ficar velha o bastante pra isso acontecer.
 setGlobalDispatcher(new Agent({ keepAliveTimeout: 3000, keepAliveMaxTimeout: 3000 }));
 
-/** Retentativa pro caso raro de mesmo assim pegar uma conexão morta no meio da janela. */
-async function fetchComRetry(url, options) {
-  try {
-    return await fetch(url, options);
-  } catch (erro) {
-    console.warn(`[crm-api] Falha de rede (${erro.message}) — tentando de novo em 1s...`);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    return fetch(url, options);
+/**
+ * Visto ao vivo em 2026-09-10: confirmar-envio devolveu 500 (blip
+ * transitório do lado do CRM/banco, não reproduziu de novo) UMA vez só —
+ * mas como não havia retentativa pra erro HTTP (só pra falha de rede), a
+ * mensagem ficou com externalId nunca confirmado, a reserva de 90s
+ * (JANELA_TENTATIVA_ENVIO_MS) expirou, e o relay-saida reenviou a MESMA
+ * mensagem de verdade pro destinatário. Retentativa aqui — cobrindo 5xx
+ * além de falha de rede — fecha essa janela: um blip de 1 requisição some
+ * antes mesmo da mensagem virar candidata a reenvio.
+ */
+async function fetchComRetry(url, options, tentativas = 3) {
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    try {
+      const resposta = await fetch(url, options);
+      if (resposta.status >= 500 && tentativa < tentativas) {
+        console.warn(`[crm-api] HTTP ${resposta.status} (tentativa ${tentativa}/${tentativas}) — tentando de novo em ${tentativa}s...`);
+        await new Promise((resolve) => setTimeout(resolve, tentativa * 1000));
+        continue;
+      }
+      return resposta;
+    } catch (erro) {
+      ultimoErro = erro;
+      if (tentativa < tentativas) {
+        console.warn(`[crm-api] Falha de rede (${erro.message}) (tentativa ${tentativa}/${tentativas}) — tentando de novo em ${tentativa}s...`);
+        await new Promise((resolve) => setTimeout(resolve, tentativa * 1000));
+      }
+    }
   }
+  throw ultimoErro;
 }
 
 export async function chamarApi(caminho, options = {}) {
