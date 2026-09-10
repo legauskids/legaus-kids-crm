@@ -9,6 +9,8 @@ import {
   criarNotaInterna,
   criarMensagemAgendada,
   cancelarMensagemAgendada,
+  buscarConversasPorTermo,
+  type ConversaBuscaResultado,
 } from "@/lib/server/conversas";
 import { criarRespostaRapida, excluirRespostaRapida } from "@/lib/server/respostas-rapidas";
 import { salvarContatoPorTelefone, existeContatoComTelefone } from "@/lib/server/contatos";
@@ -28,6 +30,28 @@ import { reaisParaCentavos } from "@/lib/utils/money";
 
 function revalidateAtendimento() {
   revalidatePath("/atendimento");
+}
+
+export type BuscaConversaVM = {
+  conversaId: string;
+  contatoNome: string;
+  contatoTelefone: string;
+  mensagemTexto: string | null;
+  mensagemEm: string | null;
+};
+
+export async function buscarConversasAction(termo: string): Promise<BuscaConversaVM[]> {
+  await requireUser();
+  const termoLimpo = termo.trim();
+  if (termoLimpo.length < 2) return [];
+  const resultados: ConversaBuscaResultado[] = await buscarConversasPorTermo(termoLimpo);
+  return resultados.map((r) => ({
+    conversaId: r.conversaId,
+    contatoNome: r.contatoNome,
+    contatoTelefone: r.contatoTelefone,
+    mensagemTexto: r.mensagemTexto,
+    mensagemEm: r.mensagemEm ? new Date(r.mensagemEm).toISOString() : null,
+  }));
 }
 
 export async function enviarMensagemAction(formData: FormData): Promise<void> {

@@ -264,3 +264,40 @@ export async function processarMensagensAgendadasVencidas(): Promise<void> {
     ]);
   }
 }
+
+export type ConversaBuscaResultado = {
+  conversaId: string;
+  contatoNome: string;
+  contatoTelefone: string;
+  mensagemTexto: string | null;
+  mensagemEm: Date | null;
+};
+
+/**
+ * Busca "tipo WhatsApp" no Atendimento: por nome/telefone do contato OU por
+ * trecho de qualquer mensagem da conversa. Substring simples (ILIKE), não
+ * trigram — aqui a pessoa lembra um pedaço exato do que foi digitado/falado
+ * ("aquele que perguntou sobre piso emborrachado"), diferente da busca do
+ * agente de IA (lib/server/busca-similar.ts) que tolera erro de digitação
+ * pra achar um nome de cadastro.
+ */
+export async function buscarConversasPorTermo(termo: string, limite = 30): Promise<ConversaBuscaResultado[]> {
+  const curinga = `%${termo}%`;
+  return prisma.$queryRaw<ConversaBuscaResultado[]>`
+    SELECT * FROM (
+      SELECT DISTINCT ON (co.id)
+        co.id AS "conversaId",
+        ct.nome AS "contatoNome",
+        ct.telefone AS "contatoTelefone",
+        m.texto AS "mensagemTexto",
+        m."enviadaEm" AS "mensagemEm"
+      FROM "Conversa" co
+      JOIN "Contato" ct ON ct.id = co."contatoId"
+      LEFT JOIN "Mensagem" m ON m."conversaId" = co.id AND m.texto ILIKE ${curinga}
+      WHERE ct.nome ILIKE ${curinga} OR ct.telefone ILIKE ${curinga} OR m.id IS NOT NULL
+      ORDER BY co.id, m."enviadaEm" DESC NULLS LAST
+    ) achados
+    ORDER BY "mensagemEm" DESC NULLS LAST
+    LIMIT ${limite}
+  `;
+}
