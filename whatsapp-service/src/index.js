@@ -8,8 +8,23 @@ import { ligarRelayDeEntrada } from "./relay-entrada.js";
 import { iniciarRelayDeSaida } from "./relay-saida.js";
 import { ligarRelayDeComandoAgente } from "./relay-comando-agente.js";
 import { aprenderDeContatos, registrarMapeamento } from "./lid-cache.js";
+import { avisar } from "./alertas.js";
 
 const ARQUIVO_QR = "ultimo-qr.png";
+const ARQUIVO_ESTADO = "estado-saude.json";
+
+// Estado lido por um watchdog EXTERNO (cron na VPS, fora deste processo) —
+// existe porque um watchdog só de dentro do próprio processo não detecta o
+// caso em que o processo inteiro trava e nem o setInterval do watchdog
+// interno consegue mais rodar. "em" fica em ISO 8601 pra dar pra comparar
+// "há quanto tempo" de fora sem precisar entender fuso.
+function escreverEstado(status) {
+  try {
+    fs.writeFileSync(ARQUIVO_ESTADO, JSON.stringify({ status, em: new Date().toISOString() }));
+  } catch (erro) {
+    console.error("[whatsapp-service] Falha ao escrever estado de saúde:", erro.message);
+  }
+}
 
 const logger = pino({ level: "warn" });
 const PASTA_AUTH = "auth";
@@ -75,6 +90,11 @@ function iniciarWatchdog(sock) {
       console.error(
         `[whatsapp-service] Watchdog: conexão travada (${erro.message}) — forçando reconexão.`,
       );
+      // Marca "reconectando" aqui, não só no handler de connection.update:close
+      // — é exatamente esse tipo de trava que o watchdog interno existe pra
+      // pegar, e sock.end() nem sempre dispara o evento close (mesmo motivo
+      // pelo qual o watchdog existe, ver comentário acima).
+      escreverEstado("reconectando");
       try {
         sock.ev.removeAllListeners();
         sock.end(new Error("watchdog: conexão travada"));
@@ -198,7 +218,7 @@ async function conectar() {
     intervaloCodigo = setInterval(pedirCodigo, 50000);
   }
 
-  sock.ev.on("connection.update", (update) => {
+  sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && !TELEFONE_PAREAMENTO) {
@@ -217,6 +237,7 @@ async function conectar() {
     if (connection === "open") {
       if (intervaloCodigo) clearInterval(intervaloCodigo);
       console.log("[whatsapp-service] Conectado! Sincronizando com o CRM.");
+      escreverEstado("conectado");
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);
       ligarRelayDeComandoAgente(sock);
@@ -232,8 +253,18 @@ async function conectar() {
         console.error(
           "[whatsapp-service] Sessão desconectada pelo celular — apague a pasta auth/ e rode `npm start` de novo pra parear outra vez.",
         );
+        escreverEstado("desconectado_permanente");
+        // Espera o envio terminar antes de derrubar o processo — sem isso o
+        // process.exit mata a chamada de rede assíncrona no meio do caminho
+        // e o alerta nunca sai de verdade.
+        await avisar(
+          "WhatsApp Legaus Kids desconectado",
+          "A sessão foi desconectada pelo celular (ou removida em Aparelhos conectados). Precisa parear de novo — sem isso, mensagens não chegam nem saem.",
+          { prioridade: "urgent", tag: "rotating_light" },
+        );
         process.exit(1);
       }
+      escreverEstado("reconectando");
       agendarReconexao();
     }
   });

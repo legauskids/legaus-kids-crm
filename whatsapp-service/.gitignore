@@ -1,7 +1,10 @@
 node_modules/
 auth/
 auth-antiga-*/
+auth-migrada-*/
 .env
 *.log
 ultimo-qr.png
 lid-cache.json
+estado-saude.json
+.ultimo-alerta-watchdog

@@ -79,12 +79,35 @@ isso não estiver 100% validado).
   reconecta sozinho automaticamente. Só para de tentar se for uma
   desconexão de verdade feita pelo celular (aí precisa parear de novo).
 
-## Migrar pra uma VPS depois
+## Rodando em produção (VPS + PM2)
 
-Quando quiser disponibilidade 24/7 de verdade (sem depender deste PC estar
-ligado): copia a pasta `whatsapp-service/` inteira — **incluindo a pasta
-`auth/`** — pro servidor novo, roda `npm install` e `npm start` de novo.
-Como a sessão já está pareada, não precisa escanear o QR code outra vez.
+Desde 2026-09-09 este serviço roda 24/7 numa VPS (Hetzner CX23), não mais
+no PC de ninguém. Detalhes:
+
+- **PM2** (`pm2 start src/index.js --name whatsapp-service`) mantém o
+  processo rodando e reinicia sozinho se cair; `pm2 startup` + `pm2 save`
+  garantem que ele volta sozinho mesmo se a VPS inteira reiniciar.
+- **Alertas por push (ntfy.sh, sem conta)**: quando algo precisa de
+  atenção de verdade (sessão desconectada, ou reconectando há tempo
+  demais), o serviço manda uma notificação push pro tópico configurado em
+  `NTFY_TOPICO` no `.env`. Instale o app [ntfy](https://ntfy.sh/) no
+  celular e inscreva-se nesse mesmo nome de tópico pra receber. Falha
+  transitória normal (reconexão que dá certo em segundos) NÃO gera alerta
+  — só o que passa de alguns minutos sem resolver sozinho.
+- **`scripts/watchdog-externo.sh`** roda via cron a cada poucos minutos,
+  fora do processo Node — existe porque o watchdog de dentro do processo
+  (`src/index.js`) não detecta o caso do processo inteiro travar (event
+  loop bloqueado, nem o próprio `setInterval` do watchdog interno roda
+  mais nesse caso). Ele lê `estado-saude.json` (que o processo escreve
+  sozinho a cada mudança de conexão) e o status real no PM2; força
+  reinício e avisa por ntfy quando necessário. Configurado no `crontab`
+  do usuário `root` da VPS (`*/2 * * * * .../scripts/watchdog-externo.sh`).
+
+**Migrar pra uma VPS nova** (se precisar trocar de servidor no futuro):
+copia a pasta `whatsapp-service/` inteira — **incluindo a pasta `auth/`**
+— pro servidor novo, roda `npm install`, configura o `.env` e sobe com
+PM2 de novo. Como a sessão já está pareada, não precisa escanear o QR
+code outra vez.
 
 ## Diagnóstico
 
