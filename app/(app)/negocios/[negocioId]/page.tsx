@@ -11,6 +11,8 @@ import { EtapaBreadcrumb } from "@/app/(app)/negocios/[negocioId]/etapa-breadcru
 import { DadosTab } from "@/app/(app)/negocios/[negocioId]/dados-tab";
 import { TarefasTab } from "@/app/(app)/negocios/[negocioId]/tarefas-tab";
 import { HistoricoTab } from "@/app/(app)/negocios/[negocioId]/historico-tab";
+import { NotaFiscalCard } from "@/app/(app)/negocios/[negocioId]/nota-fiscal-card";
+import { listNotasFiscaisPorNegocio, prepararItemPadrao, focusNfeConfigurado } from "@/lib/server/nota-fiscal";
 
 export default async function NegocioDetalhePage({
   params,
@@ -31,6 +33,10 @@ export default async function NegocioDetalhePage({
   ]);
   const isFunilVenda = negocio.funil.nome === "Funil de venda";
   const isFunilPosVenda = negocio.funil.nome === "Funil de pós-venda";
+
+  const [notasFiscais, itemPadrao] = isFunilPosVenda
+    ? await Promise.all([listNotasFiscaisPorNegocio(negocio.id), prepararItemPadrao(negocio.id)])
+    : [[], null];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -71,6 +77,23 @@ export default async function NegocioDetalhePage({
         </TabsList>
         <TabsContent value="dados">
           <DadosTab negocio={negocio} contatos={contatos} usuarios={usuarios} isFunilPosVenda={isFunilPosVenda} />
+          {isFunilPosVenda && itemPadrao && (
+            <NotaFiscalCard
+              negocioId={negocio.id}
+              itemPadrao={itemPadrao}
+              focusNfeConfigurado={focusNfeConfigurado()}
+              notasFiscais={notasFiscais.map((n) => ({
+                id: n.id,
+                status: n.status,
+                numero: n.numero,
+                motivoRejeicao: n.motivoRejeicao,
+                valorTotalCentavos: n.valorTotalCentavos,
+                criadaEm: n.criadaEm.toISOString(),
+                temXml: n.xmlBytes !== null,
+                temDanfe: n.danfeBytes !== null,
+              }))}
+            />
+          )}
         </TabsContent>
         <TabsContent value="tarefas">
           <TarefasTab
