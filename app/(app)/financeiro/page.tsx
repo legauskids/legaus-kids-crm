@@ -3,17 +3,28 @@ import { cn } from "@/lib/utils";
 import { requireModulo } from "@/lib/auth/guards";
 import { getPainelFinanceiro } from "@/lib/server/financeiro";
 import { getModeloContratoAtivo, listarContratos, listarNegociosParaSeletor, CAMPOS_MODELO_CONTRATO } from "@/lib/server/contratos";
+import { listImportacoes, listTransacoes, listNegociosParaConciliacao, type FiltroTransacoes } from "@/lib/server/conciliacao-bancaria";
 import { FinanceiroKpis } from "@/app/(app)/financeiro/financeiro-kpis";
 import { FaturamentoChart } from "@/app/(app)/financeiro/faturamento-chart";
 import { PipelinePosVenda } from "@/app/(app)/financeiro/pipeline-pos-venda";
 import { PendenciasPosVenda } from "@/app/(app)/financeiro/pendencias-pos-venda";
 import { RankingClientes } from "@/app/(app)/financeiro/ranking-clientes";
 import { ContratosTab } from "@/app/(app)/financeiro/contratos-tab";
+import { ConciliacaoTab } from "@/app/(app)/financeiro/conciliacao-tab";
 
-export default async function FinanceiroPage({ searchParams }: { searchParams: Promise<{ aba?: string }> }) {
+export default async function FinanceiroPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aba?: string; filtroTransacao?: string }>;
+}) {
   await requireModulo("financeiro");
-  const { aba } = await searchParams;
+  const { aba, filtroTransacao } = await searchParams;
   const abaContratos = aba === "contratos";
+  const abaConciliacao = aba === "conciliacao";
+  const filtroAtual: FiltroTransacoes =
+    filtroTransacao === "CONCILIADA" || filtroTransacao === "IGNORADA" || filtroTransacao === "TODAS"
+      ? filtroTransacao
+      : "NAO_CONCILIADA";
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -39,10 +50,21 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
           >
             Contratos
           </Link>
+          <Link
+            href="/financeiro?aba=conciliacao"
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              abaConciliacao ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Conciliação bancária
+          </Link>
         </div>
       </div>
 
-      {abaContratos ? <ContratosTabData /> : <VisaoGeral />}
+      {abaContratos && <ContratosTabData />}
+      {abaConciliacao && <ConciliacaoTabData filtroAtual={filtroAtual} />}
+      {!abaContratos && !abaConciliacao && <VisaoGeral />}
     </div>
   );
 }
@@ -93,6 +115,40 @@ async function ContratosTabData() {
         contatoNome: c.negocio.contato?.nome ?? null,
       }))}
       negociosParaSeletor={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null }))}
+    />
+  );
+}
+
+async function ConciliacaoTabData({ filtroAtual }: { filtroAtual: FiltroTransacoes }) {
+  const [transacoes, importacoes, negocios] = await Promise.all([
+    listTransacoes(filtroAtual),
+    listImportacoes(),
+    listNegociosParaConciliacao(),
+  ]);
+
+  return (
+    <ConciliacaoTab
+      filtroAtual={filtroAtual}
+      transacoes={transacoes.map((t) => ({
+        id: t.id,
+        data: t.data.toISOString(),
+        descricao: t.descricao,
+        valorCentavos: t.valorCentavos,
+        tipo: t.tipo,
+        status: t.status,
+        negocioId: t.negocioId,
+        negocioTitulo: t.negocio?.titulo ?? null,
+        contatoNome: t.negocio?.contato?.nome ?? null,
+      }))}
+      importacoes={importacoes.map((i) => ({
+        id: i.id,
+        nomeArquivo: i.nomeArquivo,
+        importadoEm: i.importadoEm.toISOString(),
+        importadoPorNome: i.importadoPor.nome,
+        quantidadeTransacoes: i.quantidadeTransacoes,
+        naoConciliadas: i._count.transacoes,
+      }))}
+      negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }))}
     />
   );
 }
