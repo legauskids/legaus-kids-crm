@@ -84,20 +84,23 @@ model User {
   permissoes   Json     @default("{}")
   createdAt    DateTime @default(now())
 
-  conversasAtendidas  Conversa[]         @relation("AtendenteConversa")
-  negociosResponsavel Negocio[]          @relation("ResponsavelNegocio")
-  tarefasResponsavel  Tarefa[]           @relation("ResponsavelTarefa")
-  tarefasSolicitadas  Tarefa[]           @relation("SolicitanteTarefa")
-  lembretes           Lembrete[]
-  respostasRapidas    RespostaRapida[]
-  notasInternas       NotaInterna[]
-  mensagensEnviadas   Mensagem[]
-  atividades          Atividade[]
-  orcamentos          Orcamento[]        @relation("ResponsavelOrcamento")
-  comandosAgente      ComandoAgente[]
-  postagens           Postagem[]
-  cotacoes            Cotacao[]
-  negociosExcluidos   Negocio[]          @relation("ExclusorNegocio")
+  conversasAtendidas    Conversa[]                  @relation("AtendenteConversa")
+  negociosResponsavel   Negocio[]                   @relation("ResponsavelNegocio")
+  tarefasResponsavel    Tarefa[]                    @relation("ResponsavelTarefa")
+  tarefasSolicitadas    Tarefa[]                    @relation("SolicitanteTarefa")
+  lembretes             Lembrete[]
+  respostasRapidas      RespostaRapida[]
+  notasInternas         NotaInterna[]
+  mensagensEnviadas     Mensagem[]
+  atividades            Atividade[]
+  orcamentos            Orcamento[]                 @relation("ResponsavelOrcamento")
+  comandosAgente        ComandoAgente[]
+  postagens             Postagem[]
+  cotacoes              Cotacao[]
+  negociosExcluidos     Negocio[]                   @relation("ExclusorNegocio")
+  notasFiscaisCriadas   NotaFiscal[]                @relation("CriadorNotaFiscal")
+  extratosImportados    ExtratoBancarioImportacao[] @relation("ImportadorExtrato")
+  transacoesConciliadas TransacaoBancaria[]         @relation("ConciliadorTransacao")
 }
 
 enum OrigemComando {
@@ -117,18 +120,18 @@ enum StatusComando {
 // ferramenta sensível ficou de executar se o usuário confirmar na próxima
 // mensagem da mesma origem (telefone no WhatsApp, "crm:<userId>" no CRM).
 model ComandoAgente {
-  id                   String        @id @default(cuid())
-  origem               OrigemComando
-  identificador        String
-  usuarioId            String?
-  usuario              User?         @relation(fields: [usuarioId], references: [id])
-  textoComando         String
-  resposta             String?
-  ferramentaPendente   String?
-  argumentosPendentes  Json?
-  descricaoPendente    String?
-  status               StatusComando @default(CONCLUIDO)
-  criadoEm             DateTime      @default(now())
+  id                  String        @id @default(cuid())
+  origem              OrigemComando
+  identificador       String
+  usuarioId           String?
+  usuario             User?         @relation(fields: [usuarioId], references: [id])
+  textoComando        String
+  resposta            String?
+  ferramentaPendente  String?
+  argumentosPendentes Json?
+  descricaoPendente   String?
+  status              StatusComando @default(CONCLUIDO)
+  criadoEm            DateTime      @default(now())
 
   @@index([identificador, criadoEm])
 }
@@ -140,12 +143,12 @@ model Setor {
 }
 
 model Contato {
-  id        String      @id @default(cuid())
-  nome      String
-  empresa   String?
-  telefone  String?     @unique
-  tags      String[]    @default([])
-  tipo      TipoContato @default(CONTATO)
+  id       String      @id @default(cuid())
+  nome     String
+  empresa  String?
+  telefone String?     @unique
+  tags     String[]    @default([])
+  tipo     TipoContato @default(CONTATO)
 
   // Preenchidos via busca de CNPJ ao cadastrar cliente/fornecedor (pessoa
   // jurídica) — ficam vazios pra um contato pessoa física comum vindo do
@@ -192,24 +195,24 @@ model Conversa {
 }
 
 model Mensagem {
-  id          String          @id @default(cuid())
-  conversaId  String
-  conversa    Conversa        @relation(fields: [conversaId], references: [id])
-  direcao     DirecaoMensagem
-  origem      OrigemMensagem  @default(MANUAL)
-  texto       String
-  autorUserId String?
-  autor       User?           @relation(fields: [autorUserId], references: [id])
-  externalId  String?         @unique
-  enviadaEm   DateTime        @default(now())
-  anexoUrl       String?
-  anexoNome      String?
-  anexoMimetype  String?
+  id               String          @id @default(cuid())
+  conversaId       String
+  conversa         Conversa        @relation(fields: [conversaId], references: [id])
+  direcao          DirecaoMensagem
+  origem           OrigemMensagem  @default(MANUAL)
+  texto            String
+  autorUserId      String?
+  autor            User?           @relation(fields: [autorUserId], references: [id])
+  externalId       String?         @unique
+  enviadaEm        DateTime        @default(now())
+  anexoUrl         String?
+  anexoNome        String?
+  anexoMimetype    String?
   // Só preenchido pra anexo que CHEGOU do WhatsApp (o CRM guarda os bytes de
   // verdade aqui) — anexo que o CRM MANDA nunca usa isso, o anexoUrl aponta
   // pra uma rota que já sabe gerar o conteúdo (PDF do orçamento, card de
   // produto etc.), sem precisar duplicar os bytes na própria Mensagem.
-  anexoBytes     Bytes?
+  anexoBytes       Bytes?
   // Marca quando o relay do WhatsApp pegou essa mensagem da fila pra
   // mandar de verdade — evita reenviar (duplicar de verdade no WhatsApp do
   // cliente) se a confirmação de envio falhar/demorar antes do próximo
@@ -302,9 +305,11 @@ model Negocio {
   excluidoPorId  String?
   excluidoPor    User?     @relation("ExclusorNegocio", fields: [excluidoPorId], references: [id])
 
-  tarefas    Tarefa[]
-  atividades Atividade[]
-  contratos  Contrato[]
+  tarefas             Tarefa[]
+  atividades          Atividade[]
+  contratos           Contrato[]
+  notasFiscais        NotaFiscal[]
+  transacoesBancarias TransacaoBancaria[]
 }
 
 // Texto único e editável usado como base pra gerar cada contrato — Marcos
@@ -433,14 +438,14 @@ model Produto {
   // Planilha de custo/margem (guia "Lista de preços" em Cadastros). Preço de
   // venda continua sendo valorCentavos — calculado a partir do markup aqui,
   // pra manter uma fonte única usada também no Orçamento.
-  custoCompraCentavos Int?
-  freteCustoCentavos  Int?
-  ipiCustoCentavos    Int?
-  outrosCustoCentavos Int?
-  quantidadeReferencia Int   @default(1)
-  markupPercentual    Float?
-  impostoPercentual   Float?
-  instalacaoCentavos  Int?
+  custoCompraCentavos  Int?
+  freteCustoCentavos   Int?
+  ipiCustoCentavos     Int?
+  outrosCustoCentavos  Int?
+  quantidadeReferencia Int    @default(1)
+  markupPercentual     Float?
+  impostoPercentual    Float?
+  instalacaoCentavos   Int?
 
   orcamentoItens OrcamentoItem[]
 
@@ -500,12 +505,12 @@ enum StatusPostagem {
 }
 
 model ModeloPostagem {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
   titulo        String
   tipo          TipoPostagem
   legendaModelo String
-  criadoEm      DateTime @default(now())
-  atualizadoEm  DateTime @updatedAt
+  criadoEm      DateTime     @default(now())
+  atualizadoEm  DateTime     @updatedAt
 }
 
 // Uma Postagem pode ter várias fotos (carrossel) — cada foto tem 2-3
@@ -581,13 +586,13 @@ model Cotacao {
   // Mão de obra varia em quantidade de campos por tipo (Playground tem 1,
   // Kidplay tem 2 — "TL" e "Estofador") — guardado como
   // [{ label: string, valorCentavos: number }].
-  maoDeObra               Json     @default("[]")
-  markup                  Float    @default(1.9)
-  adicionalCentavos       Int      @default(0)
-  instalacaoPercentual    Float    @default(5)
-  freteKm                 Float    @default(0)
-  fretePrecoPorKmCentavos Int      @default(500)
-  impostoCentavos         Int      @default(0)
+  maoDeObra               Json  @default("[]")
+  markup                  Float @default(1.9)
+  adicionalCentavos       Int   @default(0)
+  instalacaoPercentual    Float @default(5)
+  freteKm                 Float @default(0)
+  fretePrecoPorKmCentavos Int   @default(500)
+  impostoCentavos         Int   @default(0)
 
   criadoPorId  String
   criadoPor    User     @relation(fields: [criadoPorId], references: [id])
@@ -618,4 +623,92 @@ model CotacaoItem {
   impostoPercentual         Float @default(7)
 
   @@index([cotacaoId])
+}
+
+// ---------------------------------------------------------------------------
+// Financeiro: Nota Fiscal (Focus NFe) + Conciliação Bancária (OFX manual).
+// Ver docs/financeiro-nota-fiscal-e-conciliacao.md pro roteiro completo.
+// ---------------------------------------------------------------------------
+
+enum StatusNotaFiscal {
+  NAO_EMITIDA
+  PROCESSANDO
+  AUTORIZADA
+  REJEITADA
+  CANCELADA
+}
+
+// Snapshot dos itens/dados enviados fica em itensJson — editável na tela de
+// conferência antes de emitir (nome/quantidade/valor vêm do Negócio, mas
+// NCM/CFOP/CST são fiscais de verdade e não podem ser inventados aqui, por
+// isso ficam em branco até o contador confirmar os corretos pra cada
+// produto — ver lib/server/focus-nfe.ts).
+model NotaFiscal {
+  id                 String           @id @default(cuid())
+  negocioId          String
+  negocio            Negocio          @relation(fields: [negocioId], references: [id])
+  referencia         String           @unique
+  status             StatusNotaFiscal @default(NAO_EMITIDA)
+  numero             String?
+  serie              String?
+  chaveAcesso        String?
+  statusSefaz        String?
+  mensagemSefaz      String?
+  motivoRejeicao     String?
+  itensJson          Json
+  valorTotalCentavos Int
+  xmlBytes           Bytes?
+  danfeBytes         Bytes?
+  criadaPorId        String
+  criadaPor          User             @relation("CriadorNotaFiscal", fields: [criadaPorId], references: [id])
+  criadaEm           DateTime         @default(now())
+  atualizadaEm       DateTime         @updatedAt
+}
+
+model ExtratoBancarioImportacao {
+  id                   String    @id @default(cuid())
+  nomeArquivo          String
+  periodoInicio        DateTime?
+  periodoFim           DateTime?
+  quantidadeTransacoes Int
+  importadoPorId       String
+  importadoPor         User      @relation("ImportadorExtrato", fields: [importadoPorId], references: [id])
+  importadoEm          DateTime  @default(now())
+
+  transacoes TransacaoBancaria[]
+}
+
+enum TipoTransacaoBancaria {
+  ENTRADA
+  SAIDA
+}
+
+enum StatusTransacaoBancaria {
+  NAO_CONCILIADA
+  CONCILIADA
+  IGNORADA
+}
+
+model TransacaoBancaria {
+  id              String                    @id @default(cuid())
+  importacaoId    String
+  importacao      ExtratoBancarioImportacao @relation(fields: [importacaoId], references: [id])
+  data            DateTime
+  descricao       String
+  valorCentavos   Int
+  tipo            TipoTransacaoBancaria
+  // ID único da transação dentro do OFX (FITID) — evita duplicar o mesmo
+  // lançamento se o Marcos importar um extrato com período sobreposto ao
+  // de uma importação anterior. Nem todo banco preenche de forma confiável,
+  // por isso é opcional (nullable @unique permite múltiplos nulls).
+  fitId           String?                   @unique
+  status          StatusTransacaoBancaria   @default(NAO_CONCILIADA)
+  negocioId       String?
+  negocio         Negocio?                  @relation(fields: [negocioId], references: [id])
+  conciliadaPorId String?
+  conciliadaPor   User?                     @relation("ConciliadorTransacao", fields: [conciliadaPorId], references: [id])
+  conciliadaEm    DateTime?
+
+  @@index([importacaoId])
+  @@index([negocioId])
 }
