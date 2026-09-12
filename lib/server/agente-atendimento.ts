@@ -1,14 +1,11 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { getConversaDetalhada, encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
+import { getConversaDetalhada } from "@/lib/server/conversas";
 import { listNegociosPorContato } from "@/lib/server/negocios";
 import { listarOrcamentos } from "@/lib/server/orcamentos";
 import { buscarProdutosSimilar } from "@/lib/server/busca-similar";
 import { centavosParaReais } from "@/lib/utils/money";
-import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { EMPRESA } from "@/lib/constants/empresa";
-import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
-import { registrarEventoNoHistorico } from "@/lib/server/agente";
 
 const MODELO = "claude-sonnet-5";
 
@@ -20,6 +17,14 @@ const MODELO = "claude-sonnet-5";
 // se quiserem e só então mandam pelo mesmo caminho de envio manual de
 // sempre. Supervisão é o próprio fluxo de UI, não precisa de confirmação
 // separada como as ferramentas sensíveis do outro agente.
+//
+// Até 2026-09-12 isso rodava automaticamente a cada mensagem recebida
+// (avisarNovaMensagem, chamada de app/api/integracoes/whatsapp/mensagens/
+// route.ts) — desligado por pedido do Marcos pra economizar API: toda
+// mensagem de cliente gerava uma chamada de IA cheia de contexto, usada ou
+// não. Agora só roda sob demanda: pelo botão no Composer do Atendimento
+// (gerarSugestaoAgenteAction) ou pedindo pro agente de comando pelo
+// WhatsApp (ferramenta sugerir_resposta_cliente em lib/server/agente.ts).
 // ---------------------------------------------------------------------------
 
 type ArgsFerramenta = Record<string, unknown>;
@@ -126,70 +131,4 @@ ${conversa.mensagens.map((m) => `[${m.direcao === "ENTRADA" ? "Cliente" : EMPRES
   }
 
   throw new Error("Não consegui gerar uma sugestão dessa vez — tenta de novo.");
-}
-
-/**
- * Chamado a cada mensagem nova recebida pelo WhatsApp (ver
- * app/api/integracoes/whatsapp/mensagens/route.ts) — não só a primeira de
- * um contato novo, qualquer mensagem de qualquer conversa. Gera uma
- * sugestão de resposta (mesmo motor de gerarSugestaoResposta) e manda uma
- * notificação pro WhatsApp de quem está em WHATSAPP_NOTIFICAR_TELEFONES
- * (Marcos/Dani), com quem é o contato, o que ele mandou, e a sugestão
- * pronta pra aprovar. Nunca manda nada pro cliente sozinho — só avisa e
- * sugere; o agente de comando (lib/server/agente.ts, ferramenta
- * enviar_mensagem_whatsapp) manda de verdade quando alguém confirmar.
- */
-export async function avisarNovaMensagem(conversaId: string, ehContatoNovo: boolean): Promise<void> {
-  if (WHATSAPP_NOTIFICAR_TELEFONES.length === 0) return;
-
-  const conversa = await getConversaDetalhada(conversaId);
-  if (!conversa || conversa.mensagens.length === 0) return;
-
-  const ultimaMensagem = conversa.mensagens[conversa.mensagens.length - 1];
-  // Disjuntor contra loop — mesma ideia de lib/server/agente.ts
-  // (comandoRepetidoDemais): se chegaram muitas mensagens ENTRADA nessa
-  // MESMA conversa em menos de um minuto, é sinal de algo reenviando
-  // (reconexão do WhatsApp reentregando histórico, bug futuro, etc.), não
-  // um cliente digitando rápido de verdade — pula a chamada de IA em vez
-  // de gerar uma sugestão pra cada reentrega.
-  const LIMITE_MENSAGENS_JANELA = 5;
-  const JANELA_MS = 60 * 1000;
-  const recentes = conversa.mensagens.filter(
-    (m) => m.direcao === "ENTRADA" && Date.now() - m.enviadaEm.getTime() < JANELA_MS,
-  ).length;
-
-  let sugestao: string;
-  if (recentes > LIMITE_MENSAGENS_JANELA) {
-    sugestao = "(muitas mensagens chegando rápido demais nessa conversa — pulei a sugestão automática dessa vez pra não gastar API à toa)";
-  } else {
-    try {
-      sugestao = await gerarSugestaoResposta(conversaId);
-    } catch (erro) {
-      sugestao = `(${mensagemErroAnthropic(erro)})`;
-    }
-  }
-
-  const texto =
-    `${ehContatoNovo ? "🆕 *Lead novo pelo WhatsApp*" : `💬 *Nova mensagem de ${conversa.contato.nome}*`}\n` +
-    `${conversa.contato.nome} — ${conversa.contato.telefone}\n\n` +
-    `Mensagem: "${ultimaMensagem.texto}"\n\n` +
-    `*Sugestão de resposta:*\n${sugestao}\n\n` +
-    `Responde aqui pra eu mandar a sugestão (ou me diz o que prefere responder).`;
-
-  for (const telefoneNotificar of WHATSAPP_NOTIFICAR_TELEFONES) {
-    try {
-      const conversaNotificacao = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneNotificar });
-      await registrarMensagem({ conversaId: conversaNotificacao.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
-      // Sem isso, o agente de comando não tem como saber o telefone/texto
-      // da sugestão quando o Marcos só responde "pode enviar assim" —
-      // ver o comentário de registrarEventoNoHistorico pro porquê.
-      await registrarEventoNoHistorico(
-        telefoneNotificar,
-        ehContatoNovo ? "[sistema] Lead novo detectado — notificação enviada" : "[sistema] Nova mensagem recebida — notificação enviada",
-        texto,
-      );
-    } catch {
-      // Falha ao notificar um número não deve impedir de tentar os outros.
-    }
-  }
 }

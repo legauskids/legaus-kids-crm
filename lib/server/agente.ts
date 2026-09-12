@@ -28,6 +28,7 @@ import {
   adicionarNotaHistorico,
 } from "@/lib/server/negocios";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem, criarMensagemAgendada } from "@/lib/server/conversas";
+import { gerarSugestaoResposta } from "@/lib/server/agente-atendimento";
 import { enviarEmail, emailConfigurado } from "@/lib/server/email";
 import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/lib/server/orcamento-email";
 import { gerarPdfOrcamento } from "@/lib/server/pdf/orcamento-pdf";
@@ -850,6 +851,28 @@ const FERRAMENTAS: Ferramenta[] = [
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal });
       const agendada = await criarMensagemAgendada({ conversaId: conversa.id, texto, agendadaPara, criadaPorId: usuarioId });
       return { agendado: true, id: agendada.id, para: agendadaPara.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
+    },
+  },
+  {
+    name: "sugerir_resposta_cliente",
+    description:
+      "Gera uma sugestão de resposta pra próxima mensagem de uma conversa de WhatsApp com um cliente/lead, usando o histórico da conversa, negócios e orçamentos dele como contexto. NÃO manda nada pro cliente — só devolve o texto sugerido pra você revisar (chame enviar_mensagem_whatsapp depois se quiser mandar de verdade). A sugestão automática a cada mensagem nova foi desligada de propósito (2026-09-12, economia de custo de API) — use essa ferramenta só quando alguém pedir uma sugestão explicitamente pra um cliente específico, não por conta própria.",
+    input_schema: {
+      type: "object",
+      properties: {
+        telefone: { type: "string", description: "Com DDI, só números — telefone do CLIENTE, não de quem está pedindo" },
+        clienteNomeBusca: { type: "string", description: "Nome do cliente, se não souber o telefone de cabeça — busca aproximada" },
+      },
+    },
+    async executar(args, ctx) {
+      const { telefone, nomeExibicao } = await resolverTelefoneCliente(
+        args as { telefone?: string; clienteNomeBusca?: string },
+        ctx.telefoneOrigem,
+      );
+      if (!telefone) return { erro: `Não achei telefone pra "${nomeExibicao}" — confirma o nome ou manda o telefone direto.` };
+      const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
+      const sugestao = await gerarSugestaoResposta(conversa.id);
+      return { cliente: nomeExibicao, telefone, sugestao };
     },
   },
   {
@@ -1711,25 +1734,6 @@ export async function processarComandoAgente(input: {
   });
 
   return { resposta: resultado.texto };
-}
-
-/**
- * Registra um evento do sistema (ex: notificação de lead novo) no mesmo
- * histórico que buscarHistoricoRecente usa pra dar memória de curto prazo
- * ao agente. Sem isso, uma notificação de lead novo (mandada direto via
- * registrarMensagem, fora do fluxo de processarComandoAgente) nunca entra
- * na "memória" do agente — quando o Marcos respondia só "pode enviar
- * assim" na mesma conversa, o agente não tinha como saber qual telefone
- * ou qual texto de sugestão isso se referia, e "Feito." virava uma
- * alucinação (nenhuma ferramenta era chamada de verdade). Guardar a
- * notificação como se fosse uma troca (usuário: marcador interno,
- * assistente: o texto da notificação com telefone+sugestão) dá ao modelo
- * o contexto que falta pra chamar enviar_mensagem_whatsapp de verdade.
- */
-export async function registrarEventoNoHistorico(identificador: string, textoComando: string, resposta: string): Promise<void> {
-  await prisma.comandoAgente.create({
-    data: { origem: "WHATSAPP", identificador, textoComando, resposta, status: "CONCLUIDO" },
-  });
 }
 
 export function listarHistoricoComandos(identificador: string, limite = 30) {
