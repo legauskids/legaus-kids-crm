@@ -131,6 +131,14 @@ model ComandoAgente {
   argumentosPendentes Json?
   descricaoPendente   String?
   status              StatusComando @default(CONCLUIDO)
+  // Soma de todos os turnos dessa chamada (um comando pode levar até 8
+  // turnos de tool-calling — cada turno reenvia o histórico inteiro pra
+  // Anthropic, então input cresce a cada turno). Existe pra dar visibilidade
+  // de consumo real de token sem precisar reconstruir a partir do texto
+  // guardado — motivado pelo crédito ter acabado em 2026-09-10 sem ninguém
+  // perceber até dias depois.
+  tokensEntrada       Int?
+  tokensSaida         Int?
   criadoEm            DateTime      @default(now())
 
   @@index([identificador, criadoEm])

@@ -1445,13 +1445,21 @@ async function rodarAgenteClaude(
   identificador: string,
   anexoPdf?: { base64: string; nomeArquivo: string },
   anexoImagem?: { base64: string; mimetype: string },
-): Promise<{ texto: string; ferramentaPendente: { nome: string; args: unknown; descricao: string } | null; ferramentasChamadas: string[] }> {
+): Promise<{
+  texto: string;
+  ferramentaPendente: { nome: string; args: unknown; descricao: string } | null;
+  ferramentasChamadas: string[];
+  tokensEntrada: number;
+  tokensSaida: number;
+}> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return {
       texto: "O agente ainda não está configurado (falta a chave da Anthropic no servidor). Avisa o Marcos.",
       ferramentaPendente: null,
       ferramentasChamadas: [],
+      tokensEntrada: 0,
+      tokensSaida: 0,
     };
   }
 
@@ -1483,6 +1491,11 @@ async function rodarAgenteClaude(
   let ferramentaPendente: { nome: string; args: unknown; descricao: string } | null = null;
   const ferramentasChamadas: string[] = [];
   const ctxAnexoImagem = anexoImagem ? { bytes: Buffer.from(anexoImagem.base64, "base64"), mimetype: anexoImagem.mimetype } : undefined;
+  // Cada turno de tool-calling é uma chamada HTTP própria pra Anthropic, com
+  // o histórico reenviado inteiro — soma os dois campos por turno pra saber
+  // o custo real do comando inteiro, não só do último turno.
+  let tokensEntrada = 0;
+  let tokensSaida = 0;
 
   // 8 turnos (não 5) porque um único áudio costuma emendar várias tarefas
   // diferentes ("cria isso, muda aquilo, e já lembra de ligar pro fulano") —
@@ -1505,9 +1518,11 @@ async function rodarAgenteClaude(
       // não responde"). Devolver uma resposta de verdade aqui garante que
       // sempre chega alguma coisa pro usuário, mesmo quando é só pra avisar
       // do problema.
-      return { texto: mensagemErroAnthropic(erro), ferramentaPendente, ferramentasChamadas };
+      return { texto: mensagemErroAnthropic(erro), ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
     }
 
+    tokensEntrada += resposta.usage.input_tokens;
+    tokensSaida += resposta.usage.output_tokens;
     messages.push({ role: "assistant", content: resposta.content });
 
     const usosDeFerramenta = resposta.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
@@ -1517,7 +1532,7 @@ async function rodarAgenteClaude(
         .map((b) => b.text)
         .join("\n")
         .trim();
-      return { texto: textoFinal || "Feito.", ferramentaPendente, ferramentasChamadas };
+      return { texto: textoFinal || "Feito.", ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
     }
 
     const resultadosFerramenta: Anthropic.ToolResultBlockParam[] = [];
@@ -1556,7 +1571,13 @@ async function rodarAgenteClaude(
     messages.push({ role: "user", content: resultadosFerramenta });
   }
 
-  return { texto: "Não consegui concluir — o comando ficou grande demais pra resolver em uma rodada. Tenta dividir em partes.", ferramentaPendente, ferramentasChamadas };
+  return {
+    texto: "Não consegui concluir — o comando ficou grande demais pra resolver em uma rodada. Tenta dividir em partes.",
+    ferramentaPendente,
+    ferramentasChamadas,
+    tokensEntrada,
+    tokensSaida,
+  };
 }
 
 // Limite de tamanho pra evitar que uma frase NOVA e longa que só COMEÇA com
@@ -1586,6 +1607,28 @@ async function buscarPendenteAtivo(identificador: string) {
     where: { identificador, status: "AGUARDANDO_CONFIRMACAO", criadoEm: { gte: limite } },
     orderBy: { criadoEm: "desc" },
   });
+}
+
+// Disjuntor genérico contra loop — visto ao vivo em 2026-09-05: um bug de
+// eco (agente respondendo pra si mesmo pelo WhatsApp, já corrigido em
+// ids-relay.js do lado do whatsapp-service) gerou 95 chamadas idênticas
+// ("Até mais!") pra API da Anthropic em 3 minutos, sem nenhum cliente real
+// envolvido — gasto sem propósito nenhum. Aquele bug específico está
+// fechado, mas esse checador fica como segunda camada: se o MESMO texto
+// vier do MESMO identificador repetidas vezes rápido demais — não importa
+// a causa (um bug novo, uma automação futura, um clique duplo) — corta
+// ANTES de gastar uma chamada de IA, em vez de descobrir só quando o
+// crédito já tiver acabado de novo.
+const LIMITE_REPETICOES_JANELA = 3;
+const JANELA_REPETICAO_MS = 60 * 1000;
+
+async function comandoRepetidoDemais(identificador: string, textoComando: string): Promise<boolean> {
+  if (!textoComando.trim()) return false;
+  const desde = new Date(Date.now() - JANELA_REPETICAO_MS);
+  const contagem = await prisma.comandoAgente.count({
+    where: { identificador, textoComando, criadoEm: { gte: desde } },
+  });
+  return contagem >= LIMITE_REPETICOES_JANELA;
 }
 
 export async function processarComandoAgente(input: {
@@ -1633,6 +1676,15 @@ export async function processarComandoAgente(input: {
     // expira sozinho pela janela de 10min (JANELA_PENDENTE_MS) se ninguém confirmar.
   }
 
+  if (await comandoRepetidoDemais(input.identificador, input.texto)) {
+    const resposta =
+      "Notei esse mesmo comando chegando repetido rápido demais (parece loop) — não chamei a IA de novo agora pra não gastar API à toa. Se não for loop de verdade, é só mandar de um jeito um pouco diferente ou esperar um minuto.";
+    await prisma.comandoAgente.create({
+      data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta, status: "CONCLUIDO" },
+    });
+    return { resposta };
+  }
+
   const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem);
 
   await prisma.comandoAgente.create({
@@ -1653,6 +1705,8 @@ export async function processarComandoAgente(input: {
       ferramentaPendente: resultado.ferramentaPendente?.nome,
       argumentosPendentes: resultado.ferramentaPendente ? (resultado.ferramentaPendente.args as object) : undefined,
       descricaoPendente: resultado.ferramentaPendente?.descricao,
+      tokensEntrada: resultado.tokensEntrada,
+      tokensSaida: resultado.tokensSaida,
     },
   });
 

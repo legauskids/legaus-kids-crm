@@ -146,11 +146,27 @@ export async function avisarNovaMensagem(conversaId: string, ehContatoNovo: bool
   if (!conversa || conversa.mensagens.length === 0) return;
 
   const ultimaMensagem = conversa.mensagens[conversa.mensagens.length - 1];
+  // Disjuntor contra loop — mesma ideia de lib/server/agente.ts
+  // (comandoRepetidoDemais): se chegaram muitas mensagens ENTRADA nessa
+  // MESMA conversa em menos de um minuto, é sinal de algo reenviando
+  // (reconexão do WhatsApp reentregando histórico, bug futuro, etc.), não
+  // um cliente digitando rápido de verdade — pula a chamada de IA em vez
+  // de gerar uma sugestão pra cada reentrega.
+  const LIMITE_MENSAGENS_JANELA = 5;
+  const JANELA_MS = 60 * 1000;
+  const recentes = conversa.mensagens.filter(
+    (m) => m.direcao === "ENTRADA" && Date.now() - m.enviadaEm.getTime() < JANELA_MS,
+  ).length;
+
   let sugestao: string;
-  try {
-    sugestao = await gerarSugestaoResposta(conversaId);
-  } catch (erro) {
-    sugestao = `(${mensagemErroAnthropic(erro)})`;
+  if (recentes > LIMITE_MENSAGENS_JANELA) {
+    sugestao = "(muitas mensagens chegando rápido demais nessa conversa — pulei a sugestão automática dessa vez pra não gastar API à toa)";
+  } else {
+    try {
+      sugestao = await gerarSugestaoResposta(conversaId);
+    } catch (erro) {
+      sugestao = `(${mensagemErroAnthropic(erro)})`;
+    }
   }
 
   const texto =
