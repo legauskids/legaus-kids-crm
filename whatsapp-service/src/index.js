@@ -38,6 +38,28 @@ const TELEFONE_PAREAMENTO = process.env.WHATSAPP_PAREAMENTO_TELEFONE || "";
 let credsAtuais = null;
 let reconexaoAgendada = false;
 
+// Visto ao vivo em 2026-09-10/12: sem backoff, um "conflict: replaced" (o
+// WhatsApp fecha dizendo que outra conexão substituiu essa) virava um
+// loop que se sustentava sozinho por DIAS — reconectar de novo em só 2s
+// não dava tempo do servidor terminar de derrubar a conexão anterior do
+// lado dele, então a conexão nova era lida como "mais uma duplicata" e
+// fechada de novo, pra sempre. Backoff exponencial (2s, 4s, 8s... até
+// 60s) dá esse tempo. Só reseta pra 2s de novo depois de ficar conectado
+// de verdade por um tempo mínimo — sem isso, o "Conectado!" que aparece
+// bem antes de cada conflito (a conexão SEMPRE abre brevemente antes de
+// ser derrubada) zeraria o contador a cada ciclo e o backoff nunca cresceria.
+const BACKOFF_BASE_MS = 2000;
+const BACKOFF_MAX_MS = 60 * 1000;
+const CONEXAO_ESTAVEL_MS = 15 * 1000;
+let tentativasReconexaoSeguidas = 0;
+let conectadoDesde = null;
+
+function calcularAtrasoReconexao() {
+  const atraso = Math.min(BACKOFF_BASE_MS * 2 ** tentativasReconexaoSeguidas, BACKOFF_MAX_MS);
+  tentativasReconexaoSeguidas++;
+  return atraso;
+}
+
 // Visto ao vivo em 2026-08-27: a conexão às vezes fica "zumbi" — o processo
 // continua rodando, o WebSocket nem sempre dispara connection.update:"close"
 // (o Baileys engole o erro internamente, ex. "unexpected error in 'init
@@ -155,11 +177,18 @@ function agendarReconexao() {
   if (reconexaoAgendada) return;
   reconexaoAgendada = true;
   limparAuthSeNaoRegistrado();
-  console.warn("[whatsapp-service] Reconectando em instantes...");
+
+  if (conectadoDesde && Date.now() - conectadoDesde >= CONEXAO_ESTAVEL_MS) {
+    tentativasReconexaoSeguidas = 0;
+  }
+  conectadoDesde = null;
+
+  const atraso = calcularAtrasoReconexao();
+  console.warn(`[whatsapp-service] Reconectando em ${Math.round(atraso / 1000)}s (tentativa ${tentativasReconexaoSeguidas})...`);
   setTimeout(() => {
     reconexaoAgendada = false;
     conectar();
-  }, 2000);
+  }, atraso);
 }
 
 async function conectar() {
@@ -237,6 +266,7 @@ async function conectar() {
     if (connection === "open") {
       if (intervaloCodigo) clearInterval(intervaloCodigo);
       console.log("[whatsapp-service] Conectado! Sincronizando com o CRM.");
+      conectadoDesde = Date.now();
       escreverEstado("conectado");
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);
