@@ -5,6 +5,7 @@ import { listNegociosPorContato } from "@/lib/server/negocios";
 import { listarOrcamentos } from "@/lib/server/orcamentos";
 import { buscarProdutosSimilar } from "@/lib/server/busca-similar";
 import { centavosParaReais } from "@/lib/utils/money";
+import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { EMPRESA } from "@/lib/constants/empresa";
 import { WHATSAPP_NOTIFICAR_TELEFONES } from "@/lib/constants/app";
 import { registrarEventoNoHistorico } from "@/lib/server/agente";
@@ -149,7 +150,7 @@ export async function avisarNovaMensagem(conversaId: string, ehContatoNovo: bool
   try {
     sugestao = await gerarSugestaoResposta(conversaId);
   } catch (erro) {
-    sugestao = `(não consegui gerar uma sugestão automática: ${erro instanceof Error ? erro.message : "erro desconhecido"})`;
+    sugestao = `(${mensagemErroAnthropic(erro)})`;
   }
 
   const texto =

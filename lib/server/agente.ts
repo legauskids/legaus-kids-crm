@@ -43,6 +43,7 @@ import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precifi
 import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
 import { listarContratos } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
+import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
 import type { OrigemComando, StatusOrcamento } from "@prisma/client";
 
@@ -1487,13 +1488,25 @@ async function rodarAgenteClaude(
   // diferentes ("cria isso, muda aquilo, e já lembra de ligar pro fulano") —
   // cada uma consome pelo menos um turno de ferramenta.
   for (let turno = 0; turno < 8; turno++) {
-    const resposta = await client.messages.create({
-      model: MODELO,
-      max_tokens: 1024,
-      system: montarSystemPrompt(),
-      tools: FERRAMENTAS.map(paraToolAnthropic),
-      messages,
-    });
+    let resposta;
+    try {
+      resposta = await client.messages.create({
+        model: MODELO,
+        max_tokens: 1024,
+        system: montarSystemPrompt(),
+        tools: FERRAMENTAS.map(paraToolAnthropic),
+        messages,
+      });
+    } catch (erro) {
+      // Sem isso, um erro aqui (ex: sem crédito na API) subia sem tratamento
+      // até a rota HTTP, que devolvia 500 — o whatsapp-service só logava e
+      // NUNCA respondia nada pro Marcos no WhatsApp (visto ao vivo em
+      // 2026-09-10/12: comando mandado, silêncio total, parecia "o agente
+      // não responde"). Devolver uma resposta de verdade aqui garante que
+      // sempre chega alguma coisa pro usuário, mesmo quando é só pra avisar
+      // do problema.
+      return { texto: mensagemErroAnthropic(erro), ferramentaPendente, ferramentasChamadas };
+    }
 
     messages.push({ role: "assistant", content: resposta.content });
 
