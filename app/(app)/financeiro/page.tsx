@@ -4,6 +4,13 @@ import { requireModulo } from "@/lib/auth/guards";
 import { getPainelFinanceiro } from "@/lib/server/financeiro";
 import { getModeloContratoAtivo, listarContratos, listarNegociosParaSeletor, CAMPOS_MODELO_CONTRATO } from "@/lib/server/contratos";
 import { listImportacoes, listTransacoes, listNegociosParaConciliacao, type FiltroTransacoes } from "@/lib/server/conciliacao-bancaria";
+import {
+  listContatosParaNotaFiscal,
+  listNegociosParaNotaFiscal,
+  listOrcamentosParaNotaFiscal,
+  listNotasFiscais,
+  focusNfeConfigurado,
+} from "@/lib/server/nota-fiscal";
 import { FinanceiroKpis } from "@/app/(app)/financeiro/financeiro-kpis";
 import { FaturamentoChart } from "@/app/(app)/financeiro/faturamento-chart";
 import { PipelinePosVenda } from "@/app/(app)/financeiro/pipeline-pos-venda";
@@ -11,6 +18,7 @@ import { PendenciasPosVenda } from "@/app/(app)/financeiro/pendencias-pos-venda"
 import { RankingClientes } from "@/app/(app)/financeiro/ranking-clientes";
 import { ContratosTab } from "@/app/(app)/financeiro/contratos-tab";
 import { ConciliacaoTab } from "@/app/(app)/financeiro/conciliacao-tab";
+import { NotasFiscaisTab } from "@/app/(app)/financeiro/notas-fiscais-tab";
 
 export default async function FinanceiroPage({
   searchParams,
@@ -21,6 +29,7 @@ export default async function FinanceiroPage({
   const { aba, filtroTransacao } = await searchParams;
   const abaContratos = aba === "contratos";
   const abaConciliacao = aba === "conciliacao";
+  const abaNotasFiscais = aba === "notas-fiscais";
   const filtroAtual: FiltroTransacoes =
     filtroTransacao === "CONCILIADA" || filtroTransacao === "IGNORADA" || filtroTransacao === "TODAS"
       ? filtroTransacao
@@ -59,12 +68,22 @@ export default async function FinanceiroPage({
           >
             Conciliação bancária
           </Link>
+          <Link
+            href="/financeiro?aba=notas-fiscais"
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              abaNotasFiscais ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Notas fiscais
+          </Link>
         </div>
       </div>
 
       {abaContratos && <ContratosTabData />}
       {abaConciliacao && <ConciliacaoTabData filtroAtual={filtroAtual} />}
-      {!abaContratos && !abaConciliacao && <VisaoGeral />}
+      {abaNotasFiscais && <NotasFiscaisTabData />}
+      {!abaContratos && !abaConciliacao && !abaNotasFiscais && <VisaoGeral />}
     </div>
   );
 }
@@ -149,6 +168,40 @@ async function ConciliacaoTabData({ filtroAtual }: { filtroAtual: FiltroTransaco
         naoConciliadas: i._count.transacoes,
       }))}
       negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }))}
+    />
+  );
+}
+
+async function NotasFiscaisTabData() {
+  const [contatos, negocios, orcamentos, notasFiscais] = await Promise.all([
+    listContatosParaNotaFiscal(),
+    listNegociosParaNotaFiscal(),
+    listOrcamentosParaNotaFiscal(),
+    listNotasFiscais(),
+  ]);
+
+  return (
+    <NotasFiscaisTab
+      focusNfeConfigurado={focusNfeConfigurado()}
+      contatos={contatos}
+      negocios={negocios
+        .filter((n) => n.contatoId !== null)
+        .map((n) => ({ id: n.id, contatoId: n.contatoId as string, titulo: n.titulo, produto: n.produto, descricao: n.descricao, valorCentavos: n.valorCentavos }))}
+      orcamentos={orcamentos
+        .filter((o) => o.contatoId !== null)
+        .map((o) => ({ id: o.id, contatoId: o.contatoId as string, numero: o.numero, descontoCentavos: o.descontoCentavos, itens: o.itens }))}
+      notasFiscais={notasFiscais.map((n) => ({
+        id: n.id,
+        status: n.status,
+        numero: n.numero,
+        motivoRejeicao: n.motivoRejeicao,
+        valorTotalCentavos: n.valorTotalCentavos,
+        criadaEm: n.criadaEm.toISOString(),
+        contatoNome: n.contato.nome,
+        origemLabel: n.negocio ? n.negocio.titulo : n.orcamento ? `Orçamento #${String(n.orcamento.numero).padStart(4, "0")}` : null,
+        temXml: n.xmlBytes !== null,
+        temDanfe: n.danfeBytes !== null,
+      }))}
     />
   );
 }

@@ -12,13 +12,6 @@ import {
 } from "@/lib/server/negocios";
 import { marcarPagamentoIdentificado } from "@/lib/server/automations";
 import {
-  criarEEmitirNotaFiscal,
-  atualizarStatusNotaFiscal,
-  reemitirNotaFiscal,
-  tentarEmitirNotaFiscal,
-  type ItemNotaFiscalInput,
-} from "@/lib/server/nota-fiscal";
-import {
   criarNegocioSchema,
   marcarPerdidoSchema,
   atualizarDadosNegocioSchema,
@@ -135,54 +128,4 @@ export async function excluirNegocioAction(negocioId: string, motivo: string): P
   revalidatePath("/negocios");
   revalidatePath(`/negocios/${negocioId}`);
   return {};
-}
-
-export type AcaoNotaFiscalState = { error?: string; success?: boolean };
-
-export async function criarNotaFiscalAction(negocioId: string, itens: ItemNotaFiscalInput[]): Promise<AcaoNotaFiscalState> {
-  const user = await requireUser();
-  try {
-    await criarEEmitirNotaFiscal({ negocioId, criadaPorId: user.id, itens });
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui criar a nota fiscal." };
-  }
-  revalidatePath(`/negocios/${negocioId}`);
-  return { success: true };
-}
-
-export async function atualizarStatusNotaFiscalAction(notaFiscalId: string, negocioId: string): Promise<AcaoNotaFiscalState> {
-  await requireUser();
-  try {
-    await atualizarStatusNotaFiscal(notaFiscalId);
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui consultar o status." };
-  }
-  revalidatePath(`/negocios/${negocioId}`);
-  return { success: true };
-}
-
-export async function tentarEmitirNotaFiscalAction(notaFiscalId: string, negocioId: string): Promise<AcaoNotaFiscalState> {
-  await requireUser();
-  try {
-    await tentarEmitirNotaFiscal(notaFiscalId);
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui emitir a nota fiscal." };
-  }
-  revalidatePath(`/negocios/${negocioId}`);
-  return { success: true };
-}
-
-export async function reemitirNotaFiscalAction(
-  notaFiscalIdAnterior: string,
-  negocioId: string,
-  itens: ItemNotaFiscalInput[],
-): Promise<AcaoNotaFiscalState> {
-  await requireUser();
-  try {
-    await reemitirNotaFiscal(notaFiscalIdAnterior, itens);
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui reemitir a nota fiscal." };
-  }
-  revalidatePath(`/negocios/${negocioId}`);
-  return { success: true };
 }

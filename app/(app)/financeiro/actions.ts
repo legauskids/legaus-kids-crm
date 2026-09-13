@@ -9,6 +9,13 @@ import {
   ignorarTransacao,
   reabrirTransacao,
 } from "@/lib/server/conciliacao-bancaria";
+import {
+  criarEEmitirNotaFiscal,
+  atualizarStatusNotaFiscal,
+  tentarEmitirNotaFiscal,
+  reemitirNotaFiscal,
+  type ItemNotaFiscalInput,
+} from "@/lib/server/nota-fiscal";
 import type { StatusContrato } from "@prisma/client";
 
 function revalidateFinanceiro() {
@@ -91,4 +98,55 @@ export async function reabrirTransacaoAction(transacaoId: string): Promise<void>
   await requireModulo("financeiro");
   await reabrirTransacao(transacaoId);
   revalidateFinanceiro();
+}
+
+export type AcaoNotaFiscalState = { error?: string; success?: boolean };
+
+export async function criarNotaFiscalAction(
+  contatoId: string,
+  negocioId: string | undefined,
+  orcamentoId: string | undefined,
+  itens: ItemNotaFiscalInput[],
+): Promise<AcaoNotaFiscalState> {
+  const user = await requireModulo("financeiro");
+  try {
+    await criarEEmitirNotaFiscal({ contatoId, negocioId, orcamentoId, criadaPorId: user.id, itens });
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui criar a nota fiscal." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function atualizarStatusNotaFiscalAction(notaFiscalId: string): Promise<AcaoNotaFiscalState> {
+  await requireModulo("financeiro");
+  try {
+    await atualizarStatusNotaFiscal(notaFiscalId);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui consultar o status." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function tentarEmitirNotaFiscalAction(notaFiscalId: string): Promise<AcaoNotaFiscalState> {
+  await requireModulo("financeiro");
+  try {
+    await tentarEmitirNotaFiscal(notaFiscalId);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui emitir a nota fiscal." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function reemitirNotaFiscalAction(notaFiscalIdAnterior: string, itens: ItemNotaFiscalInput[]): Promise<AcaoNotaFiscalState> {
+  await requireModulo("financeiro");
+  try {
+    await reemitirNotaFiscal(notaFiscalIdAnterior, itens);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui reemitir a nota fiscal." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
 }

@@ -1,11 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { emitirNfe, consultarNfe, baixarArquivoFocusNfe, focusNfeConfigurado, type ItemNfe } from "@/lib/server/focus-nfe";
+import { emitirNfe, consultarNfe, baixarArquivoFocusNfe, focusNfeConfigurado, type ItemNfe, type DestinatarioNfe } from "@/lib/server/focus-nfe";
 
 export { focusNfeConfigurado };
 
 export type ItemNotaFiscalInput = {
-  nome: string;
   descricao: string;
   quantidade: number;
   valorUnitarioCentavos: number;
@@ -15,47 +14,99 @@ export type ItemNotaFiscalInput = {
   icmsSituacaoTributaria: string;
 };
 
-/** Pré-preenche a partir dos dados que já existem no negócio — o resto (NCM/CFOP/CST) fica em branco de propósito, ver focus-nfe.ts. */
-export async function prepararItemPadrao(negocioId: string): Promise<ItemNotaFiscalInput> {
-  const negocio = await prisma.negocio.findUniqueOrThrow({ where: { id: negocioId } });
+/** Clientes pro seletor da aba Notas Fiscais — qualquer contato pode ser destinatário, não só os marcados como "Cliente". */
+export function listContatosParaNotaFiscal() {
+  return prisma.contato.findMany({
+    select: { id: true, nome: true, cnpj: true, representanteLegalCpf: true },
+    orderBy: { nome: "asc" },
+  });
+}
+
+/**
+ * Todos os negócios/orçamentos (não filtrado por cliente) — carregados de
+ * uma vez pro seletor da aba Notas Fiscais, que filtra por cliente no
+ * próprio navegador (mesmo padrão já usado em listarNegociosParaSeletor/
+ * listNegociosParaConciliacao, sem busca paginada porque o volume é
+ * pequeno pra esse porte de negócio).
+ */
+export function listNegociosParaNotaFiscal() {
+  return prisma.negocio.findMany({
+    select: { id: true, contatoId: true, titulo: true, produto: true, descricao: true, valorCentavos: true },
+    orderBy: { updatedAt: "desc" },
+    take: 300,
+  });
+}
+
+export function listOrcamentosParaNotaFiscal() {
+  return prisma.orcamento.findMany({
+    select: {
+      id: true,
+      contatoId: true,
+      numero: true,
+      descontoCentavos: true,
+      itens: { select: { nome: true, descricao: true, quantidade: true, valorUnitarioCentavos: true }, orderBy: { ordem: "asc" } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+  });
+}
+
+export function listNotasFiscais() {
+  return prisma.notaFiscal.findMany({
+    include: { contato: true, negocio: { select: { titulo: true } }, orcamento: { select: { numero: true } } },
+    orderBy: { criadaEm: "desc" },
+  });
+}
+
+function gerarReferencia(contatoId: string): string {
+  return `legaus-${contatoId}-${Date.now()}`;
+}
+
+function montarDestinatario(contato: {
+  nome: string;
+  razaoSocial: string | null;
+  cnpj: string | null;
+  representanteLegalCpf: string | null;
+  endereco: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
+}): DestinatarioNfe {
   return {
-    nome: negocio.produto || negocio.titulo,
-    descricao: negocio.descricao || negocio.produto || negocio.titulo,
-    quantidade: 1,
-    valorUnitarioCentavos: negocio.valorCentavos,
-    ncm: "",
-    cfop: "",
-    unidade: "UN",
-    icmsSituacaoTributaria: "",
+    nome: contato.razaoSocial || contato.nome,
+    cnpj: contato.cnpj || undefined,
+    cpf: !contato.cnpj ? contato.representanteLegalCpf || undefined : undefined,
+    logradouro: contato.endereco || undefined,
+    numero: "S/N",
+    bairro: undefined,
+    municipio: contato.cidade || undefined,
+    uf: contato.uf || undefined,
+    cep: contato.cep || undefined,
   };
-}
-
-export function listNotasFiscaisPorNegocio(negocioId: string) {
-  return prisma.notaFiscal.findMany({ where: { negocioId }, orderBy: { criadaEm: "desc" } });
-}
-
-function gerarReferencia(negocioId: string): string {
-  return `legaus-${negocioId}-${Date.now()}`;
 }
 
 /**
  * Cria a NotaFiscal (status NAO_EMITIDA) e, se a Focus NFe estiver
  * configurada, já tenta emitir na sequência. Se não estiver configurada,
  * fica só com o registro pra conferência — quem chama decide como avisar
- * o usuário (ver app/(app)/negocios/actions.ts).
+ * o usuário (ver app/(app)/financeiro/actions.ts).
  */
 export async function criarEEmitirNotaFiscal(input: {
-  negocioId: string;
+  contatoId: string;
+  negocioId?: string;
+  orcamentoId?: string;
   criadaPorId: string;
   itens: ItemNotaFiscalInput[];
 }) {
-  const negocio = await prisma.negocio.findUniqueOrThrow({ where: { id: input.negocioId }, include: { contato: true } });
+  const contato = await prisma.contato.findUniqueOrThrow({ where: { id: input.contatoId } });
   const valorTotalCentavos = input.itens.reduce((soma, i) => soma + i.quantidade * i.valorUnitarioCentavos, 0);
-  const referencia = gerarReferencia(input.negocioId);
+  const referencia = gerarReferencia(input.contatoId);
 
   const notaFiscal = await prisma.notaFiscal.create({
     data: {
+      contatoId: input.contatoId,
       negocioId: input.negocioId,
+      orcamentoId: input.orcamentoId,
       referencia,
       status: "NAO_EMITIDA",
       itensJson: input.itens,
@@ -67,33 +118,14 @@ export async function criarEEmitirNotaFiscal(input: {
   if (!focusNfeConfigurado()) {
     return notaFiscal;
   }
-
-  if (!negocio.contato) {
-    throw new Error("Esse negócio não tem cliente vinculado — não dá pra emitir nota fiscal sem destinatário.");
-  }
-  if (!negocio.contato.cnpj && !negocio.contato.representanteLegalCpf) {
+  if (!contato.cnpj && !contato.representanteLegalCpf) {
     throw new Error("Cadastre o CNPJ (ou CPF do representante) do cliente antes de emitir a nota fiscal.");
   }
 
-  return emitirEAtualizar(notaFiscal.id, {
-    nome: negocio.contato.razaoSocial || negocio.contato.nome,
-    cnpj: negocio.contato.cnpj || undefined,
-    cpf: !negocio.contato.cnpj ? negocio.contato.representanteLegalCpf || undefined : undefined,
-    logradouro: negocio.contato.endereco || undefined,
-    numero: "S/N",
-    bairro: undefined,
-    municipio: negocio.contato.cidade || undefined,
-    uf: negocio.contato.uf || undefined,
-    cep: negocio.contato.cep || undefined,
-  }, input.itens, referencia);
+  return emitirEAtualizar(notaFiscal.id, montarDestinatario(contato), input.itens, referencia);
 }
 
-async function emitirEAtualizar(
-  notaFiscalId: string,
-  destinatario: Parameters<typeof emitirNfe>[1],
-  itens: ItemNotaFiscalInput[],
-  referencia: string,
-) {
+async function emitirEAtualizar(notaFiscalId: string, destinatario: DestinatarioNfe, itens: ItemNotaFiscalInput[], referencia: string) {
   const itensFocus: ItemNfe[] = itens.map((i, idx) => ({
     numero_item: idx + 1,
     codigo_produto: String(idx + 1).padStart(6, "0"),
@@ -163,28 +195,22 @@ export async function atualizarStatusNotaFiscal(notaFiscalId: string) {
 
 /** Tenta emitir uma nota que ficou NAO_EMITIDA (criada antes da Focus NFe estar configurada, ou que falhou por dado faltando no cliente) — reusa os itens já salvos, sem duplicar o registro. */
 export async function tentarEmitirNotaFiscal(notaFiscalId: string) {
-  const notaFiscal = await prisma.notaFiscal.findUniqueOrThrow({ where: { id: notaFiscalId }, include: { negocio: { include: { contato: true } } } });
-  const negocio = notaFiscal.negocio;
-  if (!negocio.contato) throw new Error("Esse negócio não tem cliente vinculado.");
-  if (!negocio.contato.cnpj && !negocio.contato.representanteLegalCpf) {
+  const notaFiscal = await prisma.notaFiscal.findUniqueOrThrow({ where: { id: notaFiscalId }, include: { contato: true } });
+  if (!notaFiscal.contato.cnpj && !notaFiscal.contato.representanteLegalCpf) {
     throw new Error("Cadastre o CNPJ (ou CPF do representante) do cliente antes de emitir a nota fiscal.");
   }
   const itens = notaFiscal.itensJson as unknown as ItemNotaFiscalInput[];
-  return emitirEAtualizar(notaFiscal.id, {
-    nome: negocio.contato.razaoSocial || negocio.contato.nome,
-    cnpj: negocio.contato.cnpj || undefined,
-    cpf: !negocio.contato.cnpj ? negocio.contato.representanteLegalCpf || undefined : undefined,
-    logradouro: negocio.contato.endereco || undefined,
-    numero: "S/N",
-    bairro: undefined,
-    municipio: negocio.contato.cidade || undefined,
-    uf: negocio.contato.uf || undefined,
-    cep: negocio.contato.cep || undefined,
-  }, itens, notaFiscal.referencia);
+  return emitirEAtualizar(notaFiscal.id, montarDestinatario(notaFiscal.contato), itens, notaFiscal.referencia);
 }
 
 /** Reemitir depois de corrigir os dados — mesma referência não pode ser reusada na Focus NFe após rejeição de verdade, então gera uma nova. */
 export async function reemitirNotaFiscal(notaFiscalIdAnterior: string, itens: ItemNotaFiscalInput[]) {
   const anterior = await prisma.notaFiscal.findUniqueOrThrow({ where: { id: notaFiscalIdAnterior } });
-  return criarEEmitirNotaFiscal({ negocioId: anterior.negocioId, criadaPorId: anterior.criadaPorId, itens });
+  return criarEEmitirNotaFiscal({
+    contatoId: anterior.contatoId,
+    negocioId: anterior.negocioId ?? undefined,
+    orcamentoId: anterior.orcamentoId ?? undefined,
+    criadaPorId: anterior.criadaPorId,
+    itens,
+  });
 }

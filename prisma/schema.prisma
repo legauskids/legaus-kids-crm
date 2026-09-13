@@ -177,10 +177,11 @@ model Contato {
 
   createdAt DateTime @default(now())
 
-  conversas  Conversa[]
-  negocios   Negocio[]
-  tarefas    Tarefa[]
-  orcamentos Orcamento[]
+  conversas    Conversa[]
+  negocios     Negocio[]
+  tarefas      Tarefa[]
+  orcamentos   Orcamento[]
+  notasFiscais NotaFiscal[]
 }
 
 model Conversa {
@@ -318,6 +319,8 @@ model Negocio {
   contratos           Contrato[]
   notasFiscais        NotaFiscal[]
   transacoesBancarias TransacaoBancaria[]
+
+  @@index([contatoId])
 }
 
 // Texto único e editável usado como base pra gerar cada contrato — Marcos
@@ -475,7 +478,10 @@ model Orcamento {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
-  itens OrcamentoItem[]
+  itens        OrcamentoItem[]
+  notasFiscais NotaFiscal[]
+
+  @@index([contatoId])
 }
 
 model OrcamentoItem {
@@ -653,8 +659,16 @@ enum StatusNotaFiscal {
 // produto — ver lib/server/focus-nfe.ts).
 model NotaFiscal {
   id                 String           @id @default(cuid())
-  negocioId          String
-  negocio            Negocio          @relation(fields: [negocioId], references: [id])
+  // Cliente é sempre obrigatório (é o destinatário da nota); negócio/
+  // orçamento são só a ORIGEM dos itens pré-preenchidos, opcionais — dá
+  // pra emitir a partir de qualquer um dos dois, escolhendo na aba Notas
+  // Fiscais do Financeiro.
+  contatoId          String
+  contato            Contato          @relation(fields: [contatoId], references: [id])
+  negocioId          String?
+  negocio            Negocio?         @relation(fields: [negocioId], references: [id])
+  orcamentoId        String?
+  orcamento          Orcamento?       @relation(fields: [orcamentoId], references: [id])
   referencia         String           @unique
   status             StatusNotaFiscal @default(NAO_EMITIDA)
   numero             String?
