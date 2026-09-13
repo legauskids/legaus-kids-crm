@@ -38,6 +38,22 @@ const TELEFONE_PAREAMENTO = process.env.WHATSAPP_PAREAMENTO_TELEFONE || "";
 let credsAtuais = null;
 let reconexaoAgendada = false;
 
+// Achado ao vivo em 2026-09-13 analisando os logs minuto a minuto: mesmo
+// depois de subir CONEXAO_ESTAVEL_MS pra 90s, o padrão de conflito
+// continuou idêntico — e "Conectado!" e "Reconectando tentativa N"
+// apareciam no MESMO segundo, repetidas vezes. Ou seja, a conexão nem
+// chegava a sobreviver os 15-17s estimados antes: tinha mais de um socket
+// Baileys vivo ao mesmo tempo dentro do processo. `conectar()` nunca
+// derruba de vez os listeners do socket anterior no caminho normal de
+// fechamento (só o watchdog de zumbi fazia isso, e só depois de um tempo
+// sem heartbeat) — então um `connection.update` atrasado do socket velho
+// podia disparar `agendarReconexao()` de novo por cima do socket novo,
+// os dois brigando pelo mesmo `conectadoDesde`/`tentativasReconexaoSeguidas`
+// compartilhado. Esse guard garante que só o socket mais recente (o
+// "atual") pode mexer nesse estado — qualquer evento de um socket já
+// substituído é ignorado.
+let sockAtual = null;
+
 // Visto ao vivo em 2026-09-10/12: sem backoff, um "conflict: replaced" (o
 // WhatsApp fecha dizendo que outra conexão substituiu essa) virava um
 // loop que se sustentava sozinho por DIAS — reconectar de novo em só 2s
@@ -48,11 +64,28 @@ let reconexaoAgendada = false;
 // de verdade por um tempo mínimo — sem isso, o "Conectado!" que aparece
 // bem antes de cada conflito (a conexão SEMPRE abre brevemente antes de
 // ser derrubada) zeraria o contador a cada ciclo e o backoff nunca cresceria.
+//
+// Corrigido de novo em 2026-09-13: 15s de "estável" ainda era curto
+// demais — visto ao vivo um novo episódio (77 mil conflitos em 3h,
+// pior que o de dias atrás) onde a conexão ficava de pé por ~16-17s
+// antes de cair de novo, o suficiente pra resetar o contador e o
+// backoff nunca escalar de verdade, ficando preso girando entre 2s e
+// 16s pra sempre em vez de chegar nos 60s que realmente ajudam.
+// Subido pra 90s — só considera "resolvido" uma conexão que durou bem
+// mais que qualquer uma das quedas rápidas já vistas.
 const BACKOFF_BASE_MS = 2000;
 const BACKOFF_MAX_MS = 60 * 1000;
-const CONEXAO_ESTAVEL_MS = 15 * 1000;
+const CONEXAO_ESTAVEL_MS = 90 * 1000;
 let tentativasReconexaoSeguidas = 0;
 let conectadoDesde = null;
+
+// Aviso proativo pra quando o backoff já escalou bastante e ainda não
+// resolveu — sem isso, uma instabilidade dessas só aparecia pro Marcos
+// quando ele reparasse sozinho (ou o watchdog externo via cron, que pode
+// demorar a bater o limiar dele). Um por episódio (reseta quando a
+// conexão finalmente fica estável de novo), pra não virar spam.
+const TENTATIVAS_PARA_ALERTA = 6;
+let alertaDeInstabilidadeEnviado = false;
 
 function calcularAtrasoReconexao() {
   const atraso = Math.min(BACKOFF_BASE_MS * 2 ** tentativasReconexaoSeguidas, BACKOFF_MAX_MS);
@@ -180,11 +213,22 @@ function agendarReconexao() {
 
   if (conectadoDesde && Date.now() - conectadoDesde >= CONEXAO_ESTAVEL_MS) {
     tentativasReconexaoSeguidas = 0;
+    alertaDeInstabilidadeEnviado = false;
   }
   conectadoDesde = null;
 
   const atraso = calcularAtrasoReconexao();
   console.warn(`[whatsapp-service] Reconectando em ${Math.round(atraso / 1000)}s (tentativa ${tentativasReconexaoSeguidas})...`);
+
+  if (tentativasReconexaoSeguidas >= TENTATIVAS_PARA_ALERTA && !alertaDeInstabilidadeEnviado) {
+    alertaDeInstabilidadeEnviado = true;
+    avisar(
+      "WhatsApp Legaus Kids instável",
+      `Reconectando repetidamente há um tempo sem estabilizar (tentativa ${tentativasReconexaoSeguidas}) — mensagens podem estar atrasando. Se continuar por muito tempo, dá uma olhada.`,
+      { prioridade: "high", tag: "warning" },
+    );
+  }
+
   setTimeout(() => {
     reconexaoAgendada = false;
     conectar();
@@ -214,6 +258,7 @@ async function conectar() {
     // todo). Desligar isso evita a causa, não só o sintoma.
     fireInitQueries: false,
   });
+  sockAtual = sock;
 
   sock.ev.on("creds.update", saveCreds);
 
@@ -248,6 +293,12 @@ async function conectar() {
   }
 
   sock.ev.on("connection.update", async (update) => {
+    // Ignora evento de um socket já substituído por um `conectar()` mais
+    // recente — ver comentário de `sockAtual` acima. Sem isso, um evento
+    // atrasado do socket velho podia reagendar reconexão ou zerar/mexer no
+    // estado compartilhado por cima do socket que já está de pé agora.
+    if (sock !== sockAtual) return;
+
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && !TELEFONE_PAREAMENTO) {
