@@ -94,6 +94,10 @@ export function ligarRelayDeComandoAgente(sock) {
         const documentMessage = msg.message?.documentMessage;
         const imageMessage = msg.message?.imageMessage;
         const ehPdf = documentMessage?.mimetype === "application/pdf";
+        // OFX quase nunca vem com um mimetype próprio reconhecido pelo
+        // WhatsApp (chega como application/octet-stream ou parecido) —
+        // extensão do nome do arquivo é o jeito confiável de identificar.
+        const ehOfx = (documentMessage?.fileName || "").toLowerCase().endsWith(".ofx");
         const texto =
           msg.message?.conversation ||
           msg.message?.extendedTextMessage?.text ||
@@ -137,6 +141,17 @@ export function ligarRelayDeComandoAgente(sock) {
             }),
           });
           console.log(`[relay-comando-agente] Comando (PDF) processado -> ${resultado.resposta}`);
+        } else if (ehOfx) {
+          console.log(`[relay-comando-agente] Extrato bancário (OFX) recebido (${telefone}: ${documentMessage.fileName}), baixando...`);
+          const buffer = await downloadMediaMessage(msg, "buffer", {});
+          const resultado = await chamarApi("/api/agente/comando-whatsapp", {
+            method: "POST",
+            body: JSON.stringify({
+              telefone,
+              anexoOfx: { base64: buffer.toString("base64"), nomeArquivo: documentMessage.fileName },
+            }),
+          });
+          console.log(`[relay-comando-agente] Extrato OFX processado -> ${resultado.resposta}`);
         } else if (imageMessage) {
           console.log(`[relay-comando-agente] Imagem de comando recebida (${telefone}), baixando...`);
           const buffer = await downloadMediaMessage(msg, "buffer", {});

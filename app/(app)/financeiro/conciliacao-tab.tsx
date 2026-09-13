@@ -116,7 +116,8 @@ export function ConciliacaoTab({
           {state.success && (
             <p className="text-xs text-success">
               {state.success.novasImportadas} transação(ões) nova(s) importada(s)
-              {state.success.duplicadasIgnoradas > 0 && ` (${state.success.duplicadasIgnoradas} já existiam, ignoradas)`}.
+              {state.success.duplicadasIgnoradas > 0 && ` (${state.success.duplicadasIgnoradas} já existiam, ignoradas)`}
+              {state.success.conciliadasAutomaticamente > 0 && ` — ${state.success.conciliadasAutomaticamente} já conciliada(s) automaticamente (mesmo valor de um negócio)`}.
             </p>
           )}
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}

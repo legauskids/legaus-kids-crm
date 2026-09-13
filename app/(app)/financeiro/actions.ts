@@ -16,7 +16,8 @@ import {
   reemitirNotaFiscal,
   type ItemNotaFiscalInput,
 } from "@/lib/server/nota-fiscal";
-import type { StatusContrato } from "@prisma/client";
+import { criarSimulacao, excluirSimulacao } from "@/lib/server/simulacao-financeira";
+import type { StatusContrato, TipoTransacaoBancaria } from "@prisma/client";
 
 function revalidateFinanceiro() {
   revalidatePath("/financeiro");
@@ -60,7 +61,7 @@ export async function atualizarStatusContratoAction(contratoId: string, status: 
 
 export type AcaoImportarExtratoState = {
   error?: string;
-  success?: { totalNoArquivo: number; novasImportadas: number; duplicadasIgnoradas: number };
+  success?: { totalNoArquivo: number; novasImportadas: number; duplicadasIgnoradas: number; conciliadasAutomaticamente: number };
 };
 
 export async function importarExtratoAction(
@@ -149,4 +150,26 @@ export async function reemitirNotaFiscalAction(notaFiscalIdAnterior: string, ite
   }
   revalidateFinanceiro();
   return { success: true };
+}
+
+export type AcaoSimulacaoState = { error?: string; success?: boolean };
+
+export async function criarSimulacaoAction(
+  descricao: string,
+  valorCentavos: number,
+  tipo: TipoTransacaoBancaria,
+  data: string | null,
+): Promise<AcaoSimulacaoState> {
+  const user = await requireModulo("financeiro");
+  if (!descricao.trim()) return { error: "Descreva o lançamento." };
+  if (valorCentavos <= 0) return { error: "Informe um valor maior que zero." };
+  await criarSimulacao({ descricao: descricao.trim(), valorCentavos, tipo, data: data ? new Date(data) : null, criadaPorId: user.id });
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function excluirSimulacaoAction(id: string): Promise<void> {
+  await requireModulo("financeiro");
+  await excluirSimulacao(id);
+  revalidateFinanceiro();
 }

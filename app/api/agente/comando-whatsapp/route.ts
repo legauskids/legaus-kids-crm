@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireApiUser } from "@/lib/auth/api-token";
 import { processarComandoAgente } from "@/lib/server/agente";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
+import { importarExtratoOfx } from "@/lib/server/conciliacao-bancaria";
 
 const bodySchema = z
   .object({
@@ -10,9 +11,10 @@ const bodySchema = z
     texto: z.string().optional(),
     anexoPdf: z.object({ base64: z.string().min(1), nomeArquivo: z.string().optional() }).optional(),
     anexoImagem: z.object({ base64: z.string().min(1), mimetype: z.string().min(1) }).optional(),
+    anexoOfx: z.object({ base64: z.string().min(1), nomeArquivo: z.string().min(1) }).optional(),
   })
-  .refine((d) => (d.texto && d.texto.trim().length > 0) || d.anexoPdf || d.anexoImagem, {
-    message: "Informe texto, anexoPdf ou anexoImagem.",
+  .refine((d) => (d.texto && d.texto.trim().length > 0) || d.anexoPdf || d.anexoImagem || d.anexoOfx, {
+    message: "Informe texto, anexoPdf, anexoImagem ou anexoOfx.",
   });
 
 /**
@@ -36,6 +38,30 @@ export async function POST(request: Request) {
   }
 
   const telefone = parsed.data.telefone.replace(/\D/g, "");
+
+  // Extrato bancário (.ofx) não passa pelo agente de IA de propósito —
+  // importar e conciliar é uma operação determinística (parse do arquivo +
+  // match por valor exato), não precisa de julgamento de modelo nenhum, e
+  // gastar uma chamada de API pra isso seria desperdício (ver o incidente
+  // de crédito de 2026-09-12). Resposta é montada aqui mesmo, em texto.
+  if (parsed.data.anexoOfx) {
+    const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
+    let texto: string;
+    try {
+      const bytes = Buffer.from(parsed.data.anexoOfx.base64, "base64");
+      const resultado = await importarExtratoOfx({ nomeArquivo: parsed.data.anexoOfx.nomeArquivo, bytes, importadoPorId: usuario.id });
+      const pendentes = resultado.novasImportadas - resultado.conciliadasAutomaticamente;
+      texto =
+        `📄 Extrato *${parsed.data.anexoOfx.nomeArquivo}* importado: *${resultado.novasImportadas}* transação(ões) nova(s)` +
+        (resultado.duplicadasIgnoradas > 0 ? ` (${resultado.duplicadasIgnoradas} já existiam, ignoradas)` : "") +
+        `.\n\n✅ *${resultado.conciliadasAutomaticamente}* conciliada(s) automaticamente (mesmo valor exato de um negócio).\n` +
+        `${pendentes > 0 ? `⏳ *${pendentes}* pendente(s) de revisão manual` : "Nenhuma pendência"} em Financeiro → Conciliação bancária.`;
+    } catch (erro) {
+      texto = erro instanceof Error ? erro.message : "Falha ao importar o extrato.";
+    }
+    await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
+    return NextResponse.json({ resposta: texto });
+  }
 
   try {
     const resultado = await processarComandoAgente({

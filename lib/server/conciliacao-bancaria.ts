@@ -38,14 +38,80 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
         })),
       },
     },
+    include: { transacoes: true },
   });
+
+  const { conciliadas } = await conciliarAutomaticamente(
+    importacao.transacoes.map((t) => t.id),
+    input.importadoPorId,
+  );
 
   return {
     importacaoId: importacao.id,
     totalNoArquivo: extrato.transacoes.length,
     novasImportadas: transacoesNovas.length,
     duplicadasIgnoradas: extrato.transacoes.length - transacoesNovas.length,
+    conciliadasAutomaticamente: conciliadas,
   };
+}
+
+const REGEX_DIACRITICOS = new RegExp("[\\u0300-\\u036f]", "g");
+
+function normalizarTexto(s: string): string {
+  return s.normalize("NFD").replace(REGEX_DIACRITICOS, "").toUpperCase();
+}
+
+/**
+ * Concilia automaticamente as transações recém-importadas que têm um match
+ * INEQUÍVOCO com um negócio em aberto: mesmo valor exato — e se mais de um
+ * negócio tiver esse valor, só desempata quando uma palavra do nome do
+ * cliente aparece na descrição do lançamento (comum em PIX/TED, que trazem
+ * o nome de quem mandou). Ambíguo ou sem nenhum match fica como estava
+ * (NAO_CONCILIADA) pra revisão manual — errar uma conciliação automática
+ * (dinheiro atribuído ao negócio errado) é bem pior que deixar pendente.
+ * Só considera ENTRADA: negócio representa venda (dinheiro recebido), não
+ * faz sentido casar uma SAÍDA (despesa) com ele.
+ */
+export async function conciliarAutomaticamente(transacaoIds: string[], usuarioId: string): Promise<{ conciliadas: number; pendentes: number }> {
+  if (transacaoIds.length === 0) return { conciliadas: 0, pendentes: 0 };
+
+  const transacoes = await prisma.transacaoBancaria.findMany({
+    where: { id: { in: transacaoIds }, status: "NAO_CONCILIADA", tipo: "ENTRADA" },
+  });
+  if (transacoes.length === 0) return { conciliadas: 0, pendentes: 0 };
+
+  const negocios = await prisma.negocio.findMany({
+    where: { valorCentavos: { in: [...new Set(transacoes.map((t) => t.valorCentavos))] } },
+    include: { contato: true },
+  });
+
+  let conciliadas = 0;
+  for (const t of transacoes) {
+    const candidatos = negocios.filter((n) => n.valorCentavos === t.valorCentavos);
+    let escolhido = candidatos.length === 1 ? candidatos[0] : null;
+
+    if (!escolhido && candidatos.length > 1) {
+      const descricaoNormalizada = normalizarTexto(t.descricao);
+      const comNomeNaDescricao = candidatos.filter((n) => {
+        if (!n.contato) return false;
+        const palavras = normalizarTexto(n.contato.nome)
+          .split(/\s+/)
+          .filter((p) => p.length >= 4);
+        return palavras.some((p) => descricaoNormalizada.includes(p));
+      });
+      if (comNomeNaDescricao.length === 1) escolhido = comNomeNaDescricao[0];
+    }
+
+    if (escolhido) {
+      await prisma.transacaoBancaria.update({
+        where: { id: t.id },
+        data: { status: "CONCILIADA", negocioId: escolhido.id, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
+      });
+      conciliadas++;
+    }
+  }
+
+  return { conciliadas, pendentes: transacoes.length - conciliadas };
 }
 
 export function listImportacoes() {
