@@ -19,6 +19,8 @@ import { RankingClientes } from "@/app/(app)/financeiro/ranking-clientes";
 import { ContratosTab } from "@/app/(app)/financeiro/contratos-tab";
 import { ConciliacaoTab } from "@/app/(app)/financeiro/conciliacao-tab";
 import { NotasFiscaisTab } from "@/app/(app)/financeiro/notas-fiscais-tab";
+import { SimulacaoTab } from "@/app/(app)/financeiro/simulacao-tab";
+import { listSimulacoes } from "@/lib/server/simulacao-financeira";
 
 export default async function FinanceiroPage({
   searchParams,
@@ -30,6 +32,7 @@ export default async function FinanceiroPage({
   const abaContratos = aba === "contratos";
   const abaConciliacao = aba === "conciliacao";
   const abaNotasFiscais = aba === "notas-fiscais";
+  const abaSimulacao = aba === "simulacao";
   const filtroAtual: FiltroTransacoes =
     filtroTransacao === "CONCILIADA" || filtroTransacao === "IGNORADA" || filtroTransacao === "TODAS"
       ? filtroTransacao
@@ -77,13 +80,23 @@ export default async function FinanceiroPage({
           >
             Notas fiscais
           </Link>
+          <Link
+            href="/financeiro?aba=simulacao"
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              abaSimulacao ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            Simulação
+          </Link>
         </div>
       </div>
 
       {abaContratos && <ContratosTabData />}
       {abaConciliacao && <ConciliacaoTabData filtroAtual={filtroAtual} />}
       {abaNotasFiscais && <NotasFiscaisTabData />}
-      {!abaContratos && !abaConciliacao && !abaNotasFiscais && <VisaoGeral />}
+      {abaSimulacao && <SimulacaoTabData />}
+      {!abaContratos && !abaConciliacao && !abaNotasFiscais && !abaSimulacao && <VisaoGeral />}
     </div>
   );
 }
@@ -201,6 +214,21 @@ async function NotasFiscaisTabData() {
         origemLabel: n.negocio ? n.negocio.titulo : n.orcamento ? `Orçamento #${String(n.orcamento.numero).padStart(4, "0")}` : null,
         temXml: n.xmlBytes !== null,
         temDanfe: n.danfeBytes !== null,
+      }))}
+    />
+  );
+}
+
+async function SimulacaoTabData() {
+  const simulacoes = await listSimulacoes();
+  return (
+    <SimulacaoTab
+      simulacoes={simulacoes.map((s) => ({
+        id: s.id,
+        descricao: s.descricao,
+        valorCentavos: s.valorCentavos,
+        tipo: s.tipo,
+        data: s.data ? s.data.toISOString() : null,
       }))}
     />
   );

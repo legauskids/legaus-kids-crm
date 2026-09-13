@@ -101,6 +101,7 @@ model User {
   notasFiscaisCriadas   NotaFiscal[]                @relation("CriadorNotaFiscal")
   extratosImportados    ExtratoBancarioImportacao[] @relation("ImportadorExtrato")
   transacoesConciliadas TransacaoBancaria[]         @relation("ConciliadorTransacao")
+  simulacoesFinanceiras SimulacaoFinanceira[]       @relation("CriadorSimulacao")
 }
 
 enum OrigemComando {
@@ -733,4 +734,20 @@ model TransacaoBancaria {
 
   @@index([importacaoId])
   @@index([negocioId])
+}
+
+// Lançamento hipotético de fluxo de caixa ("e se eu recebesse X e pagasse
+// Y?") — totalmente separado da movimentação bancária real
+// (TransacaoBancaria/ExtratoBancarioImportacao) de propósito: simulação
+// nunca deve se misturar com dado real de banco, nem contar pra
+// conciliação de verdade.
+model SimulacaoFinanceira {
+  id            String                @id @default(cuid())
+  descricao     String
+  valorCentavos Int
+  tipo          TipoTransacaoBancaria
+  data          DateTime?
+  criadaPorId   String
+  criadaPor     User                  @relation("CriadorSimulacao", fields: [criadaPorId], references: [id])
+  criadaEm      DateTime              @default(now())
 }
