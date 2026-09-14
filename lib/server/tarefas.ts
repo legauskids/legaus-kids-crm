@@ -17,6 +17,7 @@ export function listTarefas() {
       solicitante: true,
       negocio: { include: { etapa: true, funil: true } },
       contato: true,
+      checklist: { orderBy: { ordem: "asc" } },
     },
     orderBy: { prazo: "asc" },
   });
@@ -88,4 +89,20 @@ export async function aprovarTarefa(tarefaId: string): Promise<void> {
     });
     await onTarefaConcluida(tx, tarefaId);
   });
+}
+
+export async function adicionarItemChecklist(tarefaId: string, texto: string) {
+  const ultimo = await prisma.itemChecklistTarefa.findFirst({ where: { tarefaId }, orderBy: { ordem: "desc" } });
+  return prisma.itemChecklistTarefa.create({
+    data: { tarefaId, texto, ordem: (ultimo?.ordem ?? -1) + 1 },
+  });
+}
+
+export async function alternarItemChecklist(itemId: string) {
+  const item = await prisma.itemChecklistTarefa.findUniqueOrThrow({ where: { id: itemId } });
+  return prisma.itemChecklistTarefa.update({ where: { id: itemId }, data: { concluido: !item.concluido } });
+}
+
+export function excluirItemChecklist(itemId: string) {
+  return prisma.itemChecklistTarefa.delete({ where: { id: itemId } });
 }

@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { atualizarTarefaAction, type AtualizarTarefaState } from "@/app/(app)/tarefas/actions";
+import { ChecklistTarefa } from "@/app/(app)/tarefas/checklist-tarefa";
 import type { TarefaVM } from "@/app/(app)/tarefas/types";
 
 const initialState: AtualizarTarefaState = {};
@@ -137,6 +138,10 @@ export function EditarTarefaDialog({
             </Button>
           </DialogFooter>
         </form>
+
+        <div className="border-t pt-4">
+          <ChecklistTarefa tarefaId={tarefa.id} checklist={tarefa.checklist} />
+        </div>
       </DialogContent>
     </Dialog>
   );

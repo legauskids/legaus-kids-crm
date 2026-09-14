@@ -30,6 +30,9 @@ export function TaskCard({
   const cor = corPrazoTarefa(new Date(tarefa.prazo), tarefa.status);
   const dataRef = useRef<HTMLInputElement>(null);
   const horaRef = useRef<HTMLInputElement>(null);
+  const totalChecklist = tarefa.checklist.length;
+  const concluidosChecklist = tarefa.checklist.filter((i) => i.concluido).length;
+  const progressoChecklist = totalChecklist > 0 ? Math.round((concluidosChecklist / totalChecklist) * 100) : 0;
 
   // Um <input type="datetime-local"> só (usado antes) perdia a hora ao
   // editar: o navegador trata data e hora como "segmentos" do mesmo campo,
@@ -76,6 +79,20 @@ export function TaskCard({
       )}
 
       {tarefa.descricao && <p className="text-xs text-muted-foreground">{tarefa.descricao}</p>}
+
+      {totalChecklist > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn("h-full rounded-full transition-all", progressoChecklist === 100 ? "bg-success" : "bg-primary")}
+              style={{ width: `${progressoChecklist}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            {concluidosChecklist}/{totalChecklist}
+          </span>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-1 pt-1 text-xs text-muted-foreground">
         <span>{tarefa.responsavelNome}</span>

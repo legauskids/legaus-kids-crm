@@ -48,7 +48,13 @@ export function TarefasShell({
   const [status, setStatus] = useState<string>(TODOS);
   const [periodo, setPeriodo] = useState<Periodo | typeof TODOS>(TODOS);
   const [novaAberta, setNovaAberta] = useState(false);
-  const [tarefaEditando, setTarefaEditando] = useState<TarefaVM | null>(null);
+  const [tarefaEditandoId, setTarefaEditandoId] = useState<string | null>(null);
+  // Deriva do array `tarefas` (sempre atualizado pelo Next.js depois de um
+  // revalidatePath) em vez de guardar a tarefa inteira em state — sem isso,
+  // marcar/desmarcar um item do checklist com o diálogo aberto não
+  // aparecia até fechar e reabrir, porque o state guardava uma cópia
+  // "congelada" de quando o diálogo foi aberto.
+  const tarefaEditando = tarefas.find((t) => t.id === tarefaEditandoId) ?? null;
 
   const etapasDoFunil = funis.find((f) => f.id === funilId)?.etapas ?? [];
 
@@ -189,10 +195,10 @@ export function TarefasShell({
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {view === "kanban" && <KanbanView tarefas={tarefasFiltradas} onEditar={setTarefaEditando} />}
+        {view === "kanban" && <KanbanView tarefas={tarefasFiltradas} onEditar={(t) => setTarefaEditandoId(t.id)} />}
         {view === "lista" && (
           <div className="h-full overflow-auto">
-            <ListaView tarefas={tarefasFiltradas} onEditar={setTarefaEditando} />
+            <ListaView tarefas={tarefasFiltradas} onEditar={(t) => setTarefaEditandoId(t.id)} />
           </div>
         )}
         {view === "calendario" && (
@@ -205,7 +211,7 @@ export function TarefasShell({
       <NovaTarefaDialog open={novaAberta} onOpenChange={setNovaAberta} usuarios={usuarios} negocios={negocios} />
       <EditarTarefaDialog
         tarefa={tarefaEditando}
-        onOpenChange={(open) => !open && setTarefaEditando(null)}
+        onOpenChange={(open) => !open && setTarefaEditandoId(null)}
         usuarios={usuarios}
         negocios={negocios}
       />

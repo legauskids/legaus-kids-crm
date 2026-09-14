@@ -34,6 +34,7 @@ export default async function TarefasPage() {
         negocioTitulo: t.negocio?.titulo ?? null,
         funilId: t.negocio?.funilId ?? null,
         etapaId: t.negocio?.etapaId ?? null,
+        checklist: t.checklist.map((c) => ({ id: c.id, texto: c.texto, concluido: c.concluido })),
       }))}
       funis={funis.map((f) => ({
         id: f.id,

@@ -2,7 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
-import { criarTarefa, moverTarefaStatus, aprovarTarefa, atualizarTarefa, atualizarPrazoTarefa } from "@/lib/server/tarefas";
+import {
+  criarTarefa,
+  moverTarefaStatus,
+  aprovarTarefa,
+  atualizarTarefa,
+  atualizarPrazoTarefa,
+  adicionarItemChecklist,
+  alternarItemChecklist,
+  excluirItemChecklist,
+} from "@/lib/server/tarefas";
 import { criarTarefaSchema } from "@/lib/validators/tarefa";
 
 export type CriarTarefaState = { error?: string; success?: boolean };
@@ -79,5 +88,25 @@ export async function moverTarefaAction(
 export async function aprovarTarefaAction(tarefaId: string): Promise<void> {
   await requireUser();
   await aprovarTarefa(tarefaId);
+  revalidatePath("/tarefas");
+}
+
+export async function adicionarItemChecklistAction(tarefaId: string, texto: string): Promise<void> {
+  await requireUser();
+  const limpo = texto.trim();
+  if (!limpo) return;
+  await adicionarItemChecklist(tarefaId, limpo);
+  revalidatePath("/tarefas");
+}
+
+export async function alternarItemChecklistAction(itemId: string): Promise<void> {
+  await requireUser();
+  await alternarItemChecklist(itemId);
+  revalidatePath("/tarefas");
+}
+
+export async function excluirItemChecklistAction(itemId: string): Promise<void> {
+  await requireUser();
+  await excluirItemChecklist(itemId);
   revalidatePath("/tarefas");
 }

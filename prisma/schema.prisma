@@ -377,6 +377,19 @@ model Tarefa {
   updatedAt     DateTime     @updatedAt
 
   lembretes Lembrete[]
+  checklist ItemChecklistTarefa[]
+}
+
+model ItemChecklistTarefa {
+  id        String   @id @default(cuid())
+  tarefaId  String
+  tarefa    Tarefa   @relation(fields: [tarefaId], references: [id], onDelete: Cascade)
+  texto     String
+  concluido Boolean  @default(false)
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([tarefaId])
 }
 
 model Lembrete {

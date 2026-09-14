@@ -1,3 +1,9 @@
+export type ItemChecklistVM = {
+  id: string;
+  texto: string;
+  concluido: boolean;
+};
+
 export type TarefaVM = {
   id: string;
   titulo: string;
@@ -12,6 +18,7 @@ export type TarefaVM = {
   negocioTitulo: string | null;
   funilId: string | null;
   etapaId: string | null;
+  checklist: ItemChecklistVM[];
 };
 
 export const STATUS_LABEL: Record<string, string> = {
