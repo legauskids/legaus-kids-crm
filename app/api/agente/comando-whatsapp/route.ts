@@ -12,9 +12,12 @@ const bodySchema = z
     anexoPdf: z.object({ base64: z.string().min(1), nomeArquivo: z.string().optional() }).optional(),
     anexoImagem: z.object({ base64: z.string().min(1), mimetype: z.string().min(1) }).optional(),
     anexoOfx: z.object({ base64: z.string().min(1), nomeArquivo: z.string().min(1) }).optional(),
+    // Qualquer outro tipo de arquivo (não PDF, não imagem, não OFX) — ver
+    // enviar_arquivo_whatsapp em lib/server/agente.ts.
+    anexoArquivo: z.object({ base64: z.string().min(1), nomeArquivo: z.string().min(1), mimetype: z.string().min(1) }).optional(),
   })
-  .refine((d) => (d.texto && d.texto.trim().length > 0) || d.anexoPdf || d.anexoImagem || d.anexoOfx, {
-    message: "Informe texto, anexoPdf, anexoImagem ou anexoOfx.",
+  .refine((d) => (d.texto && d.texto.trim().length > 0) || d.anexoPdf || d.anexoImagem || d.anexoOfx || d.anexoArquivo, {
+    message: "Informe texto, anexoPdf, anexoImagem, anexoOfx ou anexoArquivo.",
   });
 
 /**
@@ -65,7 +68,13 @@ export async function POST(request: Request) {
 
   try {
     const resultado = await processarComandoAgente({
-      texto: parsed.data.texto?.trim() || (parsed.data.anexoPdf ? "Segue o PDF anexado." : "Segue a imagem anexada."),
+      texto:
+        parsed.data.texto?.trim() ||
+        (parsed.data.anexoPdf
+          ? "Segue o PDF anexado."
+          : parsed.data.anexoImagem
+            ? "Segue a imagem anexada."
+            : "Segue o arquivo anexado."),
       origem: "WHATSAPP",
       identificador: telefone,
       usuarioId: usuario.id,
@@ -74,6 +83,9 @@ export async function POST(request: Request) {
         : undefined,
       anexoImagem: parsed.data.anexoImagem
         ? { base64: parsed.data.anexoImagem.base64, mimetype: parsed.data.anexoImagem.mimetype }
+        : undefined,
+      anexoArquivo: parsed.data.anexoArquivo
+        ? { base64: parsed.data.anexoArquivo.base64, nomeArquivo: parsed.data.anexoArquivo.nomeArquivo, mimetype: parsed.data.anexoArquivo.mimetype }
         : undefined,
     });
 

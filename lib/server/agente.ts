@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/db";
-import { criarContato, atualizarContato } from "@/lib/server/contatos";
+import { criarContato, atualizarContato, excluirContato, mesclarContatos } from "@/lib/server/contatos";
 import {
   salvarOrcamento,
   buscarOrcamentoPorId,
@@ -78,6 +78,13 @@ type Ferramenta = {
   description: string;
   input_schema: EsquemaEntrada;
   sensivel?: boolean;
+  // Ferramenta sensível que precisa do anexo (imagem ou arquivo genérico)
+  // do comando ATUAL pra funcionar (ex: enviar_arquivo_whatsapp) — sem essa
+  // marca, os bytes do anexo não sobreviveriam até o turno de confirmação
+  // (ver comentário de anexoImagem em CtxFerramenta). Com ela, o próprio
+  // anexo (em base64) é guardado junto dos argumentos pendentes e
+  // reidratado de volta em ctx na hora de confirmar.
+  usaAnexoAtual?: boolean;
   descreverAcao?: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<string>;
   // telefoneOrigem: quando o comando veio pelo WhatsApp, é o telefone de
   // quem mandou (o "identificador" da conversa) — permite ferramentas tipo
@@ -94,10 +101,15 @@ type CtxFerramenta = {
   telefoneOrigem?: string;
   // Bytes da imagem anexada a ESSE comando (foto mandada junto no WhatsApp,
   // com ou sem legenda) — só existe no turno em que a imagem chegou, não
-  // sobrevive pro turno de confirmação de uma ferramenta sensível. Por isso
-  // anexar_foto_produto não é sensível: precisa executar direto, enquanto
-  // os bytes ainda estão disponíveis.
+  // sobrevive pro turno de confirmação de uma ferramenta sensível a menos
+  // que a ferramenta declare usaAnexoAtual:true (ver esse campo acima). Por
+  // isso anexar_foto_produto não é sensível: precisa executar direto,
+  // enquanto os bytes ainda estão disponíveis.
   anexoImagem?: { bytes: Buffer; mimetype: string };
+  // Bytes de um arquivo genérico (não-imagem, não-PDF, não-OFX — ex: .docx,
+  // .xlsx, .zip, qualquer documento) anexado a ESSE comando. Mesma regra de
+  // vida curta que anexoImagem.
+  anexoArquivo?: { bytes: Buffer; nomeArquivo: string; mimetype: string };
 };
 
 /**
@@ -299,6 +311,86 @@ const FERRAMENTAS: Ferramenta[] = [
         representanteLegalCpf: a.novoRepresentanteLegalCpf,
       });
       return { id: atualizado.id, nome: atualizado.nome };
+    },
+  },
+  {
+    name: "excluir_cliente",
+    description:
+      "Apaga em definitivo um cadastro de cliente/contato. Só funciona se o contato NÃO tiver nada vinculado (negócio, orçamento, conversa, tarefa, nota fiscal) — se tiver, dá erro dizendo o que está vinculado; nesse caso, se for um cadastro DUPLICADO da mesma pessoa/empresa, use mesclar_clientes em vez dessa. Informe clienteId (se já souber) ou nomeBusca. Ação sensível — sempre pede confirmação antes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        clienteId: { type: "string" },
+        nomeBusca: { type: "string", description: "Nome do cliente, alternativa a clienteId" },
+      },
+    },
+    sensivel: true,
+    async descreverAcao(args) {
+      const a = args as { clienteId?: string; nomeBusca?: string };
+      const resolvido = await resolverPorBusca(a.clienteId, a.nomeBusca, (t) => buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id)));
+      if (!resolvido) return `nenhum cliente encontrado parecido com "${a.nomeBusca}"`;
+      if ("ambiguo" in resolvido) return "mais de um cliente parecido encontrado — preciso que especifique qual";
+      const contato = await prisma.contato.findUnique({ where: { id: resolvido.id }, select: { nome: true } });
+      return `apagar em definitivo o cadastro de ${contato?.nome ?? "cliente"}`;
+    },
+    async executar(args) {
+      const a = args as { clienteId?: string; nomeBusca?: string };
+      const resolvido = await resolverPorBusca(a.clienteId, a.nomeBusca, (t) => buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id)));
+      if (!resolvido) throw new Error(`Não achei nenhum cliente parecido com "${a.nomeBusca}".`);
+      if ("ambiguo" in resolvido) {
+        const opcoes = await prisma.contato.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, nome: true } });
+        return { ambiguo: true, opcoes };
+      }
+      const apagado = await excluirContato(resolvido.id);
+      return { apagado: true, nome: apagado.nome };
+    },
+  },
+  {
+    name: "mesclar_clientes",
+    description:
+      "Mescla dois cadastros de contato/cliente DUPLICADOS (a mesma pessoa ou empresa cadastrada duas vezes) — use quando o Marcos disser que um contato 'está duplicado' ou 'é o mesmo'. Move tudo que está vinculado ao contato removido (conversas, negócios, orçamentos, tarefas, notas fiscais) pro contato mantido, preenche no mantido os campos que estavam vazios (telefone, e-mail, CNPJ etc.) com o que o removido tinha, e apaga o cadastro removido — sem perder histórico. Informe manterId/manterNomeBusca (o cadastro que vai continuar existindo) e removerId/removerNomeBusca (o duplicado que vai sumir). Se não estiver claro qual dos dois manter, prefira manter o que já tem telefone/WhatsApp vinculado. Ação sensível — sempre pede confirmação antes, mostrando os dois nomes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        manterId: { type: "string" },
+        manterNomeBusca: { type: "string", description: "Nome do cliente a manter, alternativa a manterId" },
+        removerId: { type: "string" },
+        removerNomeBusca: { type: "string", description: "Nome do cliente duplicado a remover, alternativa a removerId" },
+      },
+    },
+    sensivel: true,
+    async descreverAcao(args) {
+      const a = args as { manterId?: string; manterNomeBusca?: string; removerId?: string; removerNomeBusca?: string };
+      const [manter, remover] = await Promise.all([
+        resolverPorBusca(a.manterId, a.manterNomeBusca, (t) => buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id))),
+        resolverPorBusca(a.removerId, a.removerNomeBusca, (t) => buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id))),
+      ]);
+      if (!manter || "ambiguo" in manter) return `não consegui identificar sozinho qual cliente manter (${a.manterNomeBusca ?? a.manterId})`;
+      if (!remover || "ambiguo" in remover) return `não consegui identificar sozinho qual cliente remover (${a.removerNomeBusca ?? a.removerId})`;
+      const [contatoManter, contatoRemover] = await Promise.all([
+        prisma.contato.findUnique({ where: { id: manter.id }, select: { nome: true } }),
+        prisma.contato.findUnique({ where: { id: remover.id }, select: { nome: true } }),
+      ]);
+      return `mesclar "${contatoRemover?.nome}" dentro de "${contatoManter?.nome}" (o segundo é apagado, o primeiro fica com o histórico dos dois)`;
+    },
+    async executar(args) {
+      const a = args as { manterId?: string; manterNomeBusca?: string; removerId?: string; removerNomeBusca?: string };
+      const [manter, remover] = await Promise.all([
+        resolverPorBusca(a.manterId, a.manterNomeBusca, (t) => buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id))),
+        resolverPorBusca(a.removerId, a.removerNomeBusca, (t) => buscarClientesSimilar(t, 5).then((c) => c.map((x) => x.id))),
+      ]);
+      if (!manter) throw new Error(`Não achei o cliente pra manter ("${a.manterNomeBusca}").`);
+      if (!remover) throw new Error(`Não achei o cliente pra remover ("${a.removerNomeBusca}").`);
+      if ("ambiguo" in manter) {
+        const opcoes = await prisma.contato.findMany({ where: { id: { in: manter.ids } }, select: { id: true, nome: true } });
+        return { ambiguo: true, campo: "manter", opcoes };
+      }
+      if ("ambiguo" in remover) {
+        const opcoes = await prisma.contato.findMany({ where: { id: { in: remover.ids } }, select: { id: true, nome: true } });
+        return { ambiguo: true, campo: "remover", opcoes };
+      }
+      const resultado = await mesclarContatos(manter.id, remover.id);
+      return { mesclado: true, nome: resultado.contato.nome, movidos: resultado.movidos, camposPreenchidos: resultado.camposPreenchidos };
     },
   },
   {
@@ -821,6 +913,48 @@ const FERRAMENTAS: Ferramenta[] = [
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal });
       await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
       return { enviado: true, telefone: telefoneFinal };
+    },
+  },
+  {
+    name: "enviar_arquivo_whatsapp",
+    description:
+      "Reenvia pro WhatsApp de um contato/cliente o arquivo (imagem, PDF, planilha, documento — qualquer tipo) que veio anexado JUNTO com esse comando. Use quando pedirem pra encaminhar/mandar pra alguém a foto/arquivo que acabou de chegar nessa própria mensagem (ex: 'manda essa foto pro João', 'encaminha esse arquivo pra Dani'). Só funciona quando o comando atual tem um anexo de verdade — se não tiver, não chame essa ferramenta: avise que precisa mandar o arquivo junto, na mesma mensagem do pedido. Pra card de produto do catálogo use enviar_cards_produtos_whatsapp, e pra PDF de orçamento use enviar_orcamento_whatsapp — essa ferramenta é só pra reenviar um anexo solto que chegou agora. Pra destinatário: telefone OU clienteNomeBusca; se for pra mandar pro PRÓPRIO remetente ('manda pra mim', 'guarda aqui'), deixe os dois em branco. Ação sensível — sempre pede confirmação antes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        telefone: { type: "string", description: "Com DDI, só números" },
+        clienteNomeBusca: { type: "string", description: "Nome do cliente, alternativa a telefone" },
+        legenda: { type: "string", description: "Texto opcional pra acompanhar o arquivo" },
+      },
+    },
+    sensivel: true,
+    usaAnexoAtual: true,
+    async descreverAcao(args, ctx) {
+      const a = args as { telefone?: string; clienteNomeBusca?: string };
+      if (!ctx.anexoImagem && !ctx.anexoArquivo) return "nenhum arquivo anexado nesse comando pra mandar";
+      const nomeAnexo = ctx.anexoArquivo?.nomeArquivo ?? "a imagem anexada";
+      const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
+      return `reenviar ${nomeAnexo} pro WhatsApp de ${destino.nomeExibicao}`;
+    },
+    async executar(args, ctx) {
+      const a = args as { telefone?: string; clienteNomeBusca?: string; legenda?: string };
+      const bytes = ctx.anexoImagem?.bytes ?? ctx.anexoArquivo?.bytes;
+      const mimetype = ctx.anexoImagem?.mimetype ?? ctx.anexoArquivo?.mimetype;
+      if (!bytes || !mimetype) throw new Error("Não tem nenhum arquivo anexado nesse comando pra mandar.");
+      const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
+      if (!destino.telefone) throw new Error("Não tenho um telefone válido pra esse destinatário.");
+
+      const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: destino.telefone, nomeContato: destino.nomeExibicao });
+      await registrarMensagem({
+        conversaId: conversa.id,
+        texto: a.legenda ?? "",
+        direcao: "SAIDA",
+        origem: "SISTEMA",
+        anexoBytes: bytes,
+        anexoMimetype: mimetype,
+        anexoNome: ctx.anexoArquivo?.nomeArquivo ?? "imagem.jpg",
+      });
+      return { enviado: true, destino: destino.nomeExibicao, telefone: destino.telefone };
     },
   },
   {
@@ -1436,8 +1570,10 @@ Regras:
 - Enviar orçamento por WhatsApp ou e-mail já manda o PDF de verdade anexado, automaticamente — não precisa de um comando separado pra "mandar em PDF". Se o Marcos pedir só o link/arquivo pra ver aqui no chat mesmo (sem mandar pro cliente), use obter_link_pdf_orcamento.
 - Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
+- Se o Marcos disser que um cliente/contato "está duplicado" ou "é o mesmo", use mesclar_clientes (nunca crie/edite tentando contornar) — ela junta o histórico dos dois (conversas, negócios, orçamentos, tarefas, notas fiscais) no que for mantido e apaga o duplicado. Pra apagar um cadastro de cliente sem nada vinculado, use excluir_cliente. Antes de dizer que não consegue fazer alguma ação de cliente/contato (corrigir, editar, apagar, mesclar), confira se não existe ferramenta pra isso — você tem criar_cliente, atualizar_cliente, excluir_cliente e mesclar_clientes.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
 - Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto — ela usa a imagem anexada nesse mesmo comando, não peça a foto de outro jeito. Se vier um pedido de anexar foto SEM nenhuma imagem anexada, avise que precisa mandar a foto junto (anexada na mesma mensagem), não invente que não consegue anexar fotos.
+- Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 
@@ -1462,12 +1598,22 @@ async function buscarHistoricoRecente(identificador: string): Promise<Anthropic.
 
 const MEDIA_TYPES_IMAGEM = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
+// Tipos de arquivo genérico (não PDF, não imagem, não OFX) cujo conteúdo dá
+// pra decodificar como texto — pra esses, manda o texto de verdade pro
+// Claude ler, igual já faz com PDF. Pra qualquer outro tipo (.docx, .xlsx,
+// .zip etc.) não tem como "ler" sem uma lib de parsing própria — só avisa
+// que o arquivo chegou, com nome/tipo, pra pelo menos poder reenviar com
+// enviar_arquivo_whatsapp.
+const TIPOS_TEXTO_LEGIVEL = new Set(["text/plain", "text/csv", "text/markdown", "text/html", "application/json", "application/xml", "text/xml"]);
+const LIMITE_TEXTO_ARQUIVO = 20_000; // chars — evita estourar contexto com um CSV/JSON gigante
+
 async function rodarAgenteClaude(
   textoComando: string,
   usuarioId: string,
   identificador: string,
   anexoPdf?: { base64: string; nomeArquivo: string },
   anexoImagem?: { base64: string; mimetype: string },
+  anexoArquivo?: { base64: string; nomeArquivo: string; mimetype: string },
 ): Promise<{
   texto: string;
   ferramentaPendente: { nome: string; args: unknown; descricao: string } | null;
@@ -1509,11 +1655,24 @@ async function rodarAgenteClaude(
           },
           { type: "text", text: textoComando },
         ]
-      : textoComando;
+      : anexoArquivo
+        ? [
+            {
+              type: "text" as const,
+              text: TIPOS_TEXTO_LEGIVEL.has(anexoArquivo.mimetype)
+                ? `Arquivo anexado: ${anexoArquivo.nomeArquivo} (${anexoArquivo.mimetype}). Conteúdo:\n\n${Buffer.from(anexoArquivo.base64, "base64").toString("utf-8").slice(0, LIMITE_TEXTO_ARQUIVO)}`
+                : `Arquivo anexado: ${anexoArquivo.nomeArquivo} (${anexoArquivo.mimetype}) — tipo binário, não dá pra ler o conteúdo direto. Se o pedido for só reenviar/encaminhar esse arquivo pra alguém, use enviar_arquivo_whatsapp.`,
+            },
+            { type: "text" as const, text: textoComando },
+          ]
+        : textoComando;
   const messages: Anthropic.MessageParam[] = [...historico, { role: "user", content: conteudoUsuario }];
   let ferramentaPendente: { nome: string; args: unknown; descricao: string } | null = null;
   const ferramentasChamadas: string[] = [];
   const ctxAnexoImagem = anexoImagem ? { bytes: Buffer.from(anexoImagem.base64, "base64"), mimetype: anexoImagem.mimetype } : undefined;
+  const ctxAnexoArquivo = anexoArquivo
+    ? { bytes: Buffer.from(anexoArquivo.base64, "base64"), nomeArquivo: anexoArquivo.nomeArquivo, mimetype: anexoArquivo.mimetype }
+    : undefined;
   // Cada turno de tool-calling é uma chamada HTTP própria pra Anthropic, com
   // o histórico reenviado inteiro — soma os dois campos por turno pra saber
   // o custo real do comando inteiro, não só do último turno.
@@ -1569,9 +1728,31 @@ async function rodarAgenteClaude(
       const entrada = uso.input as ArgsFerramenta;
       if (ferramenta.sensivel) {
         const descricao = ferramenta.descreverAcao
-          ? await ferramenta.descreverAcao(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador), anexoImagem: ctxAnexoImagem })
+          ? await ferramenta.descreverAcao(entrada, {
+              usuarioId,
+              telefoneOrigem: telefoneDeIdentificador(identificador),
+              anexoImagem: ctxAnexoImagem,
+              anexoArquivo: ctxAnexoArquivo,
+            })
           : ferramenta.name;
-        ferramentaPendente = { nome: uso.name, args: entrada, descricao };
+        // Ferramentas marcadas usaAnexoAtual (ex: enviar_arquivo_whatsapp)
+        // precisam do anexo do comando ATUAL na hora de executar de
+        // verdade, mas isso só acontece no PRÓXIMO turno (confirmação) —
+        // e os bytes não persistem em lugar nenhum entre turnos. Guarda o
+        // anexo em base64 junto dos argumentos pendentes (vira parte do
+        // JSON salvo no banco) pra reidratar de volta em ctx na hora de
+        // confirmar — ver processarComandoAgente.
+        const entradaFinal = ferramenta.usaAnexoAtual
+          ? {
+              ...entrada,
+              __anexoPendente: anexoImagem
+                ? { tipo: "imagem" as const, base64: anexoImagem.base64, mimetype: anexoImagem.mimetype }
+                : anexoArquivo
+                  ? { tipo: "arquivo" as const, base64: anexoArquivo.base64, mimetype: anexoArquivo.mimetype, nomeArquivo: anexoArquivo.nomeArquivo }
+                  : undefined,
+            }
+          : entrada;
+        ferramentaPendente = { nome: uso.name, args: entradaFinal, descricao };
         resultadosFerramenta.push({
           type: "tool_result",
           tool_use_id: uso.id,
@@ -1580,7 +1761,12 @@ async function rodarAgenteClaude(
         continue;
       }
       try {
-        const resultado = await ferramenta.executar(entrada, { usuarioId, telefoneOrigem: telefoneDeIdentificador(identificador), anexoImagem: ctxAnexoImagem });
+        const resultado = await ferramenta.executar(entrada, {
+          usuarioId,
+          telefoneOrigem: telefoneDeIdentificador(identificador),
+          anexoImagem: ctxAnexoImagem,
+          anexoArquivo: ctxAnexoArquivo,
+        });
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado) });
       } catch (erro) {
         resultadosFerramenta.push({
@@ -1661,6 +1847,7 @@ export async function processarComandoAgente(input: {
   usuarioId: string;
   anexoPdf?: { base64: string; nomeArquivo: string };
   anexoImagem?: { base64: string; mimetype: string };
+  anexoArquivo?: { base64: string; nomeArquivo: string; mimetype: string };
 }): Promise<{ resposta: string }> {
   const pendente = await buscarPendenteAtivo(input.identificador);
 
@@ -1671,9 +1858,25 @@ export async function processarComandoAgente(input: {
       let resposta: string;
       try {
         if (ferramenta) {
-          await ferramenta.executar((pendente.argumentosPendentes ?? {}) as ArgsFerramenta, {
+          // Reidrata o anexo (imagem/arquivo) que veio junto do comando
+          // ORIGINAL, guardado em base64 dentro de argumentosPendentes na
+          // hora de criar a pendência (ver rodarAgenteClaude/usaAnexoAtual)
+          // — sem isso, ferramentas como enviar_arquivo_whatsapp não têm
+          // mais os bytes na hora de confirmar, um turno depois.
+          const { __anexoPendente, ...argsSemAnexo } = (pendente.argumentosPendentes ?? {}) as ArgsFerramenta & {
+            __anexoPendente?: { tipo: "imagem" | "arquivo"; base64: string; mimetype: string; nomeArquivo?: string };
+          };
+          const anexoImagemReidratado =
+            __anexoPendente?.tipo === "imagem" ? { bytes: Buffer.from(__anexoPendente.base64, "base64"), mimetype: __anexoPendente.mimetype } : undefined;
+          const anexoArquivoReidratado =
+            __anexoPendente?.tipo === "arquivo"
+              ? { bytes: Buffer.from(__anexoPendente.base64, "base64"), nomeArquivo: __anexoPendente.nomeArquivo ?? "arquivo", mimetype: __anexoPendente.mimetype }
+              : undefined;
+          await ferramenta.executar(argsSemAnexo, {
             usuarioId: input.usuarioId,
             telefoneOrigem: telefoneDeIdentificador(input.identificador),
+            anexoImagem: anexoImagemReidratado,
+            anexoArquivo: anexoArquivoReidratado,
           });
         }
         resposta = `Feito — ${pendente.descricaoPendente}.`;
@@ -1708,21 +1911,25 @@ export async function processarComandoAgente(input: {
     return { resposta };
   }
 
-  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem);
+  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo);
 
   await prisma.comandoAgente.create({
     data: {
       origem: input.origem,
       identificador: input.identificador,
       usuarioId: input.usuarioId,
-      // Não guarda os bytes do PDF/imagem (só uma marca textual) — o anexo
-      // só importa pro turno em que foi mandado, não precisa persistir no
-      // histórico.
+      // Não guarda os bytes do PDF/imagem/arquivo (só uma marca textual) —
+      // o anexo só importa pro turno em que foi mandado (ou fica guardado
+      // à parte, em argumentosPendentes, se a ferramenta pendente precisar
+      // dele pra confirmar depois — ver usaAnexoAtual), não precisa
+      // persistir no histórico de conversa.
       textoComando: input.anexoPdf
         ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]`
         : input.anexoImagem
           ? `${input.texto}\n[Imagem anexada]`
-          : input.texto,
+          : input.anexoArquivo
+            ? `${input.texto}\n[Arquivo anexado: ${input.anexoArquivo.nomeArquivo}]`
+            : input.texto,
       resposta: resultado.texto,
       status: resultado.ferramentaPendente ? "AGUARDANDO_CONFIRMACAO" : "CONCLUIDO",
       ferramentaPendente: resultado.ferramentaPendente?.nome,

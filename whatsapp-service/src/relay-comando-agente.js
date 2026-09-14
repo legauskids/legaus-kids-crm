@@ -152,6 +152,28 @@ export function ligarRelayDeComandoAgente(sock) {
             }),
           });
           console.log(`[relay-comando-agente] Extrato OFX processado -> ${resultado.resposta}`);
+        } else if (documentMessage) {
+          // Qualquer outro documento (planilha, .docx, .zip, o que for) —
+          // antes disso, um anexo assim simplesmente não era encaminhado
+          // pra lugar nenhum (nem PDF, nem OFX, nem imagem), o comando
+          // desaparecia em silêncio. Agora vira anexoArquivo genérico:
+          // o agente lê o conteúdo quando é texto simples, e sempre pode
+          // reencaminhar o arquivo com enviar_arquivo_whatsapp.
+          console.log(`[relay-comando-agente] Arquivo de comando recebido (${telefone}: ${documentMessage.fileName}), baixando...`);
+          const buffer = await downloadMediaMessage(msg, "buffer", {});
+          const resultado = await chamarApi("/api/agente/comando-whatsapp", {
+            method: "POST",
+            body: JSON.stringify({
+              telefone,
+              texto: texto || undefined,
+              anexoArquivo: {
+                base64: buffer.toString("base64"),
+                nomeArquivo: documentMessage.fileName || "arquivo",
+                mimetype: documentMessage.mimetype || "application/octet-stream",
+              },
+            }),
+          });
+          console.log(`[relay-comando-agente] Comando (arquivo) processado -> ${resultado.resposta}`);
         } else if (imageMessage) {
           console.log(`[relay-comando-agente] Imagem de comando recebida (${telefone}), baixando...`);
           const buffer = await downloadMediaMessage(msg, "buffer", {});

@@ -171,8 +171,111 @@ export function criarContato(input: CriarContatoInput) {
   });
 }
 
-export function excluirContato(contatoId: string) {
+/** Quantos registros de cada tipo ainda apontam pro contato — usado pra decidir se dá pra apagar direto ou se precisa mesclar. */
+async function contarVinculosContato(contatoId: string) {
+  const [negocios, conversas, orcamentos, tarefas, notasFiscais] = await Promise.all([
+    prisma.negocio.count({ where: { contatoId } }),
+    prisma.conversa.count({ where: { contatoId } }),
+    prisma.orcamento.count({ where: { contatoId } }),
+    prisma.tarefa.count({ where: { contatoId } }),
+    prisma.notaFiscal.count({ where: { contatoId } }),
+  ]);
+  return { negocios, conversas, orcamentos, tarefas, notasFiscais };
+}
+
+/**
+ * Só apaga de verdade quando o contato não tem nada vinculado (sem FK pra
+ * quebrar) — a maioria dos contatos que chegam pelo WhatsApp já tem pelo
+ * menos uma Conversa (criada automaticamente na primeira mensagem), então
+ * isso bloqueia a maior parte dos casos de "apagar duplicado" de propósito:
+ * esse caso é mesclarContatos, não exclusão simples (perderia os dados do
+ * contato apagado em vez de preservar).
+ */
+export async function excluirContato(contatoId: string) {
+  const vinculos = await contarVinculosContato(contatoId);
+  const total = vinculos.negocios + vinculos.conversas + vinculos.orcamentos + vinculos.tarefas + vinculos.notasFiscais;
+  if (total > 0) {
+    const partes = [
+      vinculos.negocios > 0 && `${vinculos.negocios} negócio(s)`,
+      vinculos.conversas > 0 && `${vinculos.conversas} conversa(s)`,
+      vinculos.orcamentos > 0 && `${vinculos.orcamentos} orçamento(s)`,
+      vinculos.tarefas > 0 && `${vinculos.tarefas} tarefa(s)`,
+      vinculos.notasFiscais > 0 && `${vinculos.notasFiscais} nota(s) fiscal(is)`,
+    ].filter(Boolean);
+    throw new Error(
+      `Não dá pra apagar: esse contato tem ${partes.join(", ")} vinculado(s). Se for um cadastro duplicado, use mesclar em vez de apagar.`,
+    );
+  }
   return prisma.contato.delete({ where: { id: contatoId } });
+}
+
+const CAMPOS_TEXTO_MESCLAVEIS = [
+  "telefone",
+  "empresa",
+  "cnpj",
+  "razaoSocial",
+  "inscricaoEstadual",
+  "endereco",
+  "cidade",
+  "uf",
+  "cep",
+  "email",
+  "representanteLegalNome",
+  "representanteLegalCpf",
+] as const;
+
+/**
+ * Mescla dois cadastros de contato que são a mesma pessoa/empresa
+ * duplicada: tudo que apontava pro contato removido (conversas, negócios,
+ * orçamentos, tarefas, notas fiscais) passa a apontar pro contato mantido,
+ * os campos que só o removido tinha preenchido preenchem os que estavam em
+ * branco no mantido (nunca sobrescreve um valor que o mantido já tinha), e
+ * o contato removido é apagado no final. Ordem importa pro telefone (campo
+ * único): apaga o removido ANTES de copiar o telefone dele pro mantido,
+ * senão os dois registros teriam o mesmo telefone ao mesmo tempo.
+ */
+export async function mesclarContatos(manterId: string, removerId: string) {
+  if (manterId === removerId) throw new Error("Não dá pra mesclar um contato com ele mesmo.");
+
+  return prisma.$transaction(async (tx) => {
+    const [manter, remover] = await Promise.all([
+      tx.contato.findUniqueOrThrow({ where: { id: manterId } }),
+      tx.contato.findUniqueOrThrow({ where: { id: removerId } }),
+    ]);
+
+    const [negocios, conversas, orcamentos, tarefas, notasFiscais] = await Promise.all([
+      tx.negocio.updateMany({ where: { contatoId: removerId }, data: { contatoId: manterId } }),
+      tx.conversa.updateMany({ where: { contatoId: removerId }, data: { contatoId: manterId } }),
+      tx.orcamento.updateMany({ where: { contatoId: removerId }, data: { contatoId: manterId } }),
+      tx.tarefa.updateMany({ where: { contatoId: removerId }, data: { contatoId: manterId } }),
+      tx.notaFiscal.updateMany({ where: { contatoId: removerId }, data: { contatoId: manterId } }),
+    ]);
+
+    const tagsUnificadas = [...new Set([...manter.tags, ...remover.tags])];
+    await tx.contato.delete({ where: { id: removerId } });
+
+    const camposPreenchidos: Record<string, string> = {};
+    for (const campo of CAMPOS_TEXTO_MESCLAVEIS) {
+      if (!manter[campo] && remover[campo]) camposPreenchidos[campo] = remover[campo] as string;
+    }
+
+    const mesclado = await tx.contato.update({
+      where: { id: manterId },
+      data: { ...camposPreenchidos, tags: tagsUnificadas, nome: manter.nome || remover.nome },
+    });
+
+    return {
+      contato: mesclado,
+      movidos: {
+        negocios: negocios.count,
+        conversas: conversas.count,
+        orcamentos: orcamentos.count,
+        tarefas: tarefas.count,
+        notasFiscais: notasFiscais.count,
+      },
+      camposPreenchidos: Object.keys(camposPreenchidos),
+    };
+  });
 }
 
 /** Pra combo "cliente" em telas como Orçamento — todos os tipos, busca leve. */
