@@ -11,6 +11,7 @@ import { EtapaBreadcrumb } from "@/app/(app)/negocios/[negocioId]/etapa-breadcru
 import { DadosTab } from "@/app/(app)/negocios/[negocioId]/dados-tab";
 import { TarefasTab } from "@/app/(app)/negocios/[negocioId]/tarefas-tab";
 import { HistoricoTab } from "@/app/(app)/negocios/[negocioId]/historico-tab";
+import { ChecklistEtapa } from "@/app/(app)/negocios/[negocioId]/checklist-etapa";
 
 export default async function NegocioDetalhePage({
   params,
@@ -61,6 +62,15 @@ export default async function NegocioDetalhePage({
         etapas={negocio.funil.etapas.map((e) => ({ id: e.id, nome: e.nome, ordem: e.ordem, tipo: e.tipo }))}
         isFunilVenda={isFunilVenda}
         isFunilPosVenda={isFunilPosVenda}
+      />
+
+      <ChecklistEtapa
+        negocioId={negocio.id}
+        etapaId={negocio.etapaId}
+        etapaNome={negocio.etapa.nome}
+        checklist={negocio.checklistEtapas
+          .filter((c) => c.etapaId === negocio.etapaId)
+          .map((c) => ({ id: c.id, texto: c.texto, concluido: c.concluido }))}
       />
 
       <Tabs defaultValue={abrirTarefa ? "tarefas" : "dados"}>

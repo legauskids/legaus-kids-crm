@@ -20,7 +20,15 @@ export function getFunilComEtapas(funilId: string) {
 export function listNegociosPorFunil(funilId: string) {
   return prisma.negocio.findMany({
     where: { funilId },
-    include: { contato: true, responsavel: true, etapa: true },
+    include: {
+      contato: true,
+      responsavel: true,
+      etapa: true,
+      // Só concluido+etapaId (não o texto) pra montar a barra de progresso
+      // do checklist da etapa atual no card do Kanban sem trazer dado à
+      // toa — o texto completo só é necessário na tela de detalhe.
+      checklistEtapas: { select: { concluido: true, etapaId: true } },
+    },
     orderBy: { updatedAt: "desc" },
   });
 }
@@ -35,6 +43,7 @@ export function getNegocioDetalhado(negocioId: string) {
       etapa: true,
       tarefas: { include: { responsavel: true }, orderBy: { prazo: "asc" } },
       atividades: { include: { autor: true }, orderBy: { criadoEm: "desc" } },
+      checklistEtapas: { orderBy: { ordem: "asc" } },
     },
   });
 }
@@ -147,4 +156,27 @@ export async function excluirNegocio(negocioId: string, motivo: string, excluido
       data: { negocioId, tipo: "SISTEMA", texto: `Negócio excluído. Motivo: ${motivo}`, autorId: excluidoPorId },
     });
   });
+}
+
+/**
+ * Checklist avulso da etapa ATUAL de um negócio (não é um modelo padrão
+ * reaproveitado entre negócios — cada item é digitado na hora). Preso à
+ * etapa em que foi criado: se o negócio mudar de etapa, esses itens somem
+ * da tela (a UI só mostra os da etapa atual) mas continuam no banco,
+ * então o progresso de uma etapa já percorrida não se perde.
+ */
+export async function adicionarItemChecklistNegocio(negocioId: string, etapaId: string, texto: string) {
+  const ultimo = await prisma.itemChecklistNegocio.findFirst({ where: { negocioId, etapaId }, orderBy: { ordem: "desc" } });
+  return prisma.itemChecklistNegocio.create({
+    data: { negocioId, etapaId, texto, ordem: (ultimo?.ordem ?? -1) + 1 },
+  });
+}
+
+export async function alternarItemChecklistNegocio(itemId: string) {
+  const item = await prisma.itemChecklistNegocio.findUniqueOrThrow({ where: { id: itemId } });
+  return prisma.itemChecklistNegocio.update({ where: { id: itemId }, data: { concluido: !item.concluido } });
+}
+
+export function excluirItemChecklistNegocio(itemId: string) {
+  return prisma.itemChecklistNegocio.delete({ where: { id: itemId } });
 }

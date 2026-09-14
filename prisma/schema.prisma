@@ -275,6 +275,8 @@ model Etapa {
   slaDias  Int?
   tipo     TipoEtapa @default(NORMAL)
   negocios Negocio[]
+
+  itensChecklist ItemChecklistNegocio[]
 }
 
 model Negocio {
@@ -320,8 +322,30 @@ model Negocio {
   contratos           Contrato[]
   notasFiscais        NotaFiscal[]
   transacoesBancarias TransacaoBancaria[]
+  checklistEtapas     ItemChecklistNegocio[]
 
   @@index([contatoId])
+}
+
+// Checklist avulso (item por item, adicionado manualmente) do que falta pra
+// completar a etapa ATUAL de um negócio — Compras e Produção do Funil de
+// pós-venda foram o pedido original, mas vale pra qualquer etapa de
+// qualquer funil. Cada item fica preso à etapa em que foi criado
+// (etapaId), não some quando o negócio muda de etapa — só passa a não
+// aparecer mais na tela porque a UI filtra pela etapa atual do negócio,
+// preservando o histórico de cada etapa já percorrida.
+model ItemChecklistNegocio {
+  id        String   @id @default(cuid())
+  negocioId String
+  negocio   Negocio  @relation(fields: [negocioId], references: [id], onDelete: Cascade)
+  etapaId   String
+  etapa     Etapa    @relation(fields: [etapaId], references: [id])
+  texto     String
+  concluido Boolean  @default(false)
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([negocioId, etapaId])
 }
 
 // Texto único e editável usado como base pra gerar cada contrato — Marcos

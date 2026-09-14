@@ -26,6 +26,8 @@ type NegocioCard = {
   dataEntradaNaEtapa: string;
   contatoNome: string;
   responsavelNome: string;
+  checklistTotal: number;
+  checklistConcluidos: number;
 };
 
 export function NegociosBoardShell({
@@ -148,6 +150,8 @@ export function NegociosBoardShell({
               slaDias: etapa?.slaDias ?? null,
               dataEntradaNaEtapa: new Date(item.data.dataEntradaNaEtapa),
             });
+            const { checklistTotal, checklistConcluidos } = item.data;
+            const progressoChecklist = checklistTotal > 0 ? Math.round((checklistConcluidos / checklistTotal) * 100) : 0;
             return (
               <Link
                 href={`/negocios/${item.id}`}
@@ -162,6 +166,19 @@ export function NegociosBoardShell({
                   <span className="text-xs font-bold text-success">{centavosParaReais(item.data.valorCentavos)}</span>
                   <span className="text-xs text-muted-foreground">{item.data.responsavelNome}</span>
                 </div>
+                {checklistTotal > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn("h-full rounded-full transition-all", progressoChecklist === 100 ? "bg-success" : "bg-primary")}
+                        style={{ width: `${progressoChecklist}%` }}
+                      />
+                    </div>
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {checklistConcluidos}/{checklistTotal}
+                    </span>
+                  </div>
+                )}
                 {atrasado && (
                   <p className="text-xs font-semibold text-destructive">Parado além do prazo</p>
                 )}

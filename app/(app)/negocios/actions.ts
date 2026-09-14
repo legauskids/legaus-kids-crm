@@ -9,6 +9,9 @@ import {
   atualizarDadosNegocio,
   adicionarNotaHistorico,
   excluirNegocio,
+  adicionarItemChecklistNegocio,
+  alternarItemChecklistNegocio,
+  excluirItemChecklistNegocio,
 } from "@/lib/server/negocios";
 import { marcarPagamentoIdentificado } from "@/lib/server/automations";
 import {
@@ -128,4 +131,27 @@ export async function excluirNegocioAction(negocioId: string, motivo: string): P
   revalidatePath("/negocios");
   revalidatePath(`/negocios/${negocioId}`);
   return {};
+}
+
+export async function adicionarItemChecklistNegocioAction(negocioId: string, etapaId: string, texto: string): Promise<void> {
+  await requireUser();
+  const limpo = texto.trim();
+  if (!limpo) return;
+  await adicionarItemChecklistNegocio(negocioId, etapaId, limpo);
+  revalidatePath("/negocios");
+  revalidatePath(`/negocios/${negocioId}`);
+}
+
+export async function alternarItemChecklistNegocioAction(negocioId: string, itemId: string): Promise<void> {
+  await requireUser();
+  await alternarItemChecklistNegocio(itemId);
+  revalidatePath("/negocios");
+  revalidatePath(`/negocios/${negocioId}`);
+}
+
+export async function excluirItemChecklistNegocioAction(negocioId: string, itemId: string): Promise<void> {
+  await requireUser();
+  await excluirItemChecklistNegocio(itemId);
+  revalidatePath("/negocios");
+  revalidatePath(`/negocios/${negocioId}`);
 }

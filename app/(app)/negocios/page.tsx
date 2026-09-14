@@ -42,15 +42,20 @@ export default async function NegociosPage({
             etapas: f.etapas.map((e) => ({ id: e.id, nome: e.nome, ordem: e.ordem, slaDias: e.slaDias, tipo: e.tipo })),
           }))}
           funilSelecionadoId={funilSelecionado?.id ?? ""}
-          negocios={negocios.map((n) => ({
-            id: n.id,
-            titulo: n.titulo,
-            etapaId: n.etapaId,
-            valorCentavos: n.valorCentavos,
-            dataEntradaNaEtapa: n.dataEntradaNaEtapa.toISOString(),
-            contatoNome: n.contato?.nome ?? "Sem contato",
-            responsavelNome: n.responsavel.nome,
-          }))}
+          negocios={negocios.map((n) => {
+            const checklistEtapaAtual = n.checklistEtapas.filter((c) => c.etapaId === n.etapaId);
+            return {
+              id: n.id,
+              titulo: n.titulo,
+              etapaId: n.etapaId,
+              valorCentavos: n.valorCentavos,
+              dataEntradaNaEtapa: n.dataEntradaNaEtapa.toISOString(),
+              contatoNome: n.contato?.nome ?? "Sem contato",
+              responsavelNome: n.responsavel.nome,
+              checklistTotal: checklistEtapaAtual.length,
+              checklistConcluidos: checklistEtapaAtual.filter((c) => c.concluido).length,
+            };
+          })}
           contatos={contatos.map((c) => ({ id: c.id, nome: c.nome }))}
           usuarios={usuarios.map((u) => ({ id: u.id, nome: u.nome }))}
         />
