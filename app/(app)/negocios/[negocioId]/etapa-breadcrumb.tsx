@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, XCircle, CreditCard, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Trophy, XCircle, CreditCard, Trash2, ChevronDown } from "lucide-react";
 import {
   moverNegocioAction,
   marcarPagamentoIdentificadoAction,
@@ -51,14 +52,16 @@ export function EtapaBreadcrumb({
   // legal/forma de pagamento pro contrato, checado em validarDadosParaContrato)
   // era descartado em silêncio — o clique em "Ganho" simplesmente não fazia
   // nada visível, sem dizer o motivo nem deixar preencher o que faltava.
-  function mover(etapaId: string) {
+  function mover(etapaId: string, opcoes?: { semContrato?: boolean }) {
     startTransition(async () => {
-      const resultado = await moverNegocioAction(negocioId, etapaId);
+      const resultado = await moverNegocioAction(negocioId, etapaId, opcoes);
       if (resultado.error) {
         // Mover pra etapa Ganho só falha por causa dos dados do contrato
         // faltando (é a única checagem que moverNegocio faz nesse caso) —
         // abre o diálogo pra completar em vez de só avisar que faltou algo.
-        if (etapaId === etapaGanho?.id && contato) {
+        // Não se aplica quando semContrato:true, já que nesse caso
+        // moverNegocio nem faz essa checagem.
+        if (etapaId === etapaGanho?.id && contato && !opcoes?.semContrato) {
           setDadosContratoAviso(resultado.error);
           return;
         }
@@ -116,14 +119,28 @@ export function EtapaBreadcrumb({
               <XCircle className="size-4" />
               Perdido
             </Button>
-            <Button
-              size="sm"
-              className="bg-success text-success-foreground shadow-sm shadow-success/20 hover:bg-success/90"
-              onClick={() => etapaGanho && mover(etapaGanho.id)}
-            >
-              <Trophy className="size-4" />
-              Ganho
-            </Button>
+            <div className="flex items-center rounded-md shadow-sm shadow-success/20">
+              <Button
+                size="sm"
+                className="rounded-r-none bg-success text-success-foreground hover:bg-success/90"
+                onClick={() => etapaGanho && mover(etapaGanho.id)}
+              >
+                <Trophy className="size-4" />
+                Ganho
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="rounded-l-none border-l border-success-foreground/20 bg-success px-1.5 text-success-foreground hover:bg-success/90">
+                    <ChevronDown className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => etapaGanho && mover(etapaGanho.id, { semContrato: true })}>
+                    Marcar Ganho sem contrato
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </>
         )}
         <Button

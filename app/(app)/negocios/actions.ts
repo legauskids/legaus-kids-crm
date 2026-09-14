@@ -23,10 +23,14 @@ import {
 } from "@/lib/validators/negocio";
 import { reaisParaCentavos } from "@/lib/utils/money";
 
-export async function moverNegocioAction(negocioId: string, novaEtapaId: string): Promise<{ error?: string }> {
+export async function moverNegocioAction(
+  negocioId: string,
+  novaEtapaId: string,
+  opcoes?: { semContrato?: boolean },
+): Promise<{ error?: string }> {
   await requireUser();
   try {
-    await moverNegocio(negocioId, novaEtapaId);
+    await moverNegocio(negocioId, novaEtapaId, opcoes);
   } catch (erro) {
     return { error: erro instanceof Error ? erro.message : "Não consegui mover o negócio." };
   }

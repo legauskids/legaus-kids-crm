@@ -21,12 +21,17 @@ async function getResponsavelAutomatico(tx: Tx) {
  * de automações da especificação. Deve ser chamada sempre logo após o campo
  * `etapaId` do negócio já ter sido atualizado, dentro da mesma transação.
  */
-export async function onNegocioEtapaChanged(tx: Tx, negocioId: string, novaEtapaId: string): Promise<void> {
+export async function onNegocioEtapaChanged(
+  tx: Tx,
+  negocioId: string,
+  novaEtapaId: string,
+  opcoes?: { semContrato?: boolean },
+): Promise<void> {
   const etapa = await tx.etapa.findUniqueOrThrow({ where: { id: novaEtapaId }, include: { funil: true } });
   const negocio = await tx.negocio.findUniqueOrThrow({ where: { id: negocioId } });
 
   if (etapa.tipo === "GANHO") {
-    await handleNegocioGanho(tx, negocio);
+    await handleNegocioGanho(tx, negocio, opcoes);
     return;
   }
 
@@ -80,16 +85,22 @@ async function handleNegocioGanho(
     descricao: string | null;
     formaPagamento: string | null;
   },
+  opcoes?: { semContrato?: boolean },
 ): Promise<void> {
+  const semContrato = opcoes?.semContrato ?? false;
   const funilPosVenda = await tx.funil.findFirstOrThrow({ where: { nome: "Funil de pós-venda" } });
-  const etapaContrato = await tx.etapa.findFirstOrThrow({ where: { funilId: funilPosVenda.id, nome: "Contrato" } });
+  // Sem contrato não tem o que fazer na etapa Contrato — o pós-venda já
+  // nasce direto em Pagamento, pulando essa etapa por completo.
+  const etapaInicial = await tx.etapa.findFirstOrThrow({
+    where: { funilId: funilPosVenda.id, nome: semContrato ? "Pagamento" : "Contrato" },
+  });
 
   const negocioPosVenda = await tx.negocio.create({
     data: {
       titulo: `${negocioOriginal.titulo} — Pós-venda`,
       contatoId: negocioOriginal.contatoId,
       funilId: funilPosVenda.id,
-      etapaId: etapaContrato.id,
+      etapaId: etapaInicial.id,
       valorCentavos: negocioOriginal.valorCentavos,
       responsavelId: negocioOriginal.responsavelId,
       origem: negocioOriginal.origem,
@@ -102,29 +113,55 @@ async function handleNegocioGanho(
     },
   });
 
-  const responsavelAutomatico = await getResponsavelAutomatico(tx);
-  const contrato = await gerarContrato(negocioPosVenda.id, tx);
-  const linkContrato = `${URL_BASE}/api/pdf/contrato/${contrato.id}`;
-  await tx.tarefa.create({
-    data: {
-      titulo: "Emissão de contrato",
+  if (semContrato) {
+    // Equivalente à automação que dispararia ao entrar em Pagamento (ver
+    // onNegocioEtapaChanged) — como o pós-venda nasce JÁ em Pagamento (não
+    // passa pelo fluxo normal de transição), precisa criar a tarefa aqui
+    // na mão pra não pular essa etapa em branco.
+    await criarTarefaAutomatica(tx, {
+      titulo: "Emitir nota fiscal e boleto",
       negocioId: negocioPosVenda.id,
       contatoId: negocioOriginal.contatoId,
-      responsavelId: responsavelAutomatico.id,
       solicitanteId: negocioOriginal.responsavelId,
-      prazo: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      automatica: true,
-      descricao:
-        `Gerado automaticamente após o negócio de venda ser marcado como Ganho.\n\n` +
-        `Modelo de contrato pronto pra revisar e baixar: ${linkContrato}\n` +
-        `(é um rascunho — revise cláusulas e forma de pagamento antes de mandar pro cliente assinar)`,
-    },
-  });
+      prazoEmHoras: 24,
+    });
+  } else {
+    const responsavelAutomatico = await getResponsavelAutomatico(tx);
+    const contrato = await gerarContrato(negocioPosVenda.id, tx);
+    const linkContrato = `${URL_BASE}/api/pdf/contrato/${contrato.id}`;
+    await tx.tarefa.create({
+      data: {
+        titulo: "Emissão de contrato",
+        negocioId: negocioPosVenda.id,
+        contatoId: negocioOriginal.contatoId,
+        responsavelId: responsavelAutomatico.id,
+        solicitanteId: negocioOriginal.responsavelId,
+        prazo: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        automatica: true,
+        descricao:
+          `Gerado automaticamente após o negócio de venda ser marcado como Ganho.\n\n` +
+          `Modelo de contrato pronto pra revisar e baixar: ${linkContrato}\n` +
+          `(é um rascunho — revise cláusulas e forma de pagamento antes de mandar pro cliente assinar)`,
+      },
+    });
+  }
 
   await tx.atividade.createMany({
     data: [
-      { negocioId: negocioOriginal.id, tipo: "SISTEMA", texto: "Negócio marcado como Ganho. Pós-venda criado automaticamente." },
-      { negocioId: negocioPosVenda.id, tipo: "SISTEMA", texto: "Negócio de pós-venda criado automaticamente a partir do fechamento da venda." },
+      {
+        negocioId: negocioOriginal.id,
+        tipo: "SISTEMA",
+        texto: semContrato
+          ? "Negócio marcado como Ganho SEM contrato. Pós-venda criado automaticamente, direto na etapa Pagamento."
+          : "Negócio marcado como Ganho. Pós-venda criado automaticamente.",
+      },
+      {
+        negocioId: negocioPosVenda.id,
+        tipo: "SISTEMA",
+        texto: semContrato
+          ? "Negócio de pós-venda criado automaticamente a partir do fechamento da venda, sem contrato (dispensado)."
+          : "Negócio de pós-venda criado automaticamente a partir do fechamento da venda.",
+      },
     ],
   });
 }

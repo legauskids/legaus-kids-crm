@@ -56,9 +56,15 @@ export function listNegociosPorContato(contatoId: string) {
   });
 }
 
-export async function moverNegocio(negocioId: string, novaEtapaId: string): Promise<void> {
+/**
+ * opcoes.semContrato: pra negócios de valor menor ou pagamento à vista que
+ * dispensam contrato de verdade — pula a checagem de dado obrigatório pro
+ * contrato (CNPJ, representante legal etc.) e o pós-venda nasce direto na
+ * etapa Pagamento, sem gerar contrato nem a tarefa "Emissão de contrato".
+ */
+export async function moverNegocio(negocioId: string, novaEtapaId: string, opcoes?: { semContrato?: boolean }): Promise<void> {
   const etapaAlvo = await prisma.etapa.findUniqueOrThrow({ where: { id: novaEtapaId } });
-  if (etapaAlvo.tipo === "GANHO") {
+  if (etapaAlvo.tipo === "GANHO" && !opcoes?.semContrato) {
     const faltando = await validarDadosParaContrato(negocioId);
     if (faltando.length > 0) {
       throw new Error(`Faltam dados pro contrato antes de marcar como Ganho: ${faltando.join(", ")}.`);
@@ -70,7 +76,7 @@ export async function moverNegocio(negocioId: string, novaEtapaId: string): Prom
       where: { id: negocioId },
       data: { etapaId: novaEtapaId, dataEntradaNaEtapa: new Date() },
     });
-    await onNegocioEtapaChanged(tx, negocioId, novaEtapaId);
+    await onNegocioEtapaChanged(tx, negocioId, novaEtapaId, opcoes);
   });
 }
 
