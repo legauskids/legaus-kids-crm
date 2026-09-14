@@ -62,6 +62,23 @@ export default async function NegocioDetalhePage({
         etapas={negocio.funil.etapas.map((e) => ({ id: e.id, nome: e.nome, ordem: e.ordem, tipo: e.tipo }))}
         isFunilVenda={isFunilVenda}
         isFunilPosVenda={isFunilPosVenda}
+        contato={
+          negocio.contato
+            ? {
+                id: negocio.contato.id,
+                nome: negocio.contato.nome,
+                cnpj: negocio.contato.cnpj,
+                razaoSocial: negocio.contato.razaoSocial,
+                endereco: negocio.contato.endereco,
+                cidade: negocio.contato.cidade,
+                uf: negocio.contato.uf,
+                cep: negocio.contato.cep,
+                representanteLegalNome: negocio.contato.representanteLegalNome,
+                representanteLegalCpf: negocio.contato.representanteLegalCpf,
+              }
+            : null
+        }
+        formaPagamentoAtual={negocio.formaPagamento}
       />
 
       <ChecklistEtapa

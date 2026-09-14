@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import {
 } from "@/app/(app)/negocios/actions";
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
 import { ExcluirNegocioDialog } from "@/app/(app)/negocios/excluir-negocio-dialog";
+import { CompletarDadosContratoDialog, type ContatoParaContrato } from "@/app/(app)/negocios/[negocioId]/completar-dados-contrato-dialog";
 
 type Etapa = { id: string; nome: string; ordem: number; tipo: "NORMAL" | "GANHO" | "PERDIDO" };
 
@@ -23,26 +25,46 @@ export function EtapaBreadcrumb({
   etapas,
   isFunilVenda,
   isFunilPosVenda,
+  contato,
+  formaPagamentoAtual,
 }: {
   negocioId: string;
   etapaAtualId: string;
   etapas: Etapa[];
   isFunilVenda: boolean;
   isFunilPosVenda: boolean;
+  contato: ContatoParaContrato | null;
+  formaPagamentoAtual: string | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [motivoOpen, setMotivoOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
+  const [dadosContratoAviso, setDadosContratoAviso] = useState<string | null>(null);
 
   const etapasNormais = [...etapas].filter((e) => e.tipo === "NORMAL").sort((a, b) => a.ordem - b.ordem);
   const etapaAtual = etapas.find((e) => e.id === etapaAtualId);
   const etapaGanho = etapas.find((e) => e.tipo === "GANHO");
   const etapaPagamento = etapas.find((e) => e.nome === "Pagamento");
 
+  // Sem isso, um erro de moverNegocioAction (ex: falta CNPJ/representante
+  // legal/forma de pagamento pro contrato, checado em validarDadosParaContrato)
+  // era descartado em silêncio — o clique em "Ganho" simplesmente não fazia
+  // nada visível, sem dizer o motivo nem deixar preencher o que faltava.
   function mover(etapaId: string) {
     startTransition(async () => {
-      await moverNegocioAction(negocioId, etapaId);
+      const resultado = await moverNegocioAction(negocioId, etapaId);
+      if (resultado.error) {
+        // Mover pra etapa Ganho só falha por causa dos dados do contrato
+        // faltando (é a única checagem que moverNegocio faz nesse caso) —
+        // abre o diálogo pra completar em vez de só avisar que faltou algo.
+        if (etapaId === etapaGanho?.id && contato) {
+          setDadosContratoAviso(resultado.error);
+          return;
+        }
+        toast.error(resultado.error);
+        return;
+      }
       router.refresh();
     });
   }
@@ -133,6 +155,17 @@ export function EtapaBreadcrumb({
           router.push("/negocios");
         }}
       />
+      {contato && etapaGanho && (
+        <CompletarDadosContratoDialog
+          open={dadosContratoAviso != null}
+          onOpenChange={(open) => !open && setDadosContratoAviso(null)}
+          negocioId={negocioId}
+          etapaGanhoId={etapaGanho.id}
+          contato={contato}
+          formaPagamentoAtual={formaPagamentoAtual}
+          avisoInicial={dadosContratoAviso}
+        />
+      )}
     </div>
   );
 }
