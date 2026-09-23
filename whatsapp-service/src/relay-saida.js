@@ -4,6 +4,44 @@ import { marcarComoEnviadoPeloRelay } from "./ids-relay.js";
 
 const INTERVALO_MS = 5000;
 
+// Atraso "humanizado" antes de cada envio — pesquisa de 2026 sobre detecção
+// de automação do WhatsApp aponta intervalo fixo/instantâneo entre
+// mensagens como sinal de bot (ver decisão de 2026-09-23: mandar em rajada,
+// sem nenhuma variação de tempo, é um dos fatores que mais pesa contra a
+// conta). Cada mensagem agora espera um tempo aleatório + simula "digitando"
+// proporcional ao tamanho do texto antes de sair, em vez de todas saírem
+// coladas uma na outra assim que a fila é lida.
+const ATRASO_MIN_MS = 1500;
+const ATRASO_MAX_MS = 4000;
+const MS_POR_CARACTERE_DIGITACAO = 35;
+const TEMPO_DIGITACAO_MAX_MS = 6000;
+
+function aguardar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function atrasoAleatorio(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+/**
+ * Espera um tempo "humano" e liga o indicador de "digitando..." antes do
+ * envio de verdade — presença é só cosmético pro WhatsApp do destinatário,
+ * nunca deve travar o envio de verdade se falhar (por isso o try/catch
+ * silencioso).
+ */
+async function simularDigitacao(sock, jid, texto) {
+  await aguardar(atrasoAleatorio(ATRASO_MIN_MS, ATRASO_MAX_MS));
+  try {
+    await sock.sendPresenceUpdate("composing", jid);
+    const tempoDigitando = Math.min(TEMPO_DIGITACAO_MAX_MS, (texto?.length || 20) * MS_POR_CARACTERE_DIGITACAO);
+    await aguardar(tempoDigitando);
+    await sock.sendPresenceUpdate("paused", jid);
+  } catch {
+    // presença é cosmética — segue pro envio de qualquer jeito.
+  }
+}
+
 // index.js chama iniciarRelayDeSaida de novo a cada reconexão (comum — ver
 // os comentários sobre instabilidade em index.js). Sem isso, cada
 // reconexão empilhava mais um setInterval rodando em paralelo com o(s)
@@ -97,6 +135,7 @@ async function processarFilaAgora(sock) {
     try {
       const jid = await resolverJidParaEnvio(sock, item.telefone);
       console.log(`[relay-saida] Mandando pra jid resolvido: ${jid}`);
+      await simularDigitacao(sock, jid, item.texto);
       let enviada;
       if (item.anexoUrl) {
         const arquivo = await baixarArquivo(item.anexoUrl);
