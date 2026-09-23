@@ -164,8 +164,8 @@ function LinhaProduto({ produto, onAtualizar }: { produto: ProdutoVM; onAtualiza
       calcularPrecificacao({
         custoCompraCentavos: produto.custoCompraCentavos,
         freteCustoCentavos: produto.freteCustoCentavos,
-        ipiCustoCentavos: produto.ipiCustoCentavos,
-        outrosCustoCentavos: produto.outrosCustoCentavos,
+        ipiPercentual: produto.ipiPercentual,
+        outrosPercentual: produto.outrosPercentual,
         quantidadeReferencia: produto.quantidadeReferencia,
         markupPercentual: produto.markupPercentual,
         impostoPercentual: produto.impostoPercentual,
@@ -199,14 +199,19 @@ function LinhaProduto({ produto, onAtualizar }: { produto: ProdutoVM; onAtualiza
         />
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel key={produto.ipiCustoCentavos} valor={produto.ipiCustoCentavos} onSalvar={salvar("ipiCustoCentavos")} tipo="reais" />
+        <CelulaPercentualComValor
+          key={produto.ipiPercentual}
+          percentual={produto.ipiPercentual}
+          valorCentavos={calc.ipiValorCentavos}
+          onSalvar={salvar("ipiPercentual")}
+        />
       </td>
       <td className="px-1 py-1">
-        <CelulaEditavel
-          key={produto.outrosCustoCentavos}
-          valor={produto.outrosCustoCentavos}
-          onSalvar={salvar("outrosCustoCentavos")}
-          tipo="reais"
+        <CelulaPercentualComValor
+          key={produto.outrosPercentual}
+          percentual={produto.outrosPercentual}
+          valorCentavos={calc.outrosValorCentavos}
+          onSalvar={salvar("outrosPercentual")}
         />
       </td>
       <td className="whitespace-nowrap px-2 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
@@ -264,8 +269,8 @@ const CABECALHO = [
   "Descrição",
   "Compra",
   "Frete",
-  "IPI",
-  "Outros",
+  "IPI %",
+  "Outros %",
   "Custo total",
   "Qtd.",
   "Total compra",
@@ -279,8 +284,8 @@ const CABECALHO = [
 
 // Colunas que aceitam aplicar o mesmo valor pra todos os itens da categoria.
 const COLUNAS_EM_MASSA: Record<number, { campo: CampoPrecoProduto; tipo: "reais" | "numero" }> = {
-  3: { campo: "ipiCustoCentavos", tipo: "reais" },
-  4: { campo: "outrosCustoCentavos", tipo: "reais" },
+  3: { campo: "ipiPercentual", tipo: "numero" },
+  4: { campo: "outrosPercentual", tipo: "numero" },
   8: { campo: "markupPercentual", tipo: "numero" },
   10: { campo: "impostoPercentual", tipo: "numero" },
 };
@@ -447,9 +452,10 @@ export function ListaPrecos({
           />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Valores de custo em R$ por unidade. Preço de venda é calculado a partir do custo total + markup (e some junto com o
-          cadastro do produto). Enter confirma a célula. A linha pontilhada no topo de cada categoria aplica o valor pra todos
-          os itens dela.
+          Compra, Frete e Instalação em R$ por unidade. IPI, Outros, Markup e Imposto são percentuais (IPI e Outros sobre o
+          custo de compra, Imposto sobre o preço de venda) — clique no valor pra editar o %. Preço de venda é calculado a
+          partir do custo total + markup. Enter confirma a célula. A linha pontilhada no topo de cada categoria aplica o valor
+          pra todos os itens dela.
         </p>
       </div>
 

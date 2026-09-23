@@ -85,8 +85,8 @@ export function buscarFotoProduto(produtoId: string) {
 export type CampoPrecoProduto =
   | "custoCompraCentavos"
   | "freteCustoCentavos"
-  | "ipiCustoCentavos"
-  | "outrosCustoCentavos"
+  | "ipiPercentual"
+  | "outrosPercentual"
   | "quantidadeReferencia"
   | "markupPercentual"
   | "impostoPercentual"
@@ -103,8 +103,8 @@ export async function atualizarPrecoProduto(produtoId: string, campo: CampoPreco
     select: {
       custoCompraCentavos: true,
       freteCustoCentavos: true,
-      ipiCustoCentavos: true,
-      outrosCustoCentavos: true,
+      ipiPercentual: true,
+      outrosPercentual: true,
       quantidadeReferencia: true,
       markupPercentual: true,
       impostoPercentual: true,
@@ -141,8 +141,8 @@ export async function aplicarPrecoEmMassa(categoria: string, campo: CampoPrecoPr
       id: true,
       custoCompraCentavos: true,
       freteCustoCentavos: true,
-      ipiCustoCentavos: true,
-      outrosCustoCentavos: true,
+      ipiPercentual: true,
+      outrosPercentual: true,
       quantidadeReferencia: true,
       markupPercentual: true,
       impostoPercentual: true,

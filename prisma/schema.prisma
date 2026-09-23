@@ -489,8 +489,11 @@ model Produto {
   // pra manter uma fonte única usada também no Orçamento.
   custoCompraCentavos  Int?
   freteCustoCentavos   Int?
-  ipiCustoCentavos     Int?
-  outrosCustoCentavos  Int?
+  // IPI e Outros custos são percentuais sobre o custo de compra (igual
+  // Markup/Imposto já eram) — antes eram valor fixo em R$, trocado em
+  // 2026-09-23 a pedido do Marcos.
+  ipiPercentual        Float?
+  outrosPercentual     Float?
   quantidadeReferencia Int    @default(1)
   markupPercentual     Float?
   impostoPercentual    Float?

@@ -106,8 +106,8 @@ export async function excluirProdutoAction(produtoId: string): Promise<void> {
 const CAMPOS_PRECO_VALIDOS = new Set<CampoPrecoProduto>([
   "custoCompraCentavos",
   "freteCustoCentavos",
-  "ipiCustoCentavos",
-  "outrosCustoCentavos",
+  "ipiPercentual",
+  "outrosPercentual",
   "quantidadeReferencia",
   "markupPercentual",
   "impostoPercentual",

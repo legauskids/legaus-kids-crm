@@ -522,7 +522,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "atualizar_preco_produto",
     description:
-      "Altera um campo da Lista de Preços de um produto (custo de compra, frete, IPI, outros custos, instalação, quantidade de referência, markup % ou imposto %) — o preço de venda é recalculado automaticamente.",
+      "Altera um campo da Lista de Preços de um produto (custo de compra, frete, instalação — em R$; IPI %, outros custos %, markup % ou imposto % — em percentual) — o preço de venda é recalculado automaticamente. IPI e outros custos são percentual sobre o custo de compra.",
     input_schema: {
       type: "object",
       properties: {
@@ -533,8 +533,8 @@ const FERRAMENTAS: Ferramenta[] = [
           enum: [
             "custoCompraCentavos",
             "freteCustoCentavos",
-            "ipiCustoCentavos",
-            "outrosCustoCentavos",
+            "ipiPercentual",
+            "outrosPercentual",
             "quantidadeReferencia",
             "markupPercentual",
             "impostoPercentual",
@@ -543,7 +543,7 @@ const FERRAMENTAS: Ferramenta[] = [
         },
         valor: {
           type: "number",
-          description: "Em reais pros campos de custo/instalação, percentual pra markup/imposto (ex: 30 = 30%), ou a quantidade em si",
+          description: "Em reais pra custo de compra/frete/instalação, percentual pra IPI/outros/markup/imposto (ex: 30 = 30%), ou a quantidade em si",
         },
       },
       required: ["campo", "valor"],
@@ -558,7 +558,7 @@ const FERRAMENTAS: Ferramenta[] = [
         const opcoes = await prisma.produto.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, nome: true, codigo: true } });
         return { ambiguo: true, opcoes };
       }
-      const camposEmCentavos = ["custoCompraCentavos", "freteCustoCentavos", "ipiCustoCentavos", "outrosCustoCentavos", "instalacaoCentavos"];
+      const camposEmCentavos = ["custoCompraCentavos", "freteCustoCentavos", "instalacaoCentavos"];
       const valorFinal = camposEmCentavos.includes(a.campo) ? reaisParaCentavos(a.valor) : a.valor;
       const produto = await atualizarPrecoProduto(resolvido.id, a.campo, valorFinal);
       return {

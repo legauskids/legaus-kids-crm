@@ -22,8 +22,8 @@ export type ProdutoVM = {
   ativo: boolean;
   custoCompraCentavos: number | null;
   freteCustoCentavos: number | null;
-  ipiCustoCentavos: number | null;
-  outrosCustoCentavos: number | null;
+  ipiPercentual: number | null;
+  outrosPercentual: number | null;
   quantidadeReferencia: number;
   markupPercentual: number | null;
   impostoPercentual: number | null;
