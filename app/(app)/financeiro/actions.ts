@@ -44,8 +44,10 @@ export async function gerarContratoManualAction(
   await requireModulo("financeiro");
   const negocioId = String(formData.get("negocioId") ?? "");
   if (!negocioId) return { error: "Escolha um negócio." };
+  const empresaEmissoraBruta = String(formData.get("empresaEmissora") ?? "LEGAUS");
+  const empresaEmissora = empresaEmissoraBruta === "IDEZZA" ? "IDEZZA" : "LEGAUS";
   try {
-    await gerarContrato(negocioId);
+    await gerarContrato(negocioId, undefined, empresaEmissora);
   } catch (erro) {
     return { error: erro instanceof Error ? erro.message : "Não consegui gerar o contrato." };
   }

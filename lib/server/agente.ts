@@ -42,7 +42,7 @@ import {
 } from "@/lib/server/busca-similar";
 import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precificacao";
 import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
-import { listarContratos } from "@/lib/server/contratos";
+import { listarContratos, criarContratoDeOrcamentoAntigo } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
@@ -1529,6 +1529,67 @@ const FERRAMENTAS: Ferramenta[] = [
     },
   },
   {
+    name: "gerar_contrato_de_orcamento_antigo",
+    description:
+      "Cria um negócio novo (já na etapa Contrato do Funil de pós-venda) e o contrato a partir de um orçamento ANTIGO anexado nesse comando (PDF ou foto) que nunca entrou no CRM — usado só como ponte até migrarmos tudo pro sistema, pra vendas fechadas fora do CRM não ficarem sem contrato registrado. Leia o PDF/imagem anexado de verdade e extraia nome do cliente, CNPJ/endereço/cidade/UF se tiver, representante legal se tiver, o produto/descrição, o valor total e a forma de pagamento — preencha os campos com o que estiver escrito no documento, sem inventar o que não aparecer. Sempre pergunte qual empresa emitiu o contrato (Legaus Kids ou Idezza) antes de chamar essa ferramenta, a não ser que o Marcos já tenha dito no comando.",
+    input_schema: {
+      type: "object",
+      properties: {
+        clienteNome: { type: "string" },
+        clienteTelefone: { type: "string", description: "Com DDD, se aparecer no documento ou o Marcos informar" },
+        clienteCnpj: { type: "string" },
+        clienteEndereco: { type: "string" },
+        clienteCidade: { type: "string" },
+        clienteUf: { type: "string" },
+        clienteRepresentanteNome: { type: "string", description: "Quem assina pelo cliente" },
+        clienteRepresentanteCpf: { type: "string" },
+        produtoDescricao: { type: "string", description: "O que foi vendido, conforme o orçamento antigo" },
+        valorReais: { type: "number" },
+        formaPagamento: { type: "string" },
+        empresaEmissora: { type: "string", enum: ["LEGAUS", "IDEZZA"] },
+      },
+      required: ["clienteNome", "produtoDescricao", "valorReais", "empresaEmissora"],
+    },
+    async executar(args, ctx) {
+      const a = args as {
+        clienteNome: string;
+        clienteTelefone?: string;
+        clienteCnpj?: string;
+        clienteEndereco?: string;
+        clienteCidade?: string;
+        clienteUf?: string;
+        clienteRepresentanteNome?: string;
+        clienteRepresentanteCpf?: string;
+        produtoDescricao: string;
+        valorReais: number;
+        formaPagamento?: string;
+        empresaEmissora: "LEGAUS" | "IDEZZA";
+      };
+      const { negocio, contrato, contatoNovo } = await criarContratoDeOrcamentoAntigo({
+        clienteNome: a.clienteNome,
+        clienteTelefone: a.clienteTelefone,
+        clienteCnpj: a.clienteCnpj,
+        clienteEndereco: a.clienteEndereco,
+        clienteCidade: a.clienteCidade,
+        clienteUf: a.clienteUf,
+        clienteRepresentanteNome: a.clienteRepresentanteNome,
+        clienteRepresentanteCpf: a.clienteRepresentanteCpf,
+        produtoDescricao: a.produtoDescricao,
+        valorCentavos: reaisParaCentavos(a.valorReais),
+        formaPagamento: a.formaPagamento,
+        empresaEmissora: a.empresaEmissora,
+        responsavelId: ctx.usuarioId,
+      });
+      return {
+        negocioId: negocio.id,
+        cliente: contatoNovo.nome,
+        contratoNumero: contrato.numero,
+        empresaEmissora: a.empresaEmissora,
+        linkPdf: `${URL_BASE}/api/pdf/contrato/${contrato.id}`,
+      };
+    },
+  },
+  {
     name: "resumo_do_dia",
     description: "Dá um resumo rápido: tarefas com prazo pra hoje/atrasadas e orçamentos em rascunho ou enviados aguardando resposta.",
     input_schema: { type: "object", properties: {} },
@@ -1572,6 +1633,8 @@ Regras:
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
 - Se o Marcos disser que um cliente/contato "está duplicado" ou "é o mesmo", use mesclar_clientes (nunca crie/edite tentando contornar) — ela junta o histórico dos dois (conversas, negócios, orçamentos, tarefas, notas fiscais) no que for mantido e apaga o duplicado. Pra apagar um cadastro de cliente sem nada vinculado, use excluir_cliente. Antes de dizer que não consegue fazer alguma ação de cliente/contato (corrigir, editar, apagar, mesclar), confira se não existe ferramenta pra isso — você tem criar_cliente, atualizar_cliente, excluir_cliente e mesclar_clientes.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
+- Se vier um ORÇAMENTO ANTIGO anexado (PDF ou foto) pedindo pra "virar contrato"/"transformar em contrato" — um orçamento de venda que nunca entrou no CRM —, use gerar_contrato_de_orcamento_antigo. Ela cria o negócio E o contrato de uma vez. Pergunte qual empresa emitiu (Legaus Kids ou Idezza) se não estiver claro no pedido ou no documento.
+- Contrato pode ser emitido em nome da Legaus Kids OU da Idezza — duas pessoas jurídicas diferentes que a Legaus Kids usa pra vender. Sempre que for gerar/mencionar um contrato novo (inclusive gerar_contrato_de_orcamento_antigo), confirme qual das duas antes, não assuma Legaus por padrão sem perguntar quando não estiver óbvio pelo contexto.
 - Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto — ela usa a imagem anexada nesse mesmo comando, não peça a foto de outro jeito. Se vier um pedido de anexar foto SEM nenhuma imagem anexada, avise que precisa mandar a foto junto (anexada na mesma mensagem), não invente que não consegue anexar fotos.
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;

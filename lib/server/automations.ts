@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
 import { gerarContrato } from "@/lib/server/contratos";
+import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 
 // Derivado do client de verdade (com a extensão de soft-delete de Negocio
 // aplicada em lib/db.ts) em vez de Prisma.TransactionClient genérico — os
@@ -25,7 +26,7 @@ export async function onNegocioEtapaChanged(
   tx: Tx,
   negocioId: string,
   novaEtapaId: string,
-  opcoes?: { semContrato?: boolean },
+  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
 ): Promise<void> {
   const etapa = await tx.etapa.findUniqueOrThrow({ where: { id: novaEtapaId }, include: { funil: true } });
   const negocio = await tx.negocio.findUniqueOrThrow({ where: { id: negocioId } });
@@ -85,9 +86,10 @@ async function handleNegocioGanho(
     descricao: string | null;
     formaPagamento: string | null;
   },
-  opcoes?: { semContrato?: boolean },
+  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
 ): Promise<void> {
   const semContrato = opcoes?.semContrato ?? false;
+  const empresaEmissora = opcoes?.empresaEmissora ?? "LEGAUS";
   const funilPosVenda = await tx.funil.findFirstOrThrow({ where: { nome: "Funil de pós-venda" } });
   // Sem contrato não tem o que fazer na etapa Contrato — o pós-venda já
   // nasce direto em Pagamento, pulando essa etapa por completo.
@@ -127,7 +129,7 @@ async function handleNegocioGanho(
     });
   } else {
     const responsavelAutomatico = await getResponsavelAutomatico(tx);
-    const contrato = await gerarContrato(negocioPosVenda.id, tx);
+    const contrato = await gerarContrato(negocioPosVenda.id, tx, empresaEmissora);
     const linkContrato = `${URL_BASE}/api/pdf/contrato/${contrato.id}`;
     await tx.tarefa.create({
       data: {

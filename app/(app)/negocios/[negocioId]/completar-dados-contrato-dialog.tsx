@@ -39,6 +39,7 @@ export function CompletarDadosContratoDialog({
   contato,
   formaPagamentoAtual,
   avisoInicial,
+  empresaEmissoraInicial,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,6 +48,7 @@ export function CompletarDadosContratoDialog({
   contato: ContatoParaContrato;
   formaPagamentoAtual: string | null;
   avisoInicial?: string | null;
+  empresaEmissoraInicial?: "LEGAUS" | "IDEZZA";
 }) {
   const [state, formAction, pending] = useActionState(completarDadosContratoEGanharAction, initialState);
   const [buscandoCnpj, startBuscaCnpj] = useTransition();
@@ -158,6 +160,20 @@ export function CompletarDadosContratoDialog({
               placeholder="ex: à vista via PIX, no ato da assinatura"
               defaultValue={formaPagamentoAtual ?? ""}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="empresaEmissora-ganho">Contrato emitido por</Label>
+            <select
+              id="empresaEmissora-ganho"
+              name="empresaEmissora"
+              key={empresaEmissoraInicial}
+              defaultValue={empresaEmissoraInicial ?? "LEGAUS"}
+              className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+            >
+              <option value="LEGAUS">Legaus Kids</option>
+              <option value="IDEZZA">Idezza</option>
+            </select>
           </div>
 
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}

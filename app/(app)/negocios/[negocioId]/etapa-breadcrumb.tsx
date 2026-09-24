@@ -17,6 +17,7 @@ import {
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
 import { ExcluirNegocioDialog } from "@/app/(app)/negocios/excluir-negocio-dialog";
 import { CompletarDadosContratoDialog, type ContatoParaContrato } from "@/app/(app)/negocios/[negocioId]/completar-dados-contrato-dialog";
+import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 
 type Etapa = { id: string; nome: string; ordem: number; tipo: "NORMAL" | "GANHO" | "PERDIDO" };
 
@@ -42,6 +43,7 @@ export function EtapaBreadcrumb({
   const [motivoOpen, setMotivoOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
   const [dadosContratoAviso, setDadosContratoAviso] = useState<string | null>(null);
+  const [empresaEscolhida, setEmpresaEscolhida] = useState<ChaveEmpresaEmissora>("LEGAUS");
 
   const etapasNormais = [...etapas].filter((e) => e.tipo === "NORMAL").sort((a, b) => a.ordem - b.ordem);
   const etapaAtual = etapas.find((e) => e.id === etapaAtualId);
@@ -52,7 +54,7 @@ export function EtapaBreadcrumb({
   // legal/forma de pagamento pro contrato, checado em validarDadosParaContrato)
   // era descartado em silêncio — o clique em "Ganho" simplesmente não fazia
   // nada visível, sem dizer o motivo nem deixar preencher o que faltava.
-  function mover(etapaId: string, opcoes?: { semContrato?: boolean }) {
+  function mover(etapaId: string, opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora }) {
     startTransition(async () => {
       const resultado = await moverNegocioAction(negocioId, etapaId, opcoes);
       if (resultado.error) {
@@ -62,6 +64,7 @@ export function EtapaBreadcrumb({
         // Não se aplica quando semContrato:true, já que nesse caso
         // moverNegocio nem faz essa checagem.
         if (etapaId === etapaGanho?.id && contato && !opcoes?.semContrato) {
+          setEmpresaEscolhida(opcoes?.empresaEmissora ?? "LEGAUS");
           setDadosContratoAviso(resultado.error);
           return;
         }
@@ -135,6 +138,9 @@ export function EtapaBreadcrumb({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => etapaGanho && mover(etapaGanho.id, { empresaEmissora: "IDEZZA" })}>
+                    Marcar Ganho pela Idezza
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => etapaGanho && mover(etapaGanho.id, { semContrato: true })}>
                     Marcar Ganho sem contrato
                   </DropdownMenuItem>
@@ -181,6 +187,7 @@ export function EtapaBreadcrumb({
           contato={contato}
           formaPagamentoAtual={formaPagamentoAtual}
           avisoInicial={dadosContratoAviso}
+          empresaEmissoraInicial={empresaEscolhida}
         />
       )}
     </div>

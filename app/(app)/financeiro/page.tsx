@@ -145,6 +145,7 @@ async function ContratosTabData() {
         criadoEm: c.criadoEm.toISOString(),
         negocioTitulo: c.negocio.titulo,
         contatoNome: c.negocio.contato?.nome ?? null,
+        empresaEmissora: c.empresaEmissora,
       }))}
       negociosParaSeletor={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null }))}
     />

@@ -369,15 +369,24 @@ enum StatusContrato {
 
 // Snapshot imutável do texto já mesclado no momento da geração — editar o
 // ModeloContrato depois não muda contratos já gerados, só os próximos.
+enum EmpresaEmissora {
+  LEGAUS
+  IDEZZA
+}
+
 model Contrato {
-  id           String         @id @default(cuid())
-  numero       Int            @unique @default(autoincrement())
-  negocioId    String
-  negocio      Negocio        @relation(fields: [negocioId], references: [id])
-  conteudo     String
-  status       StatusContrato @default(GERADO)
-  criadoEm     DateTime       @default(now())
-  atualizadoEm DateTime       @updatedAt
+  id              String          @id @default(cuid())
+  numero          Int             @unique @default(autoincrement())
+  negocioId       String
+  negocio         Negocio         @relation(fields: [negocioId], references: [id])
+  conteudo        String
+  status          StatusContrato  @default(GERADO)
+  // Qual pessoa jurídica vendeu — Legaus Kids ou Idezza. Snapshot no
+  // momento da geração, igual `conteudo` — trocar o padrão depois não
+  // muda contrato já emitido.
+  empresaEmissora EmpresaEmissora @default(LEGAUS)
+  criadoEm        DateTime        @default(now())
+  atualizadoEm    DateTime        @updatedAt
 }
 
 model Tarefa {

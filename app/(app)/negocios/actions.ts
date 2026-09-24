@@ -22,11 +22,12 @@ import {
   excluirNegocioSchema,
 } from "@/lib/validators/negocio";
 import { reaisParaCentavos } from "@/lib/utils/money";
+import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 
 export async function moverNegocioAction(
   negocioId: string,
   novaEtapaId: string,
-  opcoes?: { semContrato?: boolean },
+  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
 ): Promise<{ error?: string }> {
   await requireUser();
   try {
@@ -194,9 +195,10 @@ export async function completarDadosContratoEGanharAction(
     representanteLegalCpf: raw.representanteLegalCpf || null,
   });
   await atualizarDadosNegocio(negocioId, { formaPagamento: raw.formaPagamento || null });
+  const empresaEmissora: ChaveEmpresaEmissora = raw.empresaEmissora === "IDEZZA" ? "IDEZZA" : "LEGAUS";
 
   try {
-    await moverNegocio(negocioId, etapaGanhoId);
+    await moverNegocio(negocioId, etapaGanhoId, { empresaEmissora });
   } catch (erro) {
     return { error: erro instanceof Error ? erro.message : "Ainda faltam dados." };
   }

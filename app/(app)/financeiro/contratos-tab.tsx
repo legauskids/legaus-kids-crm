@@ -22,6 +22,13 @@ const STATUS_LABEL: Record<StatusContrato, string> = {
   CANCELADO: "Cancelado",
 };
 
+type EmpresaEmissora = "LEGAUS" | "IDEZZA";
+
+const EMPRESA_LABEL: Record<EmpresaEmissora, string> = {
+  LEGAUS: "Legaus Kids",
+  IDEZZA: "Idezza",
+};
+
 type ContratoVM = {
   id: string;
   numero: number;
@@ -29,6 +36,7 @@ type ContratoVM = {
   criadoEm: string;
   negocioTitulo: string;
   contatoNome: string | null;
+  empresaEmissora: EmpresaEmissora;
 };
 
 type CampoDisponivel = { chave: string; descricao: string };
@@ -121,6 +129,10 @@ export function ContratosTab({
                 </option>
               ))}
             </select>
+            <select name="empresaEmissora" defaultValue="LEGAUS" className="h-9 rounded-md border bg-background px-2 text-sm" title="Quem vendeu">
+              <option value="LEGAUS">Venda pela Legaus Kids</option>
+              <option value="IDEZZA">Venda pela Idezza</option>
+            </select>
             <Button type="submit" size="sm" disabled={gerarPending}>
               Gerar contrato
             </Button>
@@ -145,7 +157,8 @@ export function ContratosTab({
                     #{String(c.numero).padStart(4, "0")} — {c.negocioTitulo}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {c.contatoNome ?? "sem cliente vinculado"} · {new Date(c.criadoEm).toLocaleDateString("pt-BR")}
+                    {c.contatoNome ?? "sem cliente vinculado"} · {new Date(c.criadoEm).toLocaleDateString("pt-BR")} ·{" "}
+                    {EMPRESA_LABEL[c.empresaEmissora]}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

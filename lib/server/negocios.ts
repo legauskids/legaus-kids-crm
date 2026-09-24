@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { onNegocioEtapaChanged } from "@/lib/server/automations";
 import { validarDadosParaContrato } from "@/lib/server/contratos";
+import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 
 export function listFunisComEtapas() {
   return prisma.funil.findMany({
@@ -62,7 +63,11 @@ export function listNegociosPorContato(contatoId: string) {
  * contrato (CNPJ, representante legal etc.) e o pós-venda nasce direto na
  * etapa Pagamento, sem gerar contrato nem a tarefa "Emissão de contrato".
  */
-export async function moverNegocio(negocioId: string, novaEtapaId: string, opcoes?: { semContrato?: boolean }): Promise<void> {
+export async function moverNegocio(
+  negocioId: string,
+  novaEtapaId: string,
+  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
+): Promise<void> {
   const etapaAlvo = await prisma.etapa.findUniqueOrThrow({ where: { id: novaEtapaId } });
   if (etapaAlvo.tipo === "GANHO" && !opcoes?.semContrato) {
     const faltando = await validarDadosParaContrato(negocioId);

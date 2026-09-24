@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import { prisma } from "@/lib/db";
-import { EMPRESA } from "@/lib/constants/empresa";
+import { EMPRESAS_EMISSORAS, type ChaveEmpresaEmissora, type DadosEmpresa } from "@/lib/constants/empresa";
 
 const LOGO = fs.readFileSync(path.join(process.cwd(), "public", "legaus-logo.png"));
 
@@ -43,6 +43,8 @@ function ContratoPdfDocument({
   contratanteNome,
   contratanteRepresentanteNome,
   contratanteRepresentanteCpf,
+  empresa,
+  empresaEmissora,
 }: {
   numero: number;
   titulo: string;
@@ -50,6 +52,8 @@ function ContratoPdfDocument({
   contratanteNome: string;
   contratanteRepresentanteNome: string | null;
   contratanteRepresentanteCpf: string | null;
+  empresa: DadosEmpresa;
+  empresaEmissora: ChaveEmpresaEmissora;
 }) {
   const hoje = new Date();
 
@@ -57,12 +61,18 @@ function ContratoPdfDocument({
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-          {/* eslint-disable-next-line jsx-a11y/alt-text -- Image aqui é do @react-pdf/renderer (destino é PDF), não HTML img */}
-          <Image src={LOGO} style={styles.logo} />
+          {/* Logo só existe da Legaus Kids — contrato da Idezza mostra só o
+              nome fantasia em texto até termos uma logo dela também. */}
+          {empresaEmissora === "LEGAUS" ? (
+            // eslint-disable-next-line jsx-a11y/alt-text -- Image aqui é do @react-pdf/renderer (destino é PDF), não HTML img
+            <Image src={LOGO} style={styles.logo} />
+          ) : (
+            <Text style={{ fontWeight: 700, fontSize: 14 }}>{empresa.nomeFantasia}</Text>
+          )}
           <View style={styles.empresaBloco}>
-            <Text style={{ fontWeight: 700, color: "#171717", fontSize: 8.5 }}>{EMPRESA.razaoSocial}</Text>
-            <Text>CNPJ {EMPRESA.cnpj}</Text>
-            <Text>{EMPRESA.endereco}, {EMPRESA.bairro} — {EMPRESA.cidade}/{EMPRESA.uf}</Text>
+            <Text style={{ fontWeight: 700, color: "#171717", fontSize: 8.5 }}>{empresa.razaoSocial}</Text>
+            <Text>CNPJ {empresa.cnpj}</Text>
+            <Text>{empresa.endereco}, {empresa.bairro} — {empresa.cidade}/{empresa.uf}</Text>
           </View>
         </View>
 
@@ -82,7 +92,7 @@ function ContratoPdfDocument({
           <View style={styles.assinaturaBox}>
             <View style={styles.linhaAssinatura} />
             <Text style={styles.assinaturaLabel}>
-              {EMPRESA.razaoSocial}{"\n"}Representante: {EMPRESA.representanteNome}{"\n"}CPF nº {EMPRESA.representanteCpf}{"\n"}(VENDEDOR)
+              {empresa.razaoSocial}{"\n"}Representante: {empresa.representanteNome}{"\n"}CPF nº {empresa.representanteCpf}{"\n"}(VENDEDOR)
             </Text>
           </View>
           <View style={styles.assinaturaBox}>
@@ -108,7 +118,7 @@ function ContratoPdfDocument({
         </View>
 
         <View style={styles.rodape}>
-          <Text>Documento gerado automaticamente pelo CRM da {EMPRESA.nomeFantasia} em {formatarData(hoje)}.</Text>
+          <Text>Documento gerado automaticamente pelo CRM da {empresa.nomeFantasia} em {formatarData(hoje)}.</Text>
         </View>
       </Page>
     </Document>
@@ -131,12 +141,15 @@ export async function gerarPdfContrato(contratoId: string): Promise<{ buffer: Bu
 
   const titulo = tituloBruto || "Contrato";
   const contratanteNome = contrato.negocio.contato?.razaoSocial || contrato.negocio.contato?.nome || "Cliente";
+  const empresa = EMPRESAS_EMISSORAS[contrato.empresaEmissora];
 
   const buffer = await renderToBuffer(
     <ContratoPdfDocument
       numero={contrato.numero}
       titulo={titulo}
       paragrafos={paragrafos}
+      empresa={empresa}
+      empresaEmissora={contrato.empresaEmissora}
       contratanteNome={contratanteNome}
       contratanteRepresentanteNome={contrato.negocio.contato?.representanteLegalNome ?? null}
       contratanteRepresentanteCpf={contrato.negocio.contato?.representanteLegalCpf ?? null}

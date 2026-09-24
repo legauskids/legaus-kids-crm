@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { EMPRESA } from "@/lib/constants/empresa";
+import { EMPRESAS_EMISSORAS, type ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 import { centavosParaReais } from "@/lib/utils/money";
+import { normalizarTelefone } from "@/lib/server/contatos";
 import type { StatusContrato } from "@prisma/client";
 
 // Derivado do client de verdade (com a extensão de soft-delete de Negocio
@@ -133,12 +134,19 @@ export async function validarDadosParaContrato(negocioId: string, cliente: Clien
   return faltando;
 }
 
-/** Gera um contrato novo (snapshot salvo) a partir do modelo ativo + dados atuais do negócio. Aceita um client de transação pra rodar junto de outras automações. */
-export async function gerarContrato(negocioId: string, cliente: Cliente = prisma) {
+/**
+ * Gera um contrato novo (snapshot salvo) a partir do modelo ativo + dados
+ * atuais do negócio. Aceita um client de transação pra rodar junto de
+ * outras automações. `empresaEmissora` escolhe qual pessoa jurídica vendeu
+ * (Legaus Kids ou Idezza, ver lib/constants/empresa.ts) — Legaus por
+ * padrão, já que é o caso mais comum.
+ */
+export async function gerarContrato(negocioId: string, cliente: Cliente = prisma, empresaEmissora: ChaveEmpresaEmissora = "LEGAUS") {
   const negocio = await cliente.negocio.findUnique({ where: { id: negocioId }, include: { contato: true } });
   if (!negocio) throw new Error("Negócio não encontrado.");
   const modelo = await getModeloContratoAtivo(cliente);
   const c = negocio.contato;
+  const EMPRESA = EMPRESAS_EMISSORAS[empresaEmissora];
 
   const valores: Record<string, string> = {
     cliente_nome: c?.nome ?? "(cliente não vinculado)",
@@ -167,7 +175,7 @@ export async function gerarContrato(negocioId: string, cliente: Cliente = prisma
   };
 
   const conteudo = mesclarPlaceholders(modelo.conteudo, valores);
-  return cliente.contrato.create({ data: { negocioId, conteudo } });
+  return cliente.contrato.create({ data: { negocioId, conteudo, empresaEmissora } });
 }
 
 export function listarContratos() {
@@ -195,4 +203,74 @@ export function listarNegociosParaSeletor() {
     orderBy: { updatedAt: "desc" },
     take: 60,
   });
+}
+
+/**
+ * Cria um negócio (mínimo, direto na etapa Contrato do Funil de pós-venda)
+ * e o contrato a partir de um orçamento ANTIGO que nunca entrou no CRM —
+ * usado pelo agente quando alguém manda o PDF/foto de um orçamento de
+ * antes do sistema existir (ver ferramenta gerar_contrato_de_orcamento_antigo
+ * em lib/server/agente.ts). Claude já leu o anexo e extraiu os dados; essa
+ * função só persiste — não tenta mesclar/atualizar um contato já existente
+ * (usa como está, sem sobrescrever nada) pra não arriscar substituir dado
+ * bom por algo mal extraído do PDF antigo.
+ */
+export async function criarContratoDeOrcamentoAntigo(input: {
+  clienteNome: string;
+  clienteTelefone?: string | null;
+  clienteCnpj?: string | null;
+  clienteEndereco?: string | null;
+  clienteCidade?: string | null;
+  clienteUf?: string | null;
+  clienteRepresentanteNome?: string | null;
+  clienteRepresentanteCpf?: string | null;
+  produtoDescricao: string;
+  valorCentavos: number;
+  formaPagamento?: string | null;
+  empresaEmissora: ChaveEmpresaEmissora;
+  responsavelId: string;
+}) {
+  const telefoneNormalizado = input.clienteTelefone ? normalizarTelefone(input.clienteTelefone) : null;
+
+  let contato = telefoneNormalizado ? await prisma.contato.findUnique({ where: { telefone: telefoneNormalizado } }) : null;
+  if (!contato) {
+    contato = await prisma.contato.findFirst({
+      where: { OR: [{ nome: { equals: input.clienteNome, mode: "insensitive" } }, { razaoSocial: { equals: input.clienteNome, mode: "insensitive" } }] },
+    });
+  }
+  if (!contato) {
+    contato = await prisma.contato.create({
+      data: {
+        nome: input.clienteNome,
+        tipo: "CLIENTE",
+        telefone: telefoneNormalizado,
+        cnpj: input.clienteCnpj || null,
+        endereco: input.clienteEndereco || null,
+        cidade: input.clienteCidade || null,
+        uf: input.clienteUf || null,
+        representanteLegalNome: input.clienteRepresentanteNome || null,
+        representanteLegalCpf: input.clienteRepresentanteCpf || null,
+      },
+    });
+  }
+
+  const funilPosVenda = await prisma.funil.findFirstOrThrow({ where: { nome: "Funil de pós-venda" } });
+  const etapaContrato = await prisma.etapa.findFirstOrThrow({ where: { funilId: funilPosVenda.id, nome: "Contrato" } });
+
+  const negocio = await prisma.negocio.create({
+    data: {
+      titulo: `${input.clienteNome} — orçamento antigo`,
+      contatoId: contato.id,
+      funilId: funilPosVenda.id,
+      etapaId: etapaContrato.id,
+      valorCentavos: input.valorCentavos,
+      responsavelId: input.responsavelId,
+      produto: input.produtoDescricao,
+      formaPagamento: input.formaPagamento || null,
+      origem: "Orçamento antigo (pré-CRM, migrado via agente)",
+    },
+  });
+
+  const contrato = await gerarContrato(negocio.id, prisma, input.empresaEmissora);
+  return { negocio, contrato, contatoNovo: contato };
 }
