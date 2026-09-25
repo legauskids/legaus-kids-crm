@@ -9,6 +9,10 @@ const bodySchema = z.object({
   telefone: z.string().min(8),
   audioBase64: z.string().min(1),
   mimetype: z.string().default("audio/ogg"),
+  // Contato(s) colado(s) no WhatsApp logo antes da nota de voz — o
+  // whatsapp-service guarda a colagem e manda junto (ver
+  // whatsapp-service/src/colagem-contatos.js).
+  contexto: z.string().optional(),
 });
 
 /**
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
     }
 
     const resultado = await processarComandoAgente({
-      texto,
+      texto: parsed.data.contexto ? `${parsed.data.contexto}\n\n${texto}` : texto,
       origem: "WHATSAPP",
       identificador: telefone,
       usuarioId: usuario.id,

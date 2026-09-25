@@ -2,6 +2,7 @@ import { downloadMediaMessage } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
 import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
 import { foiEnviadoPeloRelay, comandoJaProcessado, marcarComandoProcessado } from "./ids-relay.js";
+import { extrairSoTelefones, extrairCartoesDeContato, guardarColagem, retirarContextoDeColagem, comContexto } from "./colagem-contatos.js";
 
 // Números autorizados a dar comando (voz, texto ou PDF) pro agente de IA —
 // só dígitos, com DDI, ver .env.example. Vale nas duas direções: mensagem
@@ -121,12 +122,33 @@ export function ligarRelayDeComandoAgente(sock) {
         if (comandoJaProcessado(msg.key.id)) continue;
         marcarComandoProcessado(msg.key.id);
 
+        // Número(s) ou cartão de contato colado SOZINHO não é comando (rotina
+        // de prospecção — ver colagem-contatos.js): só guarda, sem chamar o
+        // agente, e segue junto como contexto do próximo comando de verdade.
+        const semMidia = !audioMessage && !documentMessage && !imageMessage;
+        const colados = semMidia ? extrairSoTelefones(texto) || extrairCartoesDeContato(msg) : null;
+        if (colados) {
+          guardarColagem(telefone, colados);
+          console.log(`[relay-comando-agente] ${colados.length} contato(s) colado(s) por ${telefone} — não é comando, guardado como contexto por 10 min.`);
+          continue;
+        }
+        // Só consome a colagem guardada quando a mensagem vai MESMO pro
+        // agente — OFX é importação direta, e reação/figurinha/mensagem sem
+        // conteúdo não chama ninguém (não pode "gastar" o contexto).
+        const vaiProAgente = !ehOfx && !!(audioMessage || documentMessage || imageMessage || texto);
+        const contexto = vaiProAgente ? retirarContextoDeColagem(telefone) : null;
+
         if (audioMessage) {
           console.log(`[relay-comando-agente] Nota de voz de comando recebida (${telefone}), baixando e transcrevendo...`);
           const buffer = await downloadMediaMessage(msg, "buffer", {});
           const resultado = await chamarApi("/api/agente/comando-audio", {
             method: "POST",
-            body: JSON.stringify({ telefone, audioBase64: buffer.toString("base64"), mimetype: audioMessage.mimetype || "audio/ogg" }),
+            body: JSON.stringify({
+              telefone,
+              audioBase64: buffer.toString("base64"),
+              mimetype: audioMessage.mimetype || "audio/ogg",
+              contexto: contexto || undefined,
+            }),
           });
           console.log(`[relay-comando-agente] Comando processado: "${resultado.transcricao}" -> ${resultado.resposta}`);
         } else if (ehPdf) {
@@ -136,7 +158,7 @@ export function ligarRelayDeComandoAgente(sock) {
             method: "POST",
             body: JSON.stringify({
               telefone,
-              texto: texto || undefined,
+              texto: comContexto(contexto, texto),
               anexoPdf: { base64: buffer.toString("base64"), nomeArquivo: documentMessage.fileName || "documento.pdf" },
             }),
           });
@@ -165,7 +187,7 @@ export function ligarRelayDeComandoAgente(sock) {
             method: "POST",
             body: JSON.stringify({
               telefone,
-              texto: texto || undefined,
+              texto: comContexto(contexto, texto),
               anexoArquivo: {
                 base64: buffer.toString("base64"),
                 nomeArquivo: documentMessage.fileName || "arquivo",
@@ -181,7 +203,7 @@ export function ligarRelayDeComandoAgente(sock) {
             method: "POST",
             body: JSON.stringify({
               telefone,
-              texto: texto || undefined,
+              texto: comContexto(contexto, texto),
               anexoImagem: { base64: buffer.toString("base64"), mimetype: imageMessage.mimetype || "image/jpeg" },
             }),
           });
@@ -190,7 +212,7 @@ export function ligarRelayDeComandoAgente(sock) {
           console.log(`[relay-comando-agente] Comando de texto recebido (${telefone}): "${texto.slice(0, 60)}"`);
           const resultado = await chamarApi("/api/agente/comando-whatsapp", {
             method: "POST",
-            body: JSON.stringify({ telefone, texto }),
+            body: JSON.stringify({ telefone, texto: comContexto(contexto, texto) }),
           });
           console.log(`[relay-comando-agente] Comando processado -> ${resultado.resposta}`);
         }

@@ -1,6 +1,9 @@
 import { downloadMediaMessage, getContentType } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
 import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
+import { extrairSoTelefones, extrairCartoesDeContato, ehProprioNumero } from "./colagem-contatos.js";
+
+const TIPOS_TEXTO_OU_CONTATO = new Set(["conversation", "extendedTextMessage", "contactMessage", "contactsArrayMessage"]);
 
 // Limite pensado pro tamanho que a hospedagem do CRM aceita num POST só
 // (base64 infla o tamanho em ~33%, e isso tudo vai num único corpo JSON) —
@@ -141,6 +144,19 @@ export function ligarRelayDeEntrada(sock) {
       try {
         const telefone = extrairTelefone(msg.key);
         if (!telefone || !msg.key?.id) continue;
+
+        // Número(s) ou cartão de contato colado no "Mensagens para mim" da
+        // própria Legaus (rotina de prospecção — ver colagem-contatos.js)
+        // não vira mensagem no CRM. Só texto/contato puro: foto com legenda
+        // continua indo normalmente.
+        if (
+          msg.key.fromMe &&
+          ehProprioNumero(telefone) &&
+          TIPOS_TEXTO_OU_CONTATO.has(getContentType(msg.message)) &&
+          (extrairSoTelefones(extrairTexto(msg)) || extrairCartoesDeContato(msg))
+        ) {
+          continue;
+        }
 
         const contatoCompartilhado = extrairContatoCompartilhado(msg);
         const tipoMidia = contatoCompartilhado ? null : getContentType(msg.message);
