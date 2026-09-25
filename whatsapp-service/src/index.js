@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./log-sem-chaves.js";
 import fs from "node:fs";
 import pino from "pino";
 import qrcodeTerminal from "qrcode-terminal";
@@ -385,7 +386,12 @@ async function conectar() {
           "A sessão foi desconectada pelo celular (ou removida em Aparelhos conectados). Precisa parear de novo — sem isso, mensagens não chegam nem saem.",
           { prioridade: "urgent", tag: "rotating_light" },
         );
-        process.exit(1);
+        // Código próprio (78) pra este caso: o PM2 está configurado com
+        // stop_exit_codes: [78] (ver ecosystem.config.cjs no servidor) e NÃO
+        // religa. Religar não adianta nada — a sessão só volta pareando de
+        // novo — e foi religando sem parar que nasceu o loop de 7h na VPS
+        // (2.522 reinícios pedindo código de pareamento ao WhatsApp).
+        process.exit(78);
       }
       escreverEstado("reconectando");
       agendarReconexao();
