@@ -274,6 +274,26 @@ async function conectar() {
     // aparelhos vinculados continuaram funcionando normalmente o tempo
     // todo). Desligar isso evita a causa, não só o sintoma.
     fireInitQueries: false,
+    // Desliga o "placeholder resend" (pedir ao celular, via mensagem peer,
+    // pra reenviar o conteúdo de uma mensagem que não abriu). Achado ao vivo
+    // em 2026-09-25, reproduzido 3 vezes: depois de reconectar, o WhatsApp
+    // reentrega mensagens de outro aparelho da conta que já tinham sido
+    // abertas ("Key used already") -> 5s depois o Baileys 6.7 manda o pedido
+    // de reenvio pro celular endereçado pelo NÚMERO (creds.me.id), mas o
+    // resto da conversa com os próprios aparelhos é pelo LID -> sem sessão
+    // pelo número, cria uma nova (pkmsg) -> o celular passa a usar essa
+    // sessão nova e tudo que ele manda chega pelo LID com "Bad MAC" / "No
+    // matching sessions", em loop, até parear de novo. Com o cache sempre
+    // dizendo "já pedi", requestPlaceholderResend sai no começo e a
+    // recuperação fica só com o retry receipt normal do Signal, direto com o
+    // aparelho que mandou. Revisitar quando atualizar pro Baileys 7 (que
+    // reescreveu o tratamento de LID).
+    placeholderResendCache: {
+      get: () => true,
+      set: () => {},
+      del: () => {},
+      flushAll: () => {},
+    },
   });
   sockAtual = sock;
 
