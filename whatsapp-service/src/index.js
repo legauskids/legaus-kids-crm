@@ -162,8 +162,21 @@ function iniciarWatchdog(sock) {
 }
 
 /**
+ * Pareado de verdade = `registered` OU `account`. Achado ao vivo em
+ * 2026-09-24 (primeiro pareamento por QR no servidor da Legaus): o Baileys
+ * só marca `registered = true` no pareamento por CÓDIGO (messages-recv.js,
+ * etapa companion_finish). No pareamento por QR, o `pair-success` grava
+ * `account`/`me` mas nunca `registered` — checar só `registered` fazia o
+ * 515 logo depois de escanear o QR apagar a sessão que tinha acabado de
+ * dar certo. `account` é gravado pelo `pair-success` nos dois fluxos.
+ */
+function estaPareado(creds) {
+  return Boolean(creds?.registered || creds?.account);
+}
+
+/**
  * Só apaga auth/ se as credenciais NUNCA chegaram a se registrar de
- * verdade (`creds.registered`) — checagem pelo próprio estado persistido,
+ * verdade (`estaPareado`) — checagem pelo próprio estado persistido,
  * não por uma flag "cheguei a abrir a conexão nesta execução". Isso importa
  * porque, logo depois de um pareamento bem-sucedido (QR escaneado ou código
  * digitado), o WhatsApp fecha a conexão de propósito com stream-error 515
@@ -176,7 +189,7 @@ function iniciarWatchdog(sock) {
  * ou dados realmente corrompidos no meio do processo).
  */
 function limparAuthSeNaoRegistrado() {
-  if (credsAtuais && !credsAtuais.registered && fs.existsSync(PASTA_AUTH)) {
+  if (credsAtuais && !estaPareado(credsAtuais) && fs.existsSync(PASTA_AUTH)) {
     fs.rmSync(PASTA_AUTH, { recursive: true, force: true });
     console.warn("[whatsapp-service] Pareamento nunca completou — apagando e gerando um QR code/código novo.");
   }
@@ -276,7 +289,10 @@ async function conectar() {
   // vezes manualmente). Agora pede um novo periodicamente até conectar de
   // verdade, sem precisar reiniciar nada.
   let intervaloCodigo = null;
-  if (TELEFONE_PAREAMENTO && !state.creds.registered) {
+  // `estaPareado` e não só `registered`: numa sessão pareada por QR,
+  // `registered` fica false pra sempre, e pedir código aqui sobrescreveria
+  // `creds.me` de uma sessão que já funciona.
+  if (TELEFONE_PAREAMENTO && !estaPareado(state.creds)) {
     const pedirCodigo = async () => {
       try {
         const codigo = await sock.requestPairingCode(TELEFONE_PAREAMENTO);
