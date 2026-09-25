@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { mesmoTelefone, partesTelefone } from "@/lib/utils/telefone";
 
 // Busca "tipo Google" pro agente de IA — usa trigram (pg_trgm) do Postgres
 // pra tolerar erro de digitação, falta de hífen/espaço etc (ex: "PL010"
@@ -29,6 +30,24 @@ export async function buscarClientesSimilar(termo: string, limite = 8): Promise<
     ORDER BY GREATEST(similarity(nome, ${termo}), similarity(COALESCE("razaoSocial", ''), ${termo})) DESC
     LIMIT ${limite}
   `;
+}
+
+/**
+ * Busca contato pelo telefone em qualquer formato (com/sem 55, com/sem o 9
+ * extra, com/sem máscara) — ver lib/utils/telefone.ts. Pré-filtra no banco
+ * pelos 8 dígitos finais e confirma DDD em memória. Pedido de 2026-09-25:
+ * na rotina de prospecção o Marcos cola um número no WhatsApp e pergunta
+ * "esse contato já está salvo?", e o agente só sabia buscar por nome.
+ */
+export async function buscarClientesPorTelefone(telefone: string, limite = 8): Promise<ClienteSimilar[]> {
+  const partes = partesTelefone(telefone);
+  if (!partes) return [];
+  const candidatos = await prisma.contato.findMany({
+    where: { telefone: { endsWith: partes.final8 } },
+    select: { id: true, nome: true, razaoSocial: true, telefone: true, email: true, tipo: true },
+    take: 50,
+  });
+  return candidatos.filter((c) => c.telefone && mesmoTelefone(c.telefone, telefone)).slice(0, limite);
 }
 
 export type ProdutoSimilar = {

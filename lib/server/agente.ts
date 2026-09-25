@@ -34,6 +34,7 @@ import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/
 import { gerarPdfOrcamento } from "@/lib/server/pdf/orcamento-pdf";
 import {
   buscarClientesSimilar,
+  buscarClientesPorTelefone,
   buscarProdutosSimilar,
   buscarNegociosSimilarIds,
   buscarTarefasSimilarIds,
@@ -44,6 +45,7 @@ import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precifi
 import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
 import { listarContratos, criarContratoDeOrcamentoAntigo } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
+import { pareceTelefone } from "@/lib/utils/telefone";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
 import type { OrigemComando, StatusOrcamento } from "@prisma/client";
@@ -207,18 +209,61 @@ function parseDataHoraBrasilia(valor: string): Date {
   return data;
 }
 
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+/** Meia-noite (horário de Brasília) do dia "AAAA-MM-DD" — mesma regra do -03:00 fixo acima. */
+function inicioDoDiaBrasilia(dataIso: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataIso)) throw new Error("Data inválida — use AAAA-MM-DD.");
+  return new Date(`${dataIso}T00:00:00-03:00`);
+}
+
+/**
+ * Intervalo [inicio, fim) de um período nomeado ("hoje", "ontem", "semana",
+ * "mes") ou de datas explícitas, sempre com o dia começando à meia-noite de
+ * Brasília — o servidor (Vercel) roda em UTC, e "hoje" em UTC começa 21h do
+ * dia anterior aqui.
+ */
+function intervaloDoPeriodo(args: { periodo?: string; dataInicio?: string; dataFim?: string }): {
+  inicio: Date;
+  fim: Date;
+  descricao: string;
+} {
+  const agora = new Date();
+  const hojeIso = agora.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const hoje = inicioDoDiaBrasilia(hojeIso);
+  if (args.dataInicio) {
+    const inicio = inicioDoDiaBrasilia(args.dataInicio);
+    const fim = args.dataFim ? new Date(inicioDoDiaBrasilia(args.dataFim).getTime() + DIA_MS) : agora;
+    return { inicio, fim, descricao: `de ${args.dataInicio} até ${args.dataFim ?? "agora"}` };
+  }
+  switch (args.periodo) {
+    case "ontem":
+      return { inicio: new Date(hoje.getTime() - DIA_MS), fim: hoje, descricao: "ontem" };
+    case "semana":
+      return { inicio: new Date(hoje.getTime() - 6 * DIA_MS), fim: agora, descricao: "últimos 7 dias (incluindo hoje)" };
+    case "mes":
+      return { inicio: inicioDoDiaBrasilia(`${hojeIso.slice(0, 8)}01`), fim: agora, descricao: "este mês" };
+    default:
+      return { inicio: hoje, fim: agora, descricao: "hoje" };
+  }
+}
+
 const FERRAMENTAS: Ferramenta[] = [
   {
     name: "buscar_clientes",
     description:
-      "Busca clientes/contatos cadastrados por nome ou razão social — busca aproximada tipo Google, tolera erro de digitação e falta de acento/hífen. Use antes de criar ou editar algo vinculado a um cliente pra achar o ID certo.",
+      "Busca clientes/contatos cadastrados por nome, razão social OU telefone. Por nome é busca aproximada tipo Google (tolera erro de digitação e falta de acento/hífen). Por telefone aceita qualquer formato — com ou sem 55, com ou sem o 9 do celular, com ou sem máscara — e acha o cadastro mesmo que esteja gravado em outro formato. Use antes de criar ou editar algo vinculado a um cliente pra achar o ID certo, e pra responder se um número já está cadastrado.",
     input_schema: {
       type: "object",
-      properties: { termo: { type: "string", description: "Nome ou parte do nome do cliente" } },
+      properties: { termo: { type: "string", description: "Nome, parte do nome ou telefone do cliente" } },
       required: ["termo"],
     },
     async executar(args) {
       const { termo } = args as { termo: string };
+      if (pareceTelefone(termo)) {
+        const porTelefone = await buscarClientesPorTelefone(termo);
+        return porTelefone.length > 0 ? porTelefone : "Nenhum cliente cadastrado com esse telefone.";
+      }
       const clientes = await buscarClientesSimilar(termo);
       return clientes.length > 0 ? clientes : "Nenhum cliente encontrado com esse nome.";
     },
@@ -240,6 +285,20 @@ const FERRAMENTAS: Ferramenta[] = [
     },
     async executar(args) {
       const { nome, telefone } = args as { nome: string; telefone?: string };
+      // O mesmo número pode estar gravado em outro formato (com/sem 55, com/sem
+      // o 9 — o do WhatsApp vem sem o 9), e aí o índice único do telefone não
+      // pega: sem essa checagem, "cadastra esse como lead" num número colado
+      // criava um segundo cadastro da mesma pessoa.
+      if (telefone) {
+        const existentes = await buscarClientesPorTelefone(telefone, 3);
+        if (existentes.length > 0) {
+          return {
+            jaExiste: true,
+            clientes: existentes,
+            aviso: "Já existe cadastro com esse telefone — não criei outro. Use atualizar_cliente nesse cadastro (ex.: pra trocar o nome) em vez de criar um novo.",
+          };
+        }
+      }
       const contato = await criarContato({ nome, telefone: telefone || null, tipo: "CLIENTE" });
       return { id: contato.id, nome: contato.nome };
     },
@@ -1605,6 +1664,104 @@ const FERRAMENTAS: Ferramenta[] = [
       };
     },
   },
+  {
+    // Pedido de 2026-09-25 ("quantos leads entraram hoje?" — o agente não
+    // tinha como responder). "Lead" aqui são três sinais complementares:
+    // conversa nova de WhatsApp em que o CONTATO mandou a primeira mensagem
+    // (captação por campanha), contato cadastrado e negócio criado.
+    name: "resumo_leads",
+    description:
+      "Quantos leads/contatos novos entraram num período e quem são: conversas novas de WhatsApp iniciadas pelo contato (gente que chamou pela primeira vez), contatos cadastrados e negócios criados (por funil e origem). Use pra 'quantos leads entraram hoje/ontem/essa semana/esse mês' ou entre duas datas. Sem período = hoje.",
+    input_schema: {
+      type: "object",
+      properties: {
+        periodo: {
+          type: "string",
+          enum: ["hoje", "ontem", "semana", "mes"],
+          description: "semana = últimos 7 dias incluindo hoje; mes = do dia 1 do mês atual até agora",
+        },
+        dataInicio: { type: "string", description: "AAAA-MM-DD — alternativa a periodo, pra um intervalo específico" },
+        dataFim: { type: "string", description: "AAAA-MM-DD, inclusive (opcional; sem ela vai até agora)" },
+      },
+    },
+    async executar(args) {
+      const { inicio, fim, descricao } = intervaloDoPeriodo(args as { periodo?: string; dataInicio?: string; dataFim?: string });
+      const noPeriodo = { gte: inicio, lt: fim };
+      const LIMITE = 300;
+      const [conversas, contatos, negocios] = await Promise.all([
+        prisma.conversa.findMany({
+          where: { createdAt: noPeriodo },
+          orderBy: { createdAt: "desc" },
+          take: LIMITE,
+          select: {
+            createdAt: true,
+            contato: { select: { nome: true, telefone: true } },
+            mensagens: { orderBy: { enviadaEm: "asc" }, take: 1, select: { direcao: true } },
+          },
+        }),
+        prisma.contato.findMany({
+          where: { createdAt: noPeriodo },
+          orderBy: { createdAt: "desc" },
+          take: LIMITE,
+          select: { nome: true, telefone: true, tipo: true, createdAt: true },
+        }),
+        prisma.negocio.findMany({
+          where: { createdAt: noPeriodo },
+          orderBy: { createdAt: "desc" },
+          take: LIMITE,
+          select: {
+            titulo: true,
+            origem: true,
+            valorCentavos: true,
+            createdAt: true,
+            funil: { select: { nome: true } },
+            etapa: { select: { nome: true } },
+            contato: { select: { nome: true } },
+          },
+        }),
+      ]);
+      const quando = (d: Date) =>
+        d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      const contar = <T>(itens: T[], chave: (item: T) => string) =>
+        itens.reduce<Record<string, number>>((acc, item) => {
+          const k = chave(item);
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {});
+      const iniciadasPeloContato = conversas.filter((c) => c.mensagens[0]?.direcao === "ENTRADA");
+      return {
+        periodo: descricao,
+        conversas_novas_iniciadas_pelo_contato: {
+          total: iniciadasPeloContato.length,
+          mais_recentes: iniciadasPeloContato
+            .slice(0, 15)
+            .map((c) => ({ contato: c.contato.nome, telefone: c.contato.telefone, quando: quando(c.createdAt) })),
+        },
+        contatos_cadastrados: {
+          total: contatos.length,
+          por_tipo: contar(contatos, (c) => c.tipo),
+          mais_recentes: contatos.slice(0, 15).map((c) => ({ nome: c.nome, telefone: c.telefone, tipo: c.tipo, quando: quando(c.createdAt) })),
+        },
+        negocios_criados: {
+          total: negocios.length,
+          por_funil: contar(negocios, (n) => n.funil.nome),
+          por_origem: contar(negocios, (n) => n.origem || "sem origem"),
+          mais_recentes: negocios.slice(0, 15).map((n) => ({
+            titulo: n.titulo,
+            cliente: n.contato?.nome ?? "sem cliente",
+            funil: n.funil.nome,
+            etapa: n.etapa.nome,
+            origem: n.origem ?? "sem origem",
+            valor_reais: n.valorCentavos / 100,
+            quando: quando(n.createdAt),
+          })),
+        },
+        ...([conversas, contatos, negocios].some((lista) => lista.length === LIMITE)
+          ? { aviso: `Alguma das contagens bateu no limite de ${LIMITE} itens — o total real pode ser maior; use um período menor.` }
+          : {}),
+      };
+    },
+  },
 ];
 
 function paraToolAnthropic(f: Ferramenta): Anthropic.Tool {
@@ -1631,6 +1788,9 @@ Regras:
 - Enviar orçamento por WhatsApp ou e-mail já manda o PDF de verdade anexado, automaticamente — não precisa de um comando separado pra "mandar em PDF". Se o Marcos pedir só o link/arquivo pra ver aqui no chat mesmo (sem mandar pro cliente), use obter_link_pdf_orcamento.
 - Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
+- Pra saber se um número já está cadastrado, ou achar um cliente pelo telefone, use buscar_clientes com o telefone como termo (aceita qualquer formato: com ou sem 55, com ou sem o 9, com máscara). Se criar_cliente responder "jaExiste", não tente criar de novo: use o cadastro existente (atualize com atualizar_cliente, ex.: pra pôr o nome).
+- Às vezes o comando começa com "[Contexto: contato(s) colado(s) no WhatsApp logo antes deste comando: ...]" — são números (ou cartões de contato) que o Marcos colou no WhatsApp antes de mandar o comando. "Esse contato", "esses números", "ele", "cadastra esse" etc. se referem a eles. Se o comando não tiver relação com esses números, ignore o contexto.
+- Pra perguntas sobre entrada de leads ("quantos leads entraram hoje", "quem chamou essa semana"), use resumo_leads.
 - Se o Marcos disser que um cliente/contato "está duplicado" ou "é o mesmo", use mesclar_clientes (nunca crie/edite tentando contornar) — ela junta o histórico dos dois (conversas, negócios, orçamentos, tarefas, notas fiscais) no que for mantido e apaga o duplicado. Pra apagar um cadastro de cliente sem nada vinculado, use excluir_cliente. Antes de dizer que não consegue fazer alguma ação de cliente/contato (corrigir, editar, apagar, mesclar), confira se não existe ferramenta pra isso — você tem criar_cliente, atualizar_cliente, excluir_cliente e mesclar_clientes.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
 - Se vier um ORÇAMENTO ANTIGO anexado (PDF ou foto) pedindo pra "virar contrato"/"transformar em contrato" — um orçamento de venda que nunca entrou no CRM —, use gerar_contrato_de_orcamento_antigo. Ela cria o negócio E o contrato de uma vez. Pergunte qual empresa emitiu (Legaus Kids ou Idezza) se não estiver claro no pedido ou no documento.
