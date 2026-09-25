@@ -1,6 +1,7 @@
 import { downloadMediaMessage } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
-import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
+import { resolverTelefoneDaConversa } from "./lid-cache.js";
+import { mesmoTelefone } from "./telefone.js";
 import { foiEnviadoPeloRelay, comandoJaProcessado, marcarComandoProcessado } from "./ids-relay.js";
 import { extrairSoTelefones, extrairCartoesDeContato, guardarColagem, retirarContextoDeColagem, comContexto } from "./colagem-contatos.js";
 
@@ -24,28 +25,17 @@ const TELEFONES_AUTORIZADOS = new Set(
     .filter(Boolean),
 );
 
-// Mesma resolução de LID que relay-entrada.js já faz (ver o comentário
-// detalhado lá) — sem isso, qualquer mensagem endereçada por LID em vez de
-// telefone puro (comum em self-chat e cada vez mais comum em geral) nunca
-// batia com WHATSAPP_COMANDO_TELEFONES e o comando era ignorado em
-// silêncio, mesmo vindo de um número autorizado de verdade.
-function extrairTelefoneRemetente(key) {
-  if (key?.senderPn && key?.senderLid) registrarMapeamento(key.senderLid, key.senderPn);
-  if (key?.participantPn && key?.participantLid) registrarMapeamento(key.participantLid, key.participantPn);
-
-  const jid = key?.senderPn || key?.remoteJid;
-  if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return null;
-
-  if (jid.endsWith("@lid")) {
-    const resolvido = resolverTelefonePorLid(jid);
-    if (!resolvido) {
-      console.warn(`[relay-comando-agente] LID ${jid} ainda não tem telefone real conhecido — não dá pra checar autorização, ignorando como comando.`);
-      return null;
-    }
-    return resolvido;
+// Mesma resolução de LID que relay-entrada.js já faz (ver lid-cache.js) —
+// sem isso, qualquer mensagem endereçada por LID em vez de telefone puro
+// (comum em self-chat e cada vez mais comum em geral) nunca batia com
+// WHATSAPP_COMANDO_TELEFONES e o comando era ignorado em silêncio, mesmo
+// vindo de um número autorizado de verdade.
+async function extrairTelefoneRemetente(sock, key) {
+  const telefone = await resolverTelefoneDaConversa(sock, key);
+  if (!telefone && key?.remoteJid?.endsWith("@lid")) {
+    console.warn(`[relay-comando-agente] LID ${key.remoteJid} ainda não tem telefone real conhecido — não dá pra checar autorização, ignorando como comando.`);
   }
-
-  return jid.split("@")[0];
+  return telefone;
 }
 
 // Palavra-gatilho alternativa: manter WHATSAPP_COMANDO_TELEFONES em dia com
@@ -61,7 +51,11 @@ function extrairTelefoneRemetente(key) {
 const PALAVRA_GATILHO = /\bagente\b/i;
 
 function autorizado(telefone, { fromMe, texto }) {
-  if (TELEFONES_AUTORIZADOS.has(telefone)) return true;
+  // Compara com e sem o 9 extra: o Baileys 7 devolve o formato interno do
+  // WhatsApp (sem o 9), e o .env pode ter qualquer um dos dois.
+  for (const autorizadoNaLista of TELEFONES_AUTORIZADOS) {
+    if (mesmoTelefone(telefone, autorizadoNaLista)) return true;
+  }
   if (!fromMe && texto && PALAVRA_GATILHO.test(texto)) return true;
   return false;
 }
@@ -88,7 +82,7 @@ export function ligarRelayDeComandoAgente(sock) {
         // ao vivo em 2026-09-05 com "Até mais!" se repetindo sem parar).
         if (msg.key.fromMe && foiEnviadoPeloRelay(msg.key.id)) continue;
 
-        const telefone = extrairTelefoneRemetente(msg.key);
+        const telefone = await extrairTelefoneRemetente(sock, msg.key);
         if (!telefone) continue;
 
         const audioMessage = msg.message?.audioMessage;

@@ -1,6 +1,6 @@
 import { downloadMediaMessage, getContentType } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
-import { registrarMapeamento, resolverTelefonePorLid } from "./lid-cache.js";
+import { resolverTelefoneDaConversa } from "./lid-cache.js";
 import { extrairSoTelefones, extrairCartoesDeContato, ehProprioNumero } from "./colagem-contatos.js";
 
 const TIPOS_TEXTO_OU_CONTATO = new Set(["conversation", "extendedTextMessage", "contactMessage", "contactsArrayMessage"]);
@@ -93,38 +93,24 @@ function extrairContatoCompartilhado(msg) {
  * sentido de 15 dígitos em vez do telefone de verdade (visto ao vivo em
  * 2026-08-24 e de novo em 2026-09-03/04).
  *
- * `key.senderPn` resolve o REMETENTE (`key.senderLid`) — funciona bem pra
- * mensagem recebida (`fromMe: false`), onde o remetente É o contato que
- * importa. Mas pra mensagem ENVIADA por nós (`fromMe: true`), o que
- * importa é o DESTINATÁRIO (`remoteJid`), e `senderPn` não ajuda em nada
- * nesse caso (resolve a nossa própria identidade, que já conhecemos) —
- * foi exatamente esse caso (mandar do WhatsApp da Legaus Kids pro próprio
+ * Pra mensagem ENVIADA por nós (`fromMe: true`), o que importa é o
+ * DESTINATÁRIO (`remoteJid`), não o remetente (que somos nós) — foi
+ * exatamente esse caso (mandar do WhatsApp da Legaus Kids pro próprio
  * número pessoal) que continuou quebrado mesmo com o fix de 2026-08-24.
- * Por isso, quando `remoteJid` termina em "@lid", usa o cache aprendido
- * em lid-cache.js (alimentado pela sincronização de contatos do Baileys)
- * pra resolver o telefone de verdade nas duas direções.
+ * A resolução LID -> telefone das duas direções fica em lid-cache.js
+ * (resolverTelefoneDaConversa — desde o Baileys 7, também com o que o
+ * próprio WhatsApp informa na mensagem e no mapeamento interno).
  *
  * Se nada resolver, devolve null de propósito — em vez de criar um
  * "contato" fantasma com o LID cru como telefone (o que gerava um número
  * inválido pro qual nenhuma mensagem futura conseguia ser entregue).
  */
-function extrairTelefone(key) {
-  if (key?.senderPn && key?.senderLid) registrarMapeamento(key.senderLid, key.senderPn);
-  if (key?.participantPn && key?.participantLid) registrarMapeamento(key.participantLid, key.participantPn);
-
-  const jid = key?.senderPn || key?.remoteJid;
-  if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return null;
-
-  if (jid.endsWith("@lid")) {
-    const resolvido = resolverTelefonePorLid(jid);
-    if (!resolvido) {
-      console.warn(`[relay-entrada] Ignorando mensagem — LID ${jid} ainda não tem telefone real conhecido (sincronização de contatos ainda não chegou a esse contato).`);
-      return null;
-    }
-    return resolvido;
+async function extrairTelefone(sock, key) {
+  const telefone = await resolverTelefoneDaConversa(sock, key);
+  if (!telefone && key?.remoteJid?.endsWith("@lid")) {
+    console.warn(`[relay-entrada] Ignorando mensagem — LID ${key.remoteJid} ainda não tem telefone real conhecido.`);
   }
-
-  return jid.split("@")[0];
+  return telefone;
 }
 
 /**
@@ -142,7 +128,7 @@ export function ligarRelayDeEntrada(sock) {
 
     for (const msg of messages) {
       try {
-        const telefone = extrairTelefone(msg.key);
+        const telefone = await extrairTelefone(sock, msg.key);
         if (!telefone || !msg.key?.id) continue;
 
         // Número(s) ou cartão de contato colado no "Mensagens para mim" da

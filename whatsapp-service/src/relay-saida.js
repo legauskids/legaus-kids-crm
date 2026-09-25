@@ -95,25 +95,30 @@ async function processarFila(sock) {
  * pra esse JID errado nunca daria erro (o número pode nem existir, ou
  * existir como outra coisa) — só nunca chegava a lugar nenhum.
  *
- * `result.lid`, por outro lado, veio consistente com o LID que já
- * tínhamos resolvido por outro caminho (ver lid-cache.js) — não passa
- * pela mesma normalização de telefone, então usa o LID como destino
- * quando disponível, e só cai pro telefone (como veio, sem reformatar)
- * quando não há LID pra esse contato.
+ * O LID, por outro lado, não passa pela mesma normalização de telefone,
+ * então é o destino usado quando disponível; só cai pro telefone (como
+ * veio, sem reformatar) quando não há LID pra esse contato.
+ *
+ * Baileys 7 (2026-09-25): onWhatsApp não devolve mais o LID. Ele só
+ * confirma que o número existe e devolve o JID no formato interno do
+ * WhatsApp; o LID vem do mapeamento do próprio Baileys
+ * (signalRepository.lidMapping.getLIDForPN), que consulta o WhatsApp se
+ * ainda não souber.
  */
 async function resolverJidParaEnvio(sock, telefone) {
   const jidIngenuo = `${telefone}@s.whatsapp.net`;
   try {
     const [resultado] = (await sock.onWhatsApp(telefone)) ?? [];
-    console.log(`[relay-saida] onWhatsApp(${telefone}) ->`, JSON.stringify(resultado));
-    if (resultado?.exists && resultado.lid) {
+    const lid = resultado?.exists ? await sock.signalRepository.lidMapping.getLIDForPN(resultado.jid) : null;
+    console.log(`[relay-saida] onWhatsApp(${telefone}) ->`, JSON.stringify(resultado), `| LID: ${lid}`);
+    if (lid) {
       // Alimenta o mesmo cache que relay-entrada.js usa pra resolver
       // mensagem RECEBIDA — sem isso, o LID só ficava conhecido no sentido
       // de envio, e a próxima mensagem que esse mesmo contato mandasse de
       // volta continuava sem telefone conhecido (visto ao vivo logo depois
       // desse fix: mensagem da Jessica ainda foi ignorada uma vez).
-      registrarMapeamento(resultado.lid, telefone);
-      return resultado.lid;
+      registrarMapeamento(lid, telefone);
+      return lid;
     }
   } catch (erro) {
     console.error(`[relay-saida] Falha ao resolver JID de ${telefone} via onWhatsApp, usando o telefone direto:`, erro.message);

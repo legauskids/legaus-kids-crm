@@ -1,3 +1,5 @@
+import { mesmoTelefone } from "./telefone.js";
+
 // Rotina de prospecção (pedido do Marcos em 2026-09-25): ele e a Dani colam
 // números de telefone, um atrás do outro, no "Mensagens para mim" do
 // WhatsApp da Legaus — ex. "(51) 99771-5704", às vezes dezenas seguidas.
@@ -119,17 +121,9 @@ export function comContexto(contexto, texto) {
   return [contexto, texto].filter(Boolean).join("\n\n") || undefined;
 }
 
-// Mesmo número com e sem o 9 extra do celular (o JID interno do WhatsApp
-// de números antigos não tem o 9; o .env tem) — compara DDD + 8 finais.
-function chaveTelefone(digitos) {
-  let d = (digitos || "").replace(/\D/g, "");
-  if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
-  return d.length >= 10 ? `${d.slice(0, 2)}${d.slice(-8)}` : d;
-}
-
-const PROPRIO_NUMERO = chaveTelefone(process.env.WHATSAPP_PAREAMENTO_TELEFONE || "");
+const PROPRIO_NUMERO = process.env.WHATSAPP_PAREAMENTO_TELEFONE || "";
 
 /** A conversa é o "Mensagens para mim" do próprio WhatsApp da Legaus? */
 export function ehProprioNumero(telefone) {
-  return !!PROPRIO_NUMERO && chaveTelefone(telefone) === PROPRIO_NUMERO;
+  return !!PROPRIO_NUMERO && mesmoTelefone(telefone, PROPRIO_NUMERO);
 }

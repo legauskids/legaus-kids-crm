@@ -203,21 +203,16 @@ function limparAuthSeNaoRegistrado() {
  * mandando mensagem do WhatsApp da Legaus Kids pra si mesmo — e é
  * exatamente esse tipo de conversa (self-chat entre dois números do
  * mesmo ecossistema) que mais aparece endereçada por LID em vez de
- * telefone. Como já SABEMOS o telefone real, dá pra resolver o LID dele
- * de forma proativa aqui (telefone -> LID é a direção que o Baileys
- * suporta de verdade, via onWhatsApp/USync) em vez de esperar passivamente
- * a sincronização de contatos aprender essa correspondência sozinha.
+ * telefone. Como já SABEMOS o telefone real, registra o LID dele de forma
+ * proativa aqui em vez de esperar passivamente a sincronização de contatos
+ * aprender essa correspondência sozinha — com o telefone do .env (com o 9),
+ * que é o identificador que o CRM e o histórico do agente já usam. Desde o
+ * Baileys 7 o próprio LID já vem em sock.user.lid (antes precisava de
+ * onWhatsApp, que parou de devolver LID).
  */
-async function resolverLidDoProprioNumero(sock) {
-  if (!TELEFONE_PAREAMENTO) return;
-  try {
-    const resultados = await sock.onWhatsApp(TELEFONE_PAREAMENTO);
-    for (const r of resultados ?? []) {
-      if (r.lid) registrarMapeamento(r.lid, TELEFONE_PAREAMENTO);
-    }
-  } catch (erro) {
-    console.error("[whatsapp-service] Falha ao resolver LID do próprio número:", erro.message);
-  }
+function resolverLidDoProprioNumero(sock) {
+  if (!TELEFONE_PAREAMENTO || !sock.user?.lid) return;
+  registrarMapeamento(sock.user.lid, TELEFONE_PAREAMENTO);
 }
 
 function agendarReconexao() {
@@ -286,8 +281,11 @@ async function conectar() {
     // matching sessions", em loop, até parear de novo. Com o cache sempre
     // dizendo "já pedi", requestPlaceholderResend sai no começo e a
     // recuperação fica só com o retry receipt normal do Signal, direto com o
-    // aparelho que mandou. Revisitar quando atualizar pro Baileys 7 (que
-    // reescreveu o tratamento de LID).
+    // aparelho que mandou. No Baileys 7 o pedido ainda sai endereçado pelo
+    // número, mas a criação de sessão passou a converter número -> LID
+    // (assertSessions), o que em tese evita o problema; fica desligado
+    // mesmo assim até ser testado com calma — a correção é comprovada e a
+    // resposta do celular é tratada normalmente com o cache devolvendo true.
     placeholderResendCache: {
       get: () => true,
       set: () => {},
@@ -305,6 +303,9 @@ async function conectar() {
   // telefone (ver lid-cache.js pro porquê disso ser necessário).
   sock.ev.on("contacts.upsert", aprenderDeContatos);
   sock.ev.on("contacts.update", aprenderDeContatos);
+  // Baileys 7: o WhatsApp avisa sempre que descobre um par LID <-> telefone
+  // (mensagem nova, sincronização) — é a fonte mais direta pro lid-cache.
+  sock.ev.on("lid-mapping.update", ({ lid, pn }) => registrarMapeamento(lid, pn));
 
   // Pareamento por código (alternativa ao QR). Diferente do QR — que o
   // próprio Baileys renova sozinho a cada conexão.update —, um código pedido
