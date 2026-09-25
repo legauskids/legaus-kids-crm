@@ -3,7 +3,9 @@ import fs from "node:fs";
 import pino from "pino";
 import qrcodeTerminal from "qrcode-terminal";
 import qrcode from "qrcode";
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
+import { useAuthStateAtomico } from "./auth-state-atomico.js";
+import { ligarDetectorDeSessaoQuebrada } from "./saude-sessao.js";
 import { ligarRelayDeEntrada } from "./relay-entrada.js";
 import { iniciarRelayDeSaida } from "./relay-saida.js";
 import { ligarRelayDeComandoAgente } from "./relay-comando-agente.js";
@@ -249,7 +251,9 @@ function agendarReconexao() {
 }
 
 async function conectar() {
-  const { state, saveCreds } = await useMultiFileAuthState(PASTA_AUTH);
+  // Gravação atômica em vez do useMultiFileAuthState do Baileys — ver
+  // auth-state-atomico.js (mesma pasta e mesmos arquivos, compatível).
+  const { state, saveCreds } = await useAuthStateAtomico(PASTA_AUTH);
   credsAtuais = state.creds;
   // Busca a versão mais recente do protocolo do WhatsApp Web em vez de usar
   // a que veio empacotada no Baileys — versão desatualizada é uma causa
@@ -338,6 +342,7 @@ async function conectar() {
       ligarRelayDeEntrada(sock);
       iniciarRelayDeSaida(sock);
       ligarRelayDeComandoAgente(sock);
+      ligarDetectorDeSessaoQuebrada(sock);
       iniciarWatchdog(sock);
       resolverLidDoProprioNumero(sock);
     }
