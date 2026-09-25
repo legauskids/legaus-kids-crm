@@ -17,6 +17,12 @@
 const VALIDADE_MS = 10 * 60 * 1000;
 // Teto pro contexto não virar uma lista enorme depois de uma colagem em massa.
 const MAXIMO_NO_CONTEXTO = 20;
+// Só a ÚLTIMA leva de colagem vai junto com o comando: o último colado e os
+// que vieram grudados nele (até 30s entre um e outro). Visto no primeiro
+// teste real em 2026-09-25: 2 números colados, 1 minuto depois 1 contato
+// avulso + "salve este contato como Caroline" — o agente recebeu os 3 e
+// teve que perguntar qual era; a intenção era só o avulso, logo antes.
+const INTERVALO_MAXIMO_NA_LEVA_MS = 30 * 1000;
 
 /**
  * Número de telefone brasileiro plausível, com ou sem 55 na frente:
@@ -85,14 +91,20 @@ export function guardarColagem(remetente, itens) {
 }
 
 /**
- * Tira (e esquece) o que foi colado por esse remetente nos últimos 10 min e
- * devolve já como texto de contexto pro agente — ou null se não houver nada.
+ * Tira (e esquece) o que foi colado por esse remetente e devolve a última
+ * leva (ver INTERVALO_MAXIMO_NA_LEVA_MS), dos últimos 10 min, já como texto
+ * de contexto pro agente — ou null se não houver nada.
  */
 export function retirarContextoDeColagem(remetente) {
   const agora = Date.now();
-  const validas = (colagens.get(remetente) || []).filter((c) => agora - c.em <= VALIDADE_MS);
+  const recentes = (colagens.get(remetente) || []).filter((c) => agora - c.em <= VALIDADE_MS);
   colagens.delete(remetente);
-  if (!validas.length) return null;
+  if (!recentes.length) return null;
+  let inicioDaLeva = recentes.length - 1;
+  while (inicioDaLeva > 0 && recentes[inicioDaLeva].em - recentes[inicioDaLeva - 1].em <= INTERVALO_MAXIMO_NA_LEVA_MS) {
+    inicioDaLeva--;
+  }
+  const validas = recentes.slice(inicioDaLeva);
   const itens = validas.slice(-MAXIMO_NO_CONTEXTO).map((c) => c.item);
   const cortados = validas.length - itens.length;
   return (
