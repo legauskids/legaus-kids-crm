@@ -21,13 +21,21 @@ const LIMITE_FALHAS_NA_JANELA = 20;
 // Episódio encerrado depois de tanto tempo sem nenhuma falha — só então um
 // novo loop gera um novo alerta (senão vira spam a cada falha).
 const SILENCIO_ENCERRA_EPISODIO_MS = 30 * 60 * 1000;
+// Logo depois de conectar, o WhatsApp reentrega mensagens já abertas antes
+// (inclusive as que este servidor mesmo mandou) e elas falham em rajada —
+// visto na troca pro Baileys 7 em 2026-09-25: 22 mensagens em 30s, depois
+// nada, e o alerta disparou à toa. Falhas nesses primeiros minutos não
+// contam; um loop de verdade continua depois disso e é pego igual.
+const CARENCIA_APOS_CONECTAR_MS = 2 * 60 * 1000;
 
 let falhasRecentes = [];
 let ultimaFalhaEm = 0;
 let alertaEnviado = false;
+let conectadoEm = 0;
 
 function registrarFalha() {
   const agora = Date.now();
+  if (agora - conectadoEm < CARENCIA_APOS_CONECTAR_MS) return;
   if (alertaEnviado && agora - ultimaFalhaEm > SILENCIO_ENCERRA_EPISODIO_MS) {
     alertaEnviado = false;
   }
@@ -48,7 +56,9 @@ function registrarFalha() {
   }
 }
 
+// Chamado no connection "open" (index.js) — a carência conta a partir daqui.
 export function ligarDetectorDeSessaoQuebrada(sock) {
+  conectadoEm = Date.now();
   sock.ev.on("messages.upsert", ({ messages }) => {
     for (const msg of messages) {
       if (msg.messageStubType !== proto.WebMessageInfo.StubType.CIPHERTEXT) continue;
