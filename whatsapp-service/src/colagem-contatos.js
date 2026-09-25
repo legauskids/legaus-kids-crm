@@ -20,8 +20,11 @@ const MAXIMO_NO_CONTEXTO = 20;
 
 /**
  * Número de telefone brasileiro plausível, com ou sem 55 na frente:
- * DDD válido (11-99, sem zero) + celular (9 + 8 dígitos) ou fixo (8 dígitos
- * começando com 2-5). Só pra não confundir com valor, código, protocolo etc.
+ * DDD válido (11-99, sem zero) + celular (9 + 8 dígitos) ou 8 dígitos
+ * começando com 2-9 — fixo (2-5) ou celular escrito no formato antigo, sem
+ * o 9 extra (6-9), que ainda aparece muito (ex.: "55 9221-2473", visto no
+ * primeiro teste em 2026-09-25). Só pra não confundir com valor, código,
+ * protocolo etc.
  */
 function ehTelefoneBrasileiro(digitos) {
   let d = digitos;
@@ -30,7 +33,7 @@ function ehTelefoneBrasileiro(digitos) {
   if (!/^[1-9][1-9]/.test(d)) return false;
   const assinante = d.slice(2);
   if (assinante.length === 9) return assinante.startsWith("9");
-  return /^[2-5]/.test(assinante);
+  return /^[2-9]/.test(assinante);
 }
 
 /**
