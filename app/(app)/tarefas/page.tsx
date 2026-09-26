@@ -38,6 +38,8 @@ export default async function TarefasPage({ searchParams }: { searchParams: Prom
         funilId: t.negocio?.funilId ?? null,
         etapaId: t.negocio?.etapaId ?? null,
         checklist: t.checklist.map((c) => ({ id: c.id, texto: c.texto, concluido: c.concluido })),
+        reuniaoId: t.reuniao?.id ?? null,
+        reuniaoTitulo: t.reuniao?.titulo ?? null,
       }))}
       funis={funis.map((f) => ({
         id: f.id,

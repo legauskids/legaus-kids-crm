@@ -78,6 +78,12 @@ export function TaskCard({
         </Link>
       )}
 
+      {tarefa.reuniaoId && (
+        <Link href={`/reunioes/${tarefa.reuniaoId}#compromissos`} className="block text-xs font-medium text-primary hover:underline">
+          Compromisso · {tarefa.reuniaoTitulo}
+        </Link>
+      )}
+
       {tarefa.descricao && <p className="text-xs text-muted-foreground">{tarefa.descricao}</p>}
 
       {totalChecklist > 0 && (

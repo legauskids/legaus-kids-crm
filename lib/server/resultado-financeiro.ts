@@ -64,7 +64,8 @@ export function resolverPeriodoFinanceiro(params: { mes?: string; ano?: string }
   };
 }
 
-async function carregarTransacoes(inicio: Date, fim: Date): Promise<TransacaoParaResultado[]> {
+/** Lançamentos do extrato em [inicio, fim) com o rateio — também usado pelo painel de reunião. */
+export async function carregarTransacoes(inicio: Date, fim: Date): Promise<TransacaoParaResultado[]> {
   const transacoes = await prisma.transacaoBancaria.findMany({
     where: { data: { gte: inicio, lt: fim } },
     select: {

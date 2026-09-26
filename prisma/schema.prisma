@@ -102,6 +102,8 @@ model User {
   extratosImportados    ExtratoBancarioImportacao[] @relation("ImportadorExtrato")
   transacoesConciliadas TransacaoBancaria[]         @relation("ConciliadorTransacao")
   simulacoesFinanceiras SimulacaoFinanceira[]       @relation("CriadorSimulacao")
+  reunioesCriadas       Reuniao[]                   @relation("CriadorReuniao")
+  opinioesPauta         OpiniaoPauta[]
 }
 
 enum OrigemComando {
@@ -409,11 +411,18 @@ model Tarefa {
   status        StatusTarefa @default(A_FAZER)
   descricao     String?
   automatica    Boolean      @default(false)
+  // Compromisso firmado numa reunião de gestão (o quê = titulo, quem =
+  // responsavel, quando = prazo) — continua sendo uma tarefa normal, só
+  // aparece também no painel da reunião e no acompanhamento das próximas.
+  reuniaoId     String?
+  reuniao       Reuniao?     @relation(fields: [reuniaoId], references: [id], onDelete: SetNull)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
   lembretes Lembrete[]
   checklist ItemChecklistTarefa[]
+
+  @@index([reuniaoId])
 }
 
 model ItemChecklistTarefa {
@@ -846,4 +855,97 @@ model SimulacaoFinanceira {
   criadaPorId   String
   criadaPor     User                  @relation("CriadorSimulacao", fields: [criadaPorId], references: [id])
   criadaEm      DateTime              @default(now())
+}
+
+enum TipoReuniao {
+  SEMANAL
+  MENSAL
+}
+
+enum StatusReuniao {
+  AGENDADA
+  ENCERRADA
+}
+
+enum OrigemItemPauta {
+  SUGERIDO
+  MANUAL
+  PENDENTE_ANTERIOR
+}
+
+enum StatusItemPauta {
+  PENDENTE
+  DISCUTIDO
+  ADIADO
+}
+
+// Reunião de acompanhamento e gestão (semanal ou mensal). Pedido de
+// 2026-09-25: resumo do período analisado + perspectiva do próximo, pauta
+// sugerida pelo CRM na véspera (com opiniões da equipe por item),
+// compromissos (Tarefa.reuniaoId) e avaliação ao encerrar, que alimenta a
+// pauta da reunião seguinte. Os períodos (analisado e perspectiva) são
+// calculados da data em lib/utils/reuniao.ts e gravados — mudam só se a
+// data da reunião for editada antes do encerramento.
+model Reuniao {
+  id                 String        @id @default(cuid())
+  tipo               TipoReuniao
+  titulo             String
+  data               DateTime
+  periodoInicio      DateTime
+  periodoFim         DateTime
+  proximoInicio      DateTime
+  proximoFim         DateTime
+  status             StatusReuniao @default(AGENDADA)
+  anotacoes          String?
+  // Texto gerado pela IA ao encerrar (editável): o que foi decidido, o que
+  // ficou em aberto e o que precisa de atenção na próxima.
+  avaliacao          String?
+  // Foto dos números no encerramento (ResumoReuniao serializado) — a
+  // reunião encerrada mostra o que foi visto nela, não os números de hoje.
+  resumoEncerramento Json?
+  pautaGeradaEm      DateTime?
+  encerradaEm        DateTime?
+  criadoPorId        String
+  criadoPor          User          @relation("CriadorReuniao", fields: [criadoPorId], references: [id])
+  criadoEm           DateTime      @default(now())
+  atualizadoEm       DateTime      @updatedAt
+
+  itensPauta   ItemPauta[]
+  compromissos Tarefa[]
+
+  @@index([data])
+}
+
+model ItemPauta {
+  id             String          @id @default(cuid())
+  reuniaoId      String
+  reuniao        Reuniao         @relation(fields: [reuniaoId], references: [id], onDelete: Cascade)
+  ordem          Int             @default(0)
+  titulo         String
+  // Por que está na pauta (contexto com números, pergunta a decidir).
+  descricao      String?
+  origem         OrigemItemPauta @default(MANUAL)
+  // Painel do CRM pra abrir durante a reunião (caminho interno, ex.: /negocios?funil=...).
+  link           String?
+  status         StatusItemPauta @default(PENDENTE)
+  decisao        String?
+  // Item que ficou pendente/adiado numa reunião anterior e voltou pra pauta.
+  itemAnteriorId String?
+  criadoEm       DateTime        @default(now())
+
+  opinioes OpiniaoPauta[]
+
+  @@index([reuniaoId])
+}
+
+model OpiniaoPauta {
+  id       String    @id @default(cuid())
+  itemId   String
+  item     ItemPauta @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  autorId  String
+  autor    User      @relation(fields: [autorId], references: [id])
+  texto    String
+  criadoEm DateTime  @default(now())
+
+  @@index([itemId])
 }

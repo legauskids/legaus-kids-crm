@@ -15,6 +15,7 @@ import {
   Mic,
   Wallet,
   Megaphone,
+  CalendarCheck,
 } from "lucide-react";
 import { LogoMark } from "@/components/layout/logo-mark";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
@@ -26,6 +27,7 @@ export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashbo
   { href: "/tarefas", label: "Tarefas", icon: ListChecks, modulo: "tarefas" },
   { href: "/orcamentos", label: "Orçamentos", icon: FileText, modulo: "orcamentos" },
   { href: "/financeiro", label: "Financeiro", icon: Wallet, modulo: "financeiro" },
+  { href: "/reunioes", label: "Reuniões", icon: CalendarCheck, modulo: "reunioes" },
   { href: "/cadastros", label: "Cadastros", icon: Users, modulo: "contatos" },
   { href: "/producao", label: "Produção", icon: Factory, modulo: "producao" },
   { href: "/agente", label: "Agente", icon: Mic, modulo: "agente" },

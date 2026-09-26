@@ -8,6 +8,7 @@ export const MODULOS = [
   "orcamentos",
   "agente",
   "financeiro",
+  "reunioes",
   "marketing",
   "extensao",
 ] as const;
@@ -26,6 +27,7 @@ export const MODULO_LABEL: Record<ModuloKey, string> = {
   orcamentos: "Orçamentos",
   agente: "Agente",
   financeiro: "Financeiro",
+  reunioes: "Reuniões",
   marketing: "Marketing",
   extensao: "Extensão",
 };

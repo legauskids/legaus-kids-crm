@@ -48,6 +48,8 @@ import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
 import { pareceTelefone } from "@/lib/utils/telefone";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
+import { criarReuniao, adicionarOpiniao } from "@/lib/server/reunioes";
+import { gerarPautaSugerida, ErroReuniaoIa } from "@/lib/server/reuniao-ia";
 import type { OrigemComando, StatusOrcamento } from "@prisma/client";
 
 const MODELO = "claude-sonnet-5";
@@ -1762,6 +1764,88 @@ const FERRAMENTAS: Ferramenta[] = [
       };
     },
   },
+  {
+    // Painel de reunião (pedido de 2026-09-25): "um dia antes vamos
+    // solicitar ao CRM e ele vai preparar uma sugestão de pauta". Acha a
+    // reunião agendada (ou cria, se disserem dia e hora) e gera a pauta com
+    // lib/server/reuniao-ia.ts — cada item já vem com a pergunta pra equipe.
+    name: "preparar_pauta_reuniao",
+    description:
+      "Prepara a pauta sugerida de uma reunião de gestão (semanal ou mensal) do painel Reuniões: o CRM analisa os números do período, os sinais de atenção, os compromissos em aberto e a avaliação da reunião anterior, e monta os itens com uma pergunta pra equipe opinar. Sem data = próxima reunião agendada. Com data e sem reunião agendada nesse dia, cria a reunião (tipo padrão semanal). Devolva a pauta numerada com as perguntas e peça as opiniões (dá pra responder por aqui, ex.: 'item 2: acho que...').",
+    input_schema: {
+      type: "object",
+      properties: {
+        data: { type: "string", description: "Dia e hora da reunião em Brasília: AAAA-MM-DDTHH:mm (ou só AAAA-MM-DD = 09:00)" },
+        tipo: { type: "string", enum: ["SEMANAL", "MENSAL"], description: "Só usado se precisar criar a reunião" },
+      },
+    },
+    async executar(args, { usuarioId }) {
+      const { data, tipo } = args as { data?: string; tipo?: "SEMANAL" | "MENSAL" };
+      const hojeIso = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      let reuniao;
+      if (data) {
+        const quando = parseDataHoraBrasilia(/^\d{4}-\d{2}-\d{2}$/.test(data) ? `${data}T09:00` : data);
+        const inicioDia = inicioDoDiaBrasilia(quando.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }));
+        reuniao =
+          (await prisma.reuniao.findFirst({
+            where: { status: "AGENDADA", data: { gte: inicioDia, lt: new Date(inicioDia.getTime() + DIA_MS) } },
+            orderBy: { data: "asc" },
+          })) ?? (await criarReuniao({ tipo: tipo === "MENSAL" ? "MENSAL" : "SEMANAL", data: quando }, usuarioId));
+      } else {
+        reuniao = await prisma.reuniao.findFirst({
+          where: { status: "AGENDADA", data: { gte: inicioDoDiaBrasilia(hojeIso) } },
+          orderBy: { data: "asc" },
+        });
+        if (!reuniao) return { erro: "Não há reunião agendada. Pergunte o dia, o horário e se é semanal ou mensal pra criar." };
+      }
+      try {
+        await gerarPautaSugerida(reuniao.id);
+      } catch (erro) {
+        return { erro: erro instanceof ErroReuniaoIa ? erro.message : mensagemErroAnthropic(erro) };
+      }
+      const itens = await prisma.itemPauta.findMany({ where: { reuniaoId: reuniao.id }, orderBy: { ordem: "asc" } });
+      return {
+        reuniao: reuniao.titulo,
+        quando: reuniao.data.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+        link: `${URL_BASE}/reunioes/${reuniao.id}`,
+        itens: itens.map((i, idx) => ({
+          numero: idx + 1,
+          titulo: i.titulo,
+          pergunta: i.descricao?.split("\n").find((l) => l.startsWith("Pra opinar:"))?.replace("Pra opinar:", "").trim() ?? null,
+          origem: i.origem === "PENDENTE_ANTERIOR" ? "veio pendente da reunião anterior" : i.origem === "MANUAL" ? "incluído pela equipe" : "sugerido",
+        })),
+      };
+    },
+  },
+  {
+    name: "opinar_pauta_reuniao",
+    description:
+      "Registra a opinião de quem está falando sobre um item da pauta de uma reunião de gestão (painel Reuniões), pelo número do item. Use quando responderem à pauta com algo tipo 'item 2: acho que devemos...' ou 'sobre o 3, ...'. Sem reuniaoId = próxima reunião agendada. Várias opiniões numa mensagem = uma chamada por item.",
+    input_schema: {
+      type: "object",
+      properties: {
+        item: { type: "integer", description: "Número do item na pauta (1, 2, 3...)" },
+        texto: { type: "string", description: "A opinião, com as palavras de quem falou (limpe só as hesitações do áudio)" },
+        reuniaoId: { type: "string" },
+      },
+      required: ["item", "texto"],
+    },
+    async executar(args, { usuarioId }) {
+      const { item, texto, reuniaoId } = args as { item: number; texto: string; reuniaoId?: string };
+      const hojeIso = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const reuniao = reuniaoId
+        ? await prisma.reuniao.findUnique({ where: { id: reuniaoId } })
+        : ((await prisma.reuniao.findFirst({ where: { status: "AGENDADA", data: { gte: inicioDoDiaBrasilia(hojeIso) } }, orderBy: { data: "asc" } })) ??
+          (await prisma.reuniao.findFirst({ where: { status: "AGENDADA" }, orderBy: { data: "desc" } })));
+      if (!reuniao) return { erro: "Não achei reunião agendada pra registrar a opinião." };
+      if (reuniao.status === "ENCERRADA") return { erro: "Essa reunião já foi encerrada." };
+      const itens = await prisma.itemPauta.findMany({ where: { reuniaoId: reuniao.id }, orderBy: { ordem: "asc" } });
+      const alvo = itens[Math.trunc(item) - 1];
+      if (!alvo) return { erro: `A pauta de "${reuniao.titulo}" tem ${itens.length} itens — não existe o item ${item}.` };
+      await adicionarOpiniao(alvo.id, usuarioId, texto);
+      return { ok: true, reuniao: reuniao.titulo, item: `${item}. ${alvo.titulo}` };
+    },
+  },
 ];
 
 function paraToolAnthropic(f: Ferramenta): Anthropic.Tool {
@@ -1791,6 +1875,7 @@ Regras:
 - Pra saber se um número já está cadastrado, ou achar um cliente pelo telefone, use buscar_clientes com o telefone como termo (aceita qualquer formato: com ou sem 55, com ou sem o 9, com máscara). Se criar_cliente responder "jaExiste", não tente criar de novo: use o cadastro existente (atualize com atualizar_cliente, ex.: pra pôr o nome).
 - Às vezes o comando começa com "[Contexto: contato(s) colado(s) no WhatsApp logo antes deste comando: ...]" — são números (ou cartões de contato) que o Marcos colou no WhatsApp antes de mandar o comando. "Esse contato", "esses números", "ele", "cadastra esse" etc. se referem a eles. Se o comando não tiver relação com esses números, ignore o contexto.
 - Pra perguntas sobre entrada de leads ("quantos leads entraram hoje", "quem chamou essa semana"), use resumo_leads.
+- Reuniões de gestão (semanal/mensal, painel Reuniões): "prepara a pauta da reunião (de amanhã)" → preparar_pauta_reuniao; responda com a pauta numerada, a pergunta de cada item e o link, pedindo as opiniões. Quando responderem opinando sobre itens ("item 2: ...", "no 3 acho que..."), registre cada uma com opinar_pauta_reuniao.
 - Se o Marcos disser que um cliente/contato "está duplicado" ou "é o mesmo", use mesclar_clientes (nunca crie/edite tentando contornar) — ela junta o histórico dos dois (conversas, negócios, orçamentos, tarefas, notas fiscais) no que for mantido e apaga o duplicado. Pra apagar um cadastro de cliente sem nada vinculado, use excluir_cliente. Antes de dizer que não consegue fazer alguma ação de cliente/contato (corrigir, editar, apagar, mesclar), confira se não existe ferramenta pra isso — você tem criar_cliente, atualizar_cliente, excluir_cliente e mesclar_clientes.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
 - Se vier um ORÇAMENTO ANTIGO anexado (PDF ou foto) pedindo pra "virar contrato"/"transformar em contrato" — um orçamento de venda que nunca entrou no CRM —, use gerar_contrato_de_orcamento_antigo. Ela cria o negócio E o contrato de uma vez. Pergunte qual empresa emitiu (Legaus Kids ou Idezza) se não estiver claro no pedido ou no documento.

@@ -18,6 +18,7 @@ export function listTarefas() {
       negocio: { include: { etapa: true, funil: true } },
       contato: true,
       checklist: { orderBy: { ordem: "asc" } },
+      reuniao: { select: { id: true, titulo: true } },
     },
     orderBy: { prazo: "asc" },
   });
@@ -33,6 +34,8 @@ export type CriarTarefaInput = {
   prazo: Date;
   descricao?: string | null;
   status?: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA";
+  /** Compromisso firmado numa reunião (painel /reunioes). */
+  reuniaoId?: string | null;
 };
 
 export function criarTarefa(input: CriarTarefaInput) {

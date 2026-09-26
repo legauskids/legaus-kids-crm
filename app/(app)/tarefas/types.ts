@@ -19,6 +19,9 @@ export type TarefaVM = {
   funilId: string | null;
   etapaId: string | null;
   checklist: ItemChecklistVM[];
+  /** Compromisso firmado numa reunião (painel /reunioes). */
+  reuniaoId?: string | null;
+  reuniaoTitulo?: string | null;
 };
 
 export const STATUS_LABEL: Record<string, string> = {
