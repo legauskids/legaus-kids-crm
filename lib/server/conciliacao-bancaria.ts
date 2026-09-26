@@ -103,10 +103,7 @@ export async function conciliarAutomaticamente(transacaoIds: string[], usuarioId
     }
 
     if (escolhido) {
-      await prisma.transacaoBancaria.update({
-        where: { id: t.id },
-        data: { status: "CONCILIADA", negocioId: escolhido.id, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
-      });
+      await conciliarTransacao(t.id, escolhido.id, usuarioId);
       conciliadas++;
     }
   }
@@ -126,7 +123,14 @@ export type FiltroTransacoes = "NAO_CONCILIADA" | "CONCILIADA" | "IGNORADA" | "T
 export function listTransacoes(filtro: FiltroTransacoes) {
   return prisma.transacaoBancaria.findMany({
     where: filtro === "TODAS" ? undefined : { status: filtro },
-    include: { negocio: { include: { contato: true } }, importacao: true },
+    include: {
+      negocio: { include: { contato: true } },
+      importacao: true,
+      rateios: {
+        include: { negocio: { select: { titulo: true } }, centroCusto: { select: { nome: true } } },
+        orderBy: { valorCentavos: "desc" },
+      },
+    },
     orderBy: { data: "desc" },
   });
 }
@@ -140,24 +144,90 @@ export function listNegociosParaConciliacao() {
   });
 }
 
+/** Vincula o lançamento inteiro (100%) a um negócio/projeto. */
 export function conciliarTransacao(transacaoId: string, negocioId: string, usuarioId: string) {
-  return prisma.transacaoBancaria.update({
-    where: { id: transacaoId },
-    data: { status: "CONCILIADA", negocioId, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
-  });
+  return salvarRateio(transacaoId, [{ negocioId }], usuarioId);
+}
+
+/** Classifica o lançamento inteiro (100%) num centro de custo. */
+export function classificarEmCentroCusto(transacaoId: string, centroCustoId: string, usuarioId: string) {
+  return salvarRateio(transacaoId, [{ centroCustoId }], usuarioId);
 }
 
 export function ignorarTransacao(transacaoId: string, usuarioId: string) {
-  return prisma.transacaoBancaria.update({
-    where: { id: transacaoId },
-    data: { status: "IGNORADA", negocioId: null, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
-  });
+  return prisma.$transaction([
+    prisma.rateioTransacao.deleteMany({ where: { transacaoId } }),
+    prisma.transacaoBancaria.update({
+      where: { id: transacaoId },
+      data: { status: "IGNORADA", negocioId: null, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
+    }),
+  ]);
 }
 
-/** Volta a transação pra "não conciliada" — desfaz um match ou uma ignorada por engano. */
+/** Volta a transação pra "não conciliada" — desfaz um match, um rateio ou uma ignorada por engano. */
 export function reabrirTransacao(transacaoId: string) {
-  return prisma.transacaoBancaria.update({
-    where: { id: transacaoId },
-    data: { status: "NAO_CONCILIADA", negocioId: null, conciliadaPorId: null, conciliadaEm: null },
+  return prisma.$transaction([
+    prisma.rateioTransacao.deleteMany({ where: { transacaoId } }),
+    prisma.transacaoBancaria.update({
+      where: { id: transacaoId },
+      data: { status: "NAO_CONCILIADA", negocioId: null, conciliadaPorId: null, conciliadaEm: null },
+    }),
+  ]);
+}
+
+export type LinhaRateio = {
+  negocioId?: string | null;
+  centroCustoId?: string | null;
+  /** Sem valor = o que falta pra completar o lançamento (usado no "100%"). */
+  valorCentavos?: number;
+  observacao?: string | null;
+};
+
+/**
+ * Substitui a divisão (rateio) de um lançamento do extrato entre projetos
+ * (negócios) e centros de custo. Cada linha tem exatamente um destino; a
+ * soma não pode passar do valor do lançamento. Somando o total, a transação
+ * vira CONCILIADA; faltando parte, fica NAO_CONCILIADA com o que já foi
+ * classificado (o resto aparece como "a classificar"). negocioId da
+ * transação continua apontando pro projeto com a maior parte, pra telas
+ * antigas que só mostram um vínculo.
+ */
+export async function salvarRateio(transacaoId: string, linhas: LinhaRateio[], usuarioId: string) {
+  const transacao = await prisma.transacaoBancaria.findUnique({ where: { id: transacaoId } });
+  if (!transacao) throw new Error("Lançamento não encontrado.");
+
+  let restante = transacao.valorCentavos;
+  const normalizadas = linhas.map((l, i) => {
+    const temNegocio = Boolean(l.negocioId);
+    const temCentro = Boolean(l.centroCustoId);
+    if (temNegocio === temCentro) throw new Error(`Linha ${i + 1}: escolha um projeto OU um centro de custo.`);
+    const valor = l.valorCentavos ?? restante;
+    if (!Number.isInteger(valor) || valor <= 0) throw new Error(`Linha ${i + 1}: informe um valor maior que zero.`);
+    restante -= valor;
+    return {
+      transacaoId,
+      valorCentavos: valor,
+      negocioId: l.negocioId || null,
+      centroCustoId: l.centroCustoId || null,
+      observacao: l.observacao?.trim() || null,
+    };
   });
+  if (restante < 0) {
+    throw new Error(`A divisão passa do valor do lançamento em ${(-restante / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.`);
+  }
+
+  const completo = normalizadas.length > 0 && restante === 0;
+  const principal = [...normalizadas].filter((l) => l.negocioId).sort((a, b) => b.valorCentavos - a.valorCentavos)[0];
+
+  await prisma.$transaction([
+    prisma.rateioTransacao.deleteMany({ where: { transacaoId } }),
+    ...(normalizadas.length ? [prisma.rateioTransacao.createMany({ data: normalizadas })] : []),
+    prisma.transacaoBancaria.update({
+      where: { id: transacaoId },
+      data: completo
+        ? { status: "CONCILIADA", negocioId: principal?.negocioId ?? null, conciliadaPorId: usuarioId, conciliadaEm: new Date() }
+        : { status: "NAO_CONCILIADA", negocioId: principal?.negocioId ?? null, conciliadaPorId: null, conciliadaEm: null },
+    }),
+  ]);
+  return { completo, restanteCentavos: restante };
 }

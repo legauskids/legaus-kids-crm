@@ -323,6 +323,9 @@ model Negocio {
   notasFiscais        NotaFiscal[]
   transacoesBancarias TransacaoBancaria[]
   checklistEtapas     ItemChecklistNegocio[]
+  // Parcelas de lançamentos do extrato atribuídas a este negócio como
+  // projeto (centro de custo por projeto) — ver RateioTransacao.
+  rateiosTransacao    RateioTransacao[]
 
   @@index([contatoId])
 }
@@ -780,9 +783,53 @@ model TransacaoBancaria {
   conciliadaPorId String?
   conciliadaPor   User?                     @relation("ConciliadorTransacao", fields: [conciliadaPorId], references: [id])
   conciliadaEm    DateTime?
+  rateios         RateioTransacao[]
 
   @@index([importacaoId])
   @@index([negocioId])
+}
+
+enum TipoCentroCusto {
+  DESPESA
+  RECEITA
+}
+
+// Centro de custo padrão pras despesas/receitas que não são de um projeto
+// específico (folha, impostos, tarifas, marketing...). Projeto = Negocio.
+// palavrasChave: trechos da descrição do extrato que sugerem este centro na
+// conciliação (ex.: "TARIFA", "IOF") — só sugestão, nunca aplica sozinho.
+model CentroCusto {
+  id            String          @id @default(cuid())
+  nome          String          @unique
+  tipo          TipoCentroCusto @default(DESPESA)
+  palavrasChave String[]        @default([])
+  ativo         Boolean         @default(true)
+  ordem         Int             @default(0)
+  criadoEm      DateTime        @default(now())
+
+  rateios RateioTransacao[]
+}
+
+// Pedaço (total ou parcial) de um lançamento do extrato atribuído a UM
+// destino: um projeto (negocioId) OU um centro de custo (centroCustoId) —
+// exatamente um dos dois (validado em lib/server/conciliacao-bancaria.ts).
+// A soma dos rateios de uma transação nunca passa do valor dela; o que falta
+// aparece como "a classificar" no dashboard financeiro. Pedido de 2026-09-25.
+model RateioTransacao {
+  id            String            @id @default(cuid())
+  transacaoId   String
+  transacao     TransacaoBancaria @relation(fields: [transacaoId], references: [id], onDelete: Cascade)
+  valorCentavos Int
+  negocioId     String?
+  negocio       Negocio?          @relation(fields: [negocioId], references: [id])
+  centroCustoId String?
+  centroCusto   CentroCusto?      @relation(fields: [centroCustoId], references: [id])
+  observacao    String?
+  criadoEm      DateTime          @default(now())
+
+  @@index([transacaoId])
+  @@index([negocioId])
+  @@index([centroCustoId])
 }
 
 // Lançamento hipotético de fluxo de caixa ("e se eu recebesse X e pagasse

@@ -8,7 +8,11 @@ import {
   conciliarTransacao,
   ignorarTransacao,
   reabrirTransacao,
+  classificarEmCentroCusto,
+  salvarRateio,
+  type LinhaRateio,
 } from "@/lib/server/conciliacao-bancaria";
+import { criarCentroCusto, atualizarCentroCusto } from "@/lib/server/centros-custo";
 import {
   criarEEmitirNotaFiscal,
   atualizarStatusNotaFiscal,
@@ -17,7 +21,7 @@ import {
   type ItemNotaFiscalInput,
 } from "@/lib/server/nota-fiscal";
 import { criarSimulacao, excluirSimulacao } from "@/lib/server/simulacao-financeira";
-import type { StatusContrato, TipoTransacaoBancaria } from "@prisma/client";
+import type { StatusContrato, TipoCentroCusto, TipoTransacaoBancaria } from "@prisma/client";
 
 function revalidateFinanceiro() {
   revalidatePath("/financeiro");
@@ -101,6 +105,59 @@ export async function reabrirTransacaoAction(transacaoId: string): Promise<void>
   await requireModulo("financeiro");
   await reabrirTransacao(transacaoId);
   revalidateFinanceiro();
+}
+
+export type AcaoRateioState = { error?: string; success?: boolean };
+
+/** Classifica o lançamento inteiro num centro de custo (atalho do "100%"). */
+export async function classificarCentroCustoAction(transacaoId: string, centroCustoId: string): Promise<AcaoRateioState> {
+  const user = await requireModulo("financeiro");
+  try {
+    await classificarEmCentroCusto(transacaoId, centroCustoId, user.id);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui classificar o lançamento." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+/** Divide o lançamento entre projetos e centros de custo (valores parciais). */
+export async function salvarRateioAction(transacaoId: string, linhas: LinhaRateio[]): Promise<AcaoRateioState> {
+  const user = await requireModulo("financeiro");
+  try {
+    await salvarRateio(transacaoId, linhas, user.id);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui salvar a divisão." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export type AcaoCentroCustoState = { error?: string; success?: boolean };
+
+export async function criarCentroCustoAction(nome: string, tipo: TipoCentroCusto, palavrasChave: string[]): Promise<AcaoCentroCustoState> {
+  await requireModulo("financeiro");
+  try {
+    await criarCentroCusto({ nome, tipo, palavrasChave });
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui criar o centro de custo." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function atualizarCentroCustoAction(
+  id: string,
+  dados: { nome?: string; tipo?: TipoCentroCusto; palavrasChave?: string[]; ativo?: boolean },
+): Promise<AcaoCentroCustoState> {
+  await requireModulo("financeiro");
+  try {
+    await atualizarCentroCusto(id, dados);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui salvar o centro de custo." };
+  }
+  revalidateFinanceiro();
+  return { success: true };
 }
 
 export type AcaoNotaFiscalState = { error?: string; success?: boolean };
