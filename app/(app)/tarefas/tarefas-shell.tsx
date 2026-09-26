@@ -35,17 +35,22 @@ export function TarefasShell({
   funis,
   usuarios,
   negocios,
+  statusInicial,
 }: {
   tarefas: TarefaVM[];
   funis: Funil[];
   usuarios: { id: string; nome: string }[];
   negocios: { id: string; titulo: string; contatoNome: string }[];
+  /** Filtro de status já aplicado ao abrir (ex.: ?status=ATRASADA vindo do dashboard). */
+  statusInicial?: string;
 }) {
   const [view, setView] = useState<(typeof VIEWS)[number]["id"]>("kanban");
   const [responsavelId, setResponsavelId] = useState(TODOS);
   const [funilId, setFunilId] = useState(TODOS);
   const [etapaId, setEtapaId] = useState(TODOS);
-  const [status, setStatus] = useState<string>(TODOS);
+  const [status, setStatus] = useState<string>(() =>
+    statusInicial && (STATUS_FILTROS as readonly string[]).includes(statusInicial) ? statusInicial : TODOS,
+  );
   const [periodo, setPeriodo] = useState<Periodo | typeof TODOS>(TODOS);
   const [novaAberta, setNovaAberta] = useState(false);
   const [tarefaEditandoId, setTarefaEditandoId] = useState<string | null>(null);

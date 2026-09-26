@@ -4,8 +4,10 @@ import { listFunisComEtapas } from "@/lib/server/negocios";
 import { prisma } from "@/lib/db";
 import { TarefasShell } from "@/app/(app)/tarefas/tarefas-shell";
 
-export default async function TarefasPage() {
+export default async function TarefasPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   await requireModulo("tarefas");
+  // ?status=ATRASADA / APROVACAO — vindo dos cards do dashboard.
+  const { status: statusInicial } = await searchParams;
 
   const [tarefas, funis, usuarios, negocios] = await Promise.all([
     listTarefas(),
@@ -20,6 +22,7 @@ export default async function TarefasPage() {
 
   return (
     <TarefasShell
+      statusInicial={statusInicial}
       tarefas={tarefas.map((t) => ({
         id: t.id,
         titulo: t.titulo,

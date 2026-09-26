@@ -10,7 +10,7 @@ import { negocioParadoAlemDoPrazo } from "@/lib/utils/dates";
 import { KanbanBoard, type KanbanItemDef } from "@/components/shared/kanban/board";
 import { corDoIndice } from "@/lib/utils/colors";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { PauseCircle, Plus } from "lucide-react";
 import { moverNegocioAction, marcarPerdidoAction } from "@/app/(app)/negocios/actions";
 import { atualizarEtapaAction } from "@/app/(app)/negocios/funis/actions";
 import { NovoNegocioDialog } from "@/app/(app)/negocios/novo-negocio-dialog";
@@ -36,12 +36,15 @@ export function NegociosBoardShell({
   negocios,
   contatos,
   usuarios,
+  somenteParadosInicial = false,
 }: {
   funis: Funil[];
   funilSelecionadoId: string;
   negocios: NegocioCard[];
   contatos: { id: string; nome: string }[];
   usuarios: { id: string; nome: string }[];
+  /** Abre já filtrado nos parados além do SLA (?parados=1, vindo do dashboard). */
+  somenteParadosInicial?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -49,6 +52,7 @@ export function NegociosBoardShell({
   const [negociosAnteriores, setNegociosAnteriores] = useState(negocios);
   const [novoOpen, setNovoOpen] = useState(false);
   const [motivoDialog, setMotivoDialog] = useState<{ negocioId: string; etapaId: string } | null>(null);
+  const [somenteParados, setSomenteParados] = useState(somenteParadosInicial);
 
   if (negocios !== negociosAnteriores) {
     setNegociosAnteriores(negocios);
@@ -62,6 +66,14 @@ export function NegociosBoardShell({
 
   const etapasOrdenadas = [...funilSelecionado.etapas].sort((a, b) => a.ordem - b.ordem);
   const etapaPorId = new Map(etapasOrdenadas.map((e) => [e.id, e]));
+
+  const estaParado = (item: KanbanItemDef<NegocioCard>) =>
+    negocioParadoAlemDoPrazo({
+      slaDias: etapaPorId.get(item.columnId)?.slaDias ?? null,
+      dataEntradaNaEtapa: new Date(item.data.dataEntradaNaEtapa),
+    });
+  const qtdParados = items.filter(estaParado).length;
+  const itemsVisiveis = somenteParados ? items.filter(estaParado) : items;
 
   const totalPorEtapa = new Map<string, number>();
   for (const negocio of negocios) {
@@ -103,7 +115,7 @@ export function NegociosBoardShell({
           {funis.map((f) => (
             <Link
               key={f.id}
-              href={`/negocios?funil=${f.id}`}
+              href={`/negocios?funil=${f.id}${somenteParados ? "&parados=1" : ""}`}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-sm font-medium transition-all",
                 f.id === funilSelecionado.id
@@ -116,6 +128,15 @@ export function NegociosBoardShell({
           ))}
         </div>
         <div className="flex items-center gap-4">
+          <Button
+            size="sm"
+            variant={somenteParados ? "destructive" : "outline"}
+            onClick={() => setSomenteParados((v) => !v)}
+            title="Mostrar só os negócios parados além do prazo (SLA) da etapa"
+          >
+            <PauseCircle className="size-4" />
+            Só parados ({qtdParados})
+          </Button>
           <span className="text-sm text-muted-foreground">
             Total do funil: <span className="font-semibold text-success">{centavosParaReais(totalFunil)}</span>
           </span>
@@ -142,7 +163,7 @@ export function NegociosBoardShell({
             accent: e.tipo === "PERDIDO" ? "danger" : "default",
             cor: corDoIndice(indice),
           }))}
-          items={items}
+          items={itemsVisiveis}
           onDrop={handleDrop}
           renderCard={(item) => {
             const etapa = etapaPorId.get(item.columnId);

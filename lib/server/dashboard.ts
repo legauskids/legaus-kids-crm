@@ -136,6 +136,8 @@ export async function getDashboardData() {
   });
 
   return {
+    // Destino dos cards de negociação/ganhos/conversão/ticket (kpi-cards.tsx).
+    funilVendaId: funilVenda?.id ?? null,
     kpis: {
       valorEmNegociacaoCentavos,
       valorGanhoMesCentavos,

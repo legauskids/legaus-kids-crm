@@ -19,7 +19,7 @@ export default async function DashboardPage() {
         <p className="text-sm text-muted-foreground">Aqui está o resumo do seu dia.</p>
       </div>
 
-      <KpiCards kpis={data.kpis} />
+      <KpiCards kpis={data.kpis} funilVendaId={data.funilVendaId} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <MetaPanel meta={data.meta} equipe={data.equipe} />
