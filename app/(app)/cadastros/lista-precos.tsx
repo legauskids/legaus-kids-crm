@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import { corDoIndice } from "@/lib/utils/colors";
 import { centavosParaReais } from "@/lib/utils/money";
 import { calcularPrecificacao } from "@/lib/utils/precificacao";
-import { atualizarPrecoProdutoAction, aplicarPrecoEmMassaAction } from "@/app/(app)/produtos/actions";
+import { toast } from "sonner";
+import { atualizarPrecoProdutoAction, aplicarPrecoEmMassaAction, renomearProdutoAction } from "@/app/(app)/produtos/actions";
 import type { ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 import { NovoProdutoDialog } from "@/app/(app)/produtos/novo-produto-dialog";
 import type { CampoPrecoProduto } from "@/lib/server/produtos";
@@ -122,6 +123,37 @@ function CelulaPercentualComValor({
   );
 }
 
+/** Nome do produto editável na própria linha — Enter ou sair do campo salva; Esc desfaz; vazio volta ao nome anterior. */
+function CelulaNome({ nome, onSalvar }: { nome: string; onSalvar: (novoNome: string) => void }) {
+  const [texto, setTexto] = useState(nome);
+
+  return (
+    <input
+      type="text"
+      value={texto}
+      title={texto}
+      onChange={(e) => setTexto(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setTexto(nome);
+          requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
+        }
+      }}
+      onBlur={() => {
+        const limpo = texto.trim().replace(/s+/g, " ");
+        if (!limpo || limpo === nome) {
+          setTexto(nome);
+          return;
+        }
+        setTexto(limpo);
+        onSalvar(limpo);
+      }}
+      className="h-7 w-full min-w-0 truncate rounded border border-transparent bg-transparent px-1.5 text-xs font-medium outline-none transition-colors hover:border-input focus:border-ring focus:bg-background"
+    />
+  );
+}
+
 /** Campo vazio no cabeçalho da categoria — aplica o valor digitado a todos os itens dessa categoria (Enter ou blur) e volta a ficar vazio. */
 function CelulaAplicarMassa({
   tipo,
@@ -160,7 +192,15 @@ function CelulaAplicarMassa({
   );
 }
 
-function LinhaProduto({ produto, onAtualizar }: { produto: ProdutoVM; onAtualizar: (id: string, campo: CampoPrecoProduto, valor: number | null) => void }) {
+function LinhaProduto({
+  produto,
+  onAtualizar,
+  onRenomear,
+}: {
+  produto: ProdutoVM;
+  onAtualizar: (id: string, campo: CampoPrecoProduto, valor: number | null) => void;
+  onRenomear: (id: string, nome: string) => void;
+}) {
   const calc = useMemo(
     () =>
       calcularPrecificacao({
@@ -180,9 +220,11 @@ function LinhaProduto({ produto, onAtualizar }: { produto: ProdutoVM; onAtualiza
 
   return (
     <tr className="border-t">
-      <td className="sticky left-0 z-10 min-w-48 max-w-56 truncate bg-card px-2 py-1.5 text-xs font-medium">
-        {produto.nome}
-        {produto.codigo && <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{produto.codigo}</span>}
+      <td className="sticky left-0 z-10 w-56 min-w-48 max-w-64 bg-card px-1 py-1">
+        <div className="flex items-center gap-1">
+          <CelulaNome key={produto.nome} nome={produto.nome} onSalvar={(nome) => onRenomear(produto.id, nome)} />
+          {produto.codigo && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{produto.codigo}</span>}
+        </div>
       </td>
       <td className="px-1 py-1">
         <CelulaEditavel
@@ -301,6 +343,7 @@ function CategoriaPrecos({
   onAtualizar,
   onAplicarEmMassa,
   onNovoProduto,
+  onRenomear,
 }: {
   categoria: string;
   produtos: ProdutoVM[];
@@ -308,6 +351,7 @@ function CategoriaPrecos({
   aberta: boolean;
   onToggle: () => void;
   onAtualizar: (id: string, campo: CampoPrecoProduto, valor: number | null) => void;
+  onRenomear: (id: string, nome: string) => void;
   onAplicarEmMassa: (categoria: string, campo: CampoPrecoProduto, valor: number) => void;
   onNovoProduto: () => void;
 }) {
@@ -368,7 +412,7 @@ function CategoriaPrecos({
             </thead>
             <tbody>
               {produtos.map((p) => (
-                <LinhaProduto key={p.id} produto={p} onAtualizar={onAtualizar} />
+                <LinhaProduto key={p.id} produto={p} onAtualizar={onAtualizar} onRenomear={onRenomear} />
               ))}
               <tr className="border-t">
                 <td colSpan={CABECALHO.length} className="sticky left-0 px-2 py-1.5">
@@ -454,6 +498,17 @@ export function ListaPrecos({
     });
   }
 
+  function renomear(id: string, nome: string) {
+    const anterior = produtos.find((p) => p.id === id)?.nome;
+    onAtualizarProduto(id, { nome });
+    renomearProdutoAction(id, nome).then((resultado) => {
+      if ("error" in resultado) {
+        toast.error(resultado.error);
+        if (anterior) onAtualizarProduto(id, { nome: anterior });
+      }
+    });
+  }
+
   function aplicarEmMassa(categoria: string, campo: CampoPrecoProduto, valor: number) {
     // Atualiza a UI de todo mundo na hora (mesmo cálculo isomórfico do
     // servidor) e manda UM request só pro backend — chamar a action de
@@ -492,7 +547,7 @@ export function ListaPrecos({
         <p className="mt-2 text-xs text-muted-foreground">
           Compra, Frete e Instalação em R$ por unidade. IPI, Outros, Markup e Imposto são percentuais (IPI e Outros sobre o
           custo de compra, Imposto sobre o preço de venda) — clique no valor pra editar o %. Preço de venda é calculado a
-          partir do custo total + markup. Enter confirma a célula. A linha pontilhada no topo de cada categoria aplica o valor
+          partir do custo total + markup. Clique no nome pra renomear o produto. Enter confirma a célula. A linha pontilhada no topo de cada categoria aplica o valor
           pra todos os itens dela.
         </p>
       </div>
@@ -512,6 +567,7 @@ export function ListaPrecos({
               onAtualizar={atualizar}
               onAplicarEmMassa={aplicarEmMassa}
               onNovoProduto={() => abrirNovo(categoria)}
+              onRenomear={renomear}
             />
           ))
         )}

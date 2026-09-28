@@ -135,6 +135,16 @@ export async function atualizarPrecoProdutoAction(
   return { valorCentavos: produto.valorCentavos };
 }
 
+/** Renomeia direto na Lista de preços. Sem revalidatePath pelo mesmo motivo das células de preço acima. */
+export async function renomearProdutoAction(produtoId: string, nome: string): Promise<{ ok: true } | { error: string }> {
+  await requireUser();
+  const limpo = nome.trim().replace(/\s+/g, " ");
+  if (!limpo) return { error: "O nome do produto não pode ficar vazio." };
+  if (limpo.length > 200) return { error: "Nome muito longo (máximo 200 caracteres)." };
+  await atualizarProduto(produtoId, { nome: limpo });
+  return { ok: true };
+}
+
 export async function aplicarPrecoEmMassaAction(
   categoria: string,
   campo: CampoPrecoProduto,
