@@ -5,7 +5,8 @@
   "description": "Serviço próprio (Baileys) que conecta o WhatsApp Business da Legaus Kids ao CRM, substituindo a extensão de Chrome.",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc14",

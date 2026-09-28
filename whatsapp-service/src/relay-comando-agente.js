@@ -3,12 +3,15 @@ import { chamarApi } from "./crm-api.js";
 import { resolverTelefoneDaConversa } from "./lid-cache.js";
 import { mesmoTelefone } from "./telefone.js";
 import { foiEnviadoPeloRelay, comandoJaProcessado, marcarComandoProcessado } from "./ids-relay.js";
-import { extrairSoTelefones, extrairCartoesDeContato, guardarColagem, retirarContextoDeColagem, comContexto } from "./colagem-contatos.js";
+import { extrairSoTelefones, extrairCartoesDeContato, guardarColagem, retirarContextoDeColagem, comContexto, ehProprioNumero } from "./colagem-contatos.js";
+import { motivoParaNaoSerComando } from "./regras-comando.js";
 
 // Números autorizados a dar comando (voz, texto ou PDF) pro agente de IA —
-// só dígitos, com DDI, ver .env.example. Vale nas duas direções: mensagem
-// DE um número da lista PRA Legaus Kids, ou DA Legaus Kids PRO número
-// (self-chat, "gravando/digitando e mandando pra si mesmo").
+// só dígitos, com DDI, ver .env.example. Comando é mensagem DE um número da
+// lista PRA Legaus Kids, ou o "Mensagens para mim" da própria Legaus. Desde
+// 2026-09-28, mensagem que SAI da Legaus pra outra conversa (inclusive pro
+// Marcos ou pra Dani) e mensagem com @marcos/@dani nunca são comando — o
+// número também é usado pra conversa da equipe (ver regras-comando.js).
 //
 // Antes disso checava só `msg.key.fromMe` pro sentido "Legaus -> alguém",
 // sem olhar pra quem é esse "alguém" — bug real: isso tratava QUALQUER
@@ -49,6 +52,12 @@ async function extrairTelefoneRemetente(sock, key) {
 // CLIENTE (ex: "vou perguntar pro nosso agente de vendas") viraria comando
 // por engano.
 const PALAVRA_GATILHO = /\bagente\b/i;
+
+/** A conversa é o "Mensagens para mim" do número da Legaus? */
+function ehConversaPropria(sock, telefone) {
+  const proprio = String(sock.user?.id ?? "").split("@")[0].split(":")[0];
+  return ehProprioNumero(telefone) || (!!proprio && mesmoTelefone(telefone, proprio));
+}
 
 function autorizado(telefone, { fromMe, texto }) {
   // Compara com e sem o 9 extra: o Baileys 7 devolve o formato interno do
@@ -104,6 +113,18 @@ export function ligarRelayDeComandoAgente(sock) {
         // texto sem transcrever antes) — continua só por número autorizado.
         const podeSerGatilho = !audioMessage;
         if (!autorizado(telefone, { fromMe: !!msg.key.fromMe, texto: podeSerGatilho ? texto : null })) continue;
+
+        // Conversa da equipe pelo número da Legaus, não comando: mensagem que
+        // sai da Legaus pra outra conversa, ou recado com @marcos/@dani.
+        const motivo = motivoParaNaoSerComando({
+          fromMe: !!msg.key.fromMe,
+          conversaPropria: ehConversaPropria(sock, telefone),
+          texto,
+        });
+        if (motivo) {
+          console.log(`[relay-comando-agente] Não é comando (${motivo}) — conversa com ${telefone}.`);
+          continue;
+        }
 
         // A conexão cai e reconecta com frequência (erro de stream do
         // próprio WhatsApp — ver ids-relay.js pro detalhe), e o Baileys
