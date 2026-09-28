@@ -4,21 +4,32 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { PainelView } from "@/app/(app)/producao/painel-view";
 import { CalendarioProducaoView } from "@/app/(app)/producao/calendario-view";
-import type { EmProducaoVM, InstalacaoVM } from "@/app/(app)/producao/types";
+import { ConcluidosView } from "@/app/(app)/producao/concluidos-view";
+import type { AvaliacaoVM, ConcluidoVM, EmProducaoVM, InstalacaoVM } from "@/app/(app)/producao/types";
 
 const VIEWS = [
   { id: "painel", label: "Painel" },
   { id: "calendario", label: "Calendário" },
+  { id: "concluidos", label: "Concluídos" },
 ] as const;
 
+type ViewId = (typeof VIEWS)[number]["id"];
+
 export function ProducaoShell({
+  abaInicial,
   emProducao,
   instalacoes,
+  emAvaliacao,
+  concluidos,
 }: {
+  /** ?aba=calendario / concluidos — pra dar link direto pra uma aba. */
+  abaInicial?: string;
   emProducao: EmProducaoVM[];
   instalacoes: InstalacaoVM[];
+  emAvaliacao: AvaliacaoVM[];
+  concluidos: ConcluidoVM[];
 }) {
-  const [view, setView] = useState<(typeof VIEWS)[number]["id"]>("painel");
+  const [view, setView] = useState<ViewId>(() => VIEWS.find((v) => v.id === abaInicial)?.id ?? "painel");
 
   return (
     <div className="flex h-full flex-col">
@@ -37,17 +48,18 @@ export function ProducaoShell({
               )}
             >
               {v.label}
+              {v.id === "concluidos" && concluidos.length > 0 && <span className="ml-1.5 text-xs opacity-80">({concluidos.length})</span>}
             </button>
           ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto">
-        {view === "painel" ? (
-          <PainelView emProducao={emProducao} instalacoes={instalacoes} />
-        ) : (
-          <CalendarioProducaoView emProducao={emProducao} instalacoes={instalacoes} />
+        {view === "painel" && (
+          <PainelView emProducao={emProducao} instalacoes={instalacoes.filter((n) => !n.concluido)} emAvaliacao={emAvaliacao} />
         )}
+        {view === "calendario" && <CalendarioProducaoView emProducao={emProducao} instalacoes={instalacoes} />}
+        {view === "concluidos" && <ConcluidosView concluidos={concluidos} />}
       </div>
     </div>
   );

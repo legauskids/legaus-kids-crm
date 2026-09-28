@@ -16,7 +16,7 @@ import { atualizarEtapaAction } from "@/app/(app)/negocios/funis/actions";
 import { NovoNegocioDialog } from "@/app/(app)/negocios/novo-negocio-dialog";
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
 
-type Etapa = { id: string; nome: string; ordem: number; slaDias: number | null; tipo: "NORMAL" | "GANHO" | "PERDIDO" };
+type Etapa = { id: string; nome: string; ordem: number; slaDias: number | null; tipo: "NORMAL" | "GANHO" | "PERDIDO" | "CONCLUIDO" };
 type Funil = { id: string; nome: string; etapas: Etapa[] };
 type NegocioCard = {
   id: string;
@@ -79,9 +79,10 @@ export function NegociosBoardShell({
   for (const negocio of negocios) {
     totalPorEtapa.set(negocio.etapaId, (totalPorEtapa.get(negocio.etapaId) ?? 0) + negocio.valorCentavos);
   }
-  // Não soma a etapa Perdido — negócio perdido não conta pro valor do funil.
+  // Não soma Perdido (não conta pro valor do funil) nem Concluído (pós-venda
+  // já encerrado — o total é do que está em andamento).
   const totalFunil = etapasOrdenadas
-    .filter((e) => e.tipo !== "PERDIDO")
+    .filter((e) => e.tipo !== "PERDIDO" && e.tipo !== "CONCLUIDO")
     .reduce((soma, e) => soma + (totalPorEtapa.get(e.id) ?? 0), 0);
 
   function commitMove(negocioId: string, novaEtapaId: string) {

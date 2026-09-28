@@ -22,7 +22,8 @@ export async function getPainelFinanceiro() {
       include: { contato: true },
     }),
     prisma.negocio.findMany({
-      where: { funil: { nome: "Funil de pós-venda" } },
+      // Concluído (etapa final) já saiu do pipeline — só o que está em andamento.
+      where: { funil: { nome: "Funil de pós-venda" }, etapa: { tipo: "NORMAL" } },
       include: { etapa: true },
     }),
     prisma.tarefa.findMany({

@@ -83,6 +83,7 @@ async function main() {
     prisma.etapa.create({ data: { funilId: funilPosVenda.id, nome: "Produção", ordem: 3, slaDias: 10 } }),
     prisma.etapa.create({ data: { funilId: funilPosVenda.id, nome: "Entrega", ordem: 4, slaDias: 3 } }),
     prisma.etapa.create({ data: { funilId: funilPosVenda.id, nome: "Avaliação", ordem: 5, slaDias: 5 } }),
+    prisma.etapa.create({ data: { funilId: funilPosVenda.id, nome: "Concluído", ordem: 6, tipo: "CONCLUIDO" } }),
   ]);
   const [etContrato] = etapasPosVenda;
 

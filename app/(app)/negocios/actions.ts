@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
 import {
   moverNegocio,
+  concluirNegocio,
+  reabrirNegocioConcluido,
   criarNegocio,
   marcarNegocioPerdido,
   atualizarDadosNegocio,
@@ -36,6 +38,33 @@ export async function moverNegocioAction(
     return { error: erro instanceof Error ? erro.message : "Não consegui mover o negócio." };
   }
   revalidatePath("/negocios");
+  revalidatePath(`/negocios/${negocioId}`);
+  return {};
+}
+
+/** "Concluído" do pós-venda (etapa final, tipo CONCLUIDO) — mesmo botão da Produção. */
+export async function concluirNegocioAction(negocioId: string): Promise<{ error?: string }> {
+  await requireUser();
+  try {
+    await concluirNegocio(negocioId);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui concluir o negócio." };
+  }
+  revalidatePath("/negocios");
+  revalidatePath("/producao");
+  revalidatePath(`/negocios/${negocioId}`);
+  return {};
+}
+
+export async function reabrirNegocioConcluidoAction(negocioId: string): Promise<{ error?: string }> {
+  await requireUser();
+  try {
+    await reabrirNegocioConcluido(negocioId);
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui reabrir o negócio." };
+  }
+  revalidatePath("/negocios");
+  revalidatePath("/producao");
   revalidatePath(`/negocios/${negocioId}`);
   return {};
 }

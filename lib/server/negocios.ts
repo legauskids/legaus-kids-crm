@@ -85,6 +85,35 @@ export async function moverNegocio(
   });
 }
 
+/**
+ * Encaminha o negócio pra etapa final (tipo CONCLUIDO) do próprio funil — no
+ * pós-venda, depois da Avaliação. Botão "Concluído" da Produção e do negócio.
+ */
+export async function concluirNegocio(negocioId: string): Promise<void> {
+  const negocio = await prisma.negocio.findUniqueOrThrow({ where: { id: negocioId }, include: { etapa: true } });
+  if (negocio.etapa.tipo === "CONCLUIDO") return;
+  if (negocio.etapa.tipo !== "NORMAL") throw new Error(`Negócio em "${negocio.etapa.nome}" não pode ser concluído.`);
+  const etapaConcluido = await prisma.etapa.findFirst({ where: { funilId: negocio.funilId, tipo: "CONCLUIDO" } });
+  if (!etapaConcluido) throw new Error("Este funil não tem etapa de Concluído.");
+  await moverNegocio(negocioId, etapaConcluido.id);
+}
+
+/**
+ * Desfaz o "Concluído": volta pra última etapa em andamento do funil
+ * (Avaliação, no pós-venda) SEM rodar a automação dela — não recria a
+ * tarefa "Solicitar avaliação do cliente".
+ */
+export async function reabrirNegocioConcluido(negocioId: string): Promise<void> {
+  const negocio = await prisma.negocio.findUniqueOrThrow({ where: { id: negocioId }, include: { etapa: true } });
+  if (negocio.etapa.tipo !== "CONCLUIDO") return;
+  const ultimaEtapaAberta = await prisma.etapa.findFirst({
+    where: { funilId: negocio.funilId, tipo: "NORMAL" },
+    orderBy: { ordem: "desc" },
+  });
+  if (!ultimaEtapaAberta) throw new Error("Não achei etapa pra reabrir o negócio.");
+  await prisma.negocio.update({ where: { id: negocioId }, data: { etapaId: ultimaEtapaAberta.id, dataEntradaNaEtapa: new Date() } });
+}
+
 export type CriarNegocioInput = {
   titulo: string;
   produto?: string | null;

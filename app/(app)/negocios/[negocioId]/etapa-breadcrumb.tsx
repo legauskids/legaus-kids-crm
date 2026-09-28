@@ -7,9 +7,11 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Trophy, XCircle, CreditCard, Trash2, ChevronDown } from "lucide-react";
+import { Trophy, XCircle, CreditCard, Trash2, ChevronDown, CheckCircle2, RotateCcw } from "lucide-react";
 import {
   moverNegocioAction,
+  concluirNegocioAction,
+  reabrirNegocioConcluidoAction,
   marcarPagamentoIdentificadoAction,
   marcarPerdidoAction,
   excluirNegocioAction,
@@ -19,7 +21,7 @@ import { ExcluirNegocioDialog } from "@/app/(app)/negocios/excluir-negocio-dialo
 import { CompletarDadosContratoDialog, type ContatoParaContrato } from "@/app/(app)/negocios/[negocioId]/completar-dados-contrato-dialog";
 import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 
-type Etapa = { id: string; nome: string; ordem: number; tipo: "NORMAL" | "GANHO" | "PERDIDO" };
+type Etapa = { id: string; nome: string; ordem: number; tipo: "NORMAL" | "GANHO" | "PERDIDO" | "CONCLUIDO" };
 
 export function EtapaBreadcrumb({
   negocioId,
@@ -49,6 +51,16 @@ export function EtapaBreadcrumb({
   const etapaAtual = etapas.find((e) => e.id === etapaAtualId);
   const etapaGanho = etapas.find((e) => e.tipo === "GANHO");
   const etapaPagamento = etapas.find((e) => e.nome === "Pagamento");
+  const etapaConcluido = etapas.find((e) => e.tipo === "CONCLUIDO");
+
+  function concluirOuReabrir(acao: "concluir" | "reabrir") {
+    if (acao === "concluir" && etapaAtual?.nome !== "Avaliação" && !confirm(`O negócio ainda está em ${etapaAtual?.nome} (sem passar pela Avaliação). Concluir mesmo assim?`)) return;
+    startTransition(async () => {
+      const resultado = acao === "concluir" ? await concluirNegocioAction(negocioId) : await reabrirNegocioConcluidoAction(negocioId);
+      if (resultado.error) return void toast.error(resultado.error);
+      router.refresh();
+    });
+  }
 
   // Sem isso, um erro de moverNegocioAction (ex: falta CNPJ/representante
   // legal/forma de pagamento pro contrato, checado em validarDadosParaContrato)
@@ -79,7 +91,7 @@ export function EtapaBreadcrumb({
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3.5 shadow-sm">
       <div className="flex flex-wrap items-center gap-1 text-sm">
         {etapaAtual && etapaAtual.tipo !== "NORMAL" ? (
-          <Badge variant={etapaAtual.tipo === "GANHO" ? "success" : "destructive"}>{etapaAtual.nome}</Badge>
+          <Badge variant={etapaAtual.tipo === "GANHO" || etapaAtual.tipo === "CONCLUIDO" ? "success" : "destructive"}>{etapaAtual.nome}</Badge>
         ) : (
           etapasNormais.map((etapa, idx) => (
             <span key={etapa.id} className="flex items-center gap-1">
@@ -114,6 +126,23 @@ export function EtapaBreadcrumb({
           >
             <CreditCard className="size-4" />
             Marcar pagamento identificado
+          </Button>
+        )}
+        {etapaConcluido && etapaAtual?.tipo === "NORMAL" && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-success/40 text-success hover:bg-success/10 hover:text-success"
+            onClick={() => concluirOuReabrir("concluir")}
+          >
+            <CheckCircle2 className="size-4" />
+            Concluído
+          </Button>
+        )}
+        {etapaAtual?.tipo === "CONCLUIDO" && (
+          <Button size="sm" variant="outline" onClick={() => concluirOuReabrir("reabrir")}>
+            <RotateCcw className="size-4" />
+            Reabrir
           </Button>
         )}
         {isFunilVenda && etapaAtual?.tipo === "NORMAL" && (

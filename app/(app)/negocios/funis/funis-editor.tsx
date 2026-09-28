@@ -27,7 +27,7 @@ import {
   reordenarEtapasAction,
 } from "@/app/(app)/negocios/funis/actions";
 
-type Etapa = { id: string; nome: string; ordem: number; slaDias: number | null; tipo: "NORMAL" | "GANHO" | "PERDIDO" };
+type Etapa = { id: string; nome: string; ordem: number; slaDias: number | null; tipo: "NORMAL" | "GANHO" | "PERDIDO" | "CONCLUIDO" };
 type Funil = { id: string; nome: string; etapas: Etapa[] };
 
 export function FunisEditor({ funis }: { funis: Funil[] }) {
@@ -193,7 +193,9 @@ function EtapaRow({ etapa, onChange }: { etapa: Etapa; onChange: (etapa: Etapa) 
           }
         }}
       />
-      {etapa.tipo !== "NORMAL" && <Badge variant="secondary">{etapa.tipo}</Badge>}
+      {etapa.tipo !== "NORMAL" && (
+        <Badge variant="secondary">{{ GANHO: "Ganho", PERDIDO: "Perdido", CONCLUIDO: "Concluído" }[etapa.tipo]}</Badge>
+      )}
     </li>
   );
 }
