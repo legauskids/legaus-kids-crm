@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { corDoIndice } from "@/lib/utils/colors";
@@ -10,6 +11,7 @@ import { centavosParaReais } from "@/lib/utils/money";
 import { calcularPrecificacao } from "@/lib/utils/precificacao";
 import { atualizarPrecoProdutoAction, aplicarPrecoEmMassaAction } from "@/app/(app)/produtos/actions";
 import type { ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
+import { NovoProdutoDialog } from "@/app/(app)/produtos/novo-produto-dialog";
 import type { CampoPrecoProduto } from "@/lib/server/produtos";
 
 function formatarPercentual(valor: number): string {
@@ -298,6 +300,7 @@ function CategoriaPrecos({
   onToggle,
   onAtualizar,
   onAplicarEmMassa,
+  onNovoProduto,
 }: {
   categoria: string;
   produtos: ProdutoVM[];
@@ -306,23 +309,26 @@ function CategoriaPrecos({
   onToggle: () => void;
   onAtualizar: (id: string, campo: CampoPrecoProduto, valor: number | null) => void;
   onAplicarEmMassa: (categoria: string, campo: CampoPrecoProduto, valor: number) => void;
+  onNovoProduto: () => void;
 }) {
   return (
     <div className={cn("overflow-hidden rounded-lg border", cor.border)}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className={cn("flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors", cor.bg)}
-      >
-        <span className="flex items-center gap-2 text-sm font-semibold">
-          <span className={cn("size-1.5 rounded-full", cor.dot)} />
-          {categoria}
-          <Badge variant="secondary" className="ml-1">
-            {produtos.length}
-          </Badge>
-        </span>
-        {aberta ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
-      </button>
+      <div className={cn("flex items-center gap-2 pr-2", cor.bg)}>
+        <button type="button" onClick={onToggle} className="flex flex-1 items-center justify-between px-4 py-2.5 text-left">
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <span className={cn("size-1.5 rounded-full", cor.dot)} />
+            {categoria}
+            <Badge variant="secondary" className="ml-1">
+              {produtos.length}
+            </Badge>
+          </span>
+          {aberta ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+        </button>
+        <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={onNovoProduto}>
+          <Plus className="size-3.5" />
+          Novo produto
+        </Button>
+      </div>
       {aberta && (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
@@ -364,6 +370,18 @@ function CategoriaPrecos({
               {produtos.map((p) => (
                 <LinhaProduto key={p.id} produto={p} onAtualizar={onAtualizar} />
               ))}
+              <tr className="border-t">
+                <td colSpan={CABECALHO.length} className="sticky left-0 px-2 py-1.5">
+                  <button
+                    type="button"
+                    onClick={onNovoProduto}
+                    className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
+                  >
+                    <Plus className="size-3.5" />
+                    {produtos.length === 0 ? `Nenhum produto em ${categoria} — adicionar o primeiro` : `Adicionar produto em ${categoria}`}
+                  </button>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -383,6 +401,20 @@ export function ListaPrecos({
 }) {
   const [busca, setBusca] = useState("");
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
+  const [novoAberto, setNovoAberto] = useState(false);
+  const [categoriaParaNovo, setCategoriaParaNovo] = useState<string | undefined>(undefined);
+
+  const todasCategorias = useMemo(
+    () => [...new Set([...categoriasFixas, ...produtos.map((p) => p.categoria)])].sort(),
+    [categoriasFixas, produtos],
+  );
+
+  function abrirNovo(categoria?: string) {
+    setCategoriaParaNovo(categoria);
+    setNovoAberto(true);
+    // Abre a linha pra o produto novo aparecer logo embaixo dela depois de salvar.
+    if (categoria) setAbertas((atual) => new Set(atual).add(categoria));
+  }
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -442,14 +474,20 @@ export function ListaPrecos({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b bg-card px-6 py-3">
-        <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome, código ou categoria..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="pl-8"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative max-w-sm flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, código ou categoria..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <Button size="sm" onClick={() => abrirNovo(undefined)}>
+            <Plus className="size-4" />
+            Novo produto
+          </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           Compra, Frete e Instalação em R$ por unidade. IPI, Outros, Markup e Imposto são percentuais (IPI e Outros sobre o
@@ -473,10 +511,19 @@ export function ListaPrecos({
               onToggle={() => toggle(categoria)}
               onAtualizar={atualizar}
               onAplicarEmMassa={aplicarEmMassa}
+              onNovoProduto={() => abrirNovo(categoria)}
             />
           ))
         )}
       </div>
+
+      <NovoProdutoDialog
+        key={`novo-${novoAberto ? `aberto-${categoriaParaNovo ?? ""}` : "fechado"}`}
+        open={novoAberto}
+        onOpenChange={setNovoAberto}
+        categoriasExistentes={todasCategorias}
+        categoriaInicial={categoriaParaNovo}
+      />
     </div>
   );
 }
