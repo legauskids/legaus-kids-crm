@@ -47,7 +47,7 @@ function CardProdutoImagem({ url }: { url: string }) {
       <img
         src={url}
         alt="Card do produto"
-        className="h-56 w-56 rounded-lg border border-current/20 object-cover"
+        className="h-auto w-56 rounded-lg border border-current/20"
       />
     </a>
   );
