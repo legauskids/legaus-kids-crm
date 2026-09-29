@@ -38,7 +38,9 @@ export function CalendarioView({
   negocios: { id: string; titulo: string; contatoNome: string }[];
 }) {
   const [mesAtual, setMesAtual] = useState(() => new Date());
-  const [tarefaSelecionada, setTarefaSelecionada] = useState<TarefaVM | null>(null);
+  // Guarda o id (não a tarefa): assim o diálogo acompanha o checklist e o que mais mudar depois de salvar.
+  const [tarefaSelecionadaId, setTarefaSelecionadaId] = useState<string | null>(null);
+  const tarefaSelecionada = tarefas.find((t) => t.id === tarefaSelecionadaId) ?? null;
 
   const dias = useMemo(() => {
     const inicio = startOfWeek(startOfMonth(mesAtual), { weekStartsOn: 0 });
@@ -85,7 +87,7 @@ export function CalendarioView({
                   <li key={t.id}>
                     <button
                       type="button"
-                      onClick={() => setTarefaSelecionada(t)}
+                      onClick={() => setTarefaSelecionadaId(t.id)}
                       className="flex w-full items-center gap-1 truncate rounded text-left hover:bg-muted"
                       title={t.titulo}
                     >
@@ -102,7 +104,7 @@ export function CalendarioView({
 
       <EditarTarefaDialog
         tarefa={tarefaSelecionada}
-        onOpenChange={(open) => !open && setTarefaSelecionada(null)}
+        onOpenChange={(open) => !open && setTarefaSelecionadaId(null)}
         usuarios={usuarios}
         negocios={negocios}
       />

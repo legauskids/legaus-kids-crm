@@ -13,6 +13,7 @@ import {
   excluirItemChecklist,
 } from "@/lib/server/tarefas";
 import { criarTarefaSchema } from "@/lib/validators/tarefa";
+import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 
 export type CriarTarefaState = { error?: string; success?: boolean };
 
@@ -27,15 +28,28 @@ export async function criarTarefaAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
+  // Itens do checklist montados no próprio diálogo de criação (campos "checklist" repetidos).
+  const checklist = formData
+    .getAll("checklist")
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+
+  let prazo: Date;
+  try {
+    prazo = dataHoraDoFormulario(parsed.data.prazo);
+  } catch {
+    return { error: "Prazo inválido." };
+  }
 
   await criarTarefa({
     titulo: parsed.data.titulo,
     negocioId: parsed.data.negocioId || null,
     responsavelId: parsed.data.responsavelId,
     solicitanteId: user.id,
-    prazo: new Date(parsed.data.prazo),
+    prazo,
     status: parsed.data.status,
     descricao: parsed.data.descricao || null,
+    checklist,
   });
 
   revalidatePath("/tarefas");
@@ -57,11 +71,18 @@ export async function atualizarTarefaAction(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
+  let prazo: Date;
+  try {
+    prazo = dataHoraDoFormulario(parsed.data.prazo);
+  } catch {
+    return { error: "Prazo inválido." };
+  }
+
   await atualizarTarefa(tarefaId, {
     titulo: parsed.data.titulo,
     negocioId: parsed.data.negocioId || null,
     responsavelId: parsed.data.responsavelId,
-    prazo: new Date(parsed.data.prazo),
+    prazo,
     status: parsed.data.status,
     descricao: parsed.data.descricao || null,
   });
@@ -72,7 +93,7 @@ export async function atualizarTarefaAction(
 
 export async function atualizarPrazoTarefaAction(tarefaId: string, prazo: string): Promise<void> {
   await requireUser();
-  await atualizarPrazoTarefa(tarefaId, new Date(prazo));
+  await atualizarPrazoTarefa(tarefaId, dataHoraDoFormulario(prazo));
   revalidatePath("/tarefas");
 }
 

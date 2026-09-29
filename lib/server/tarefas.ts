@@ -36,10 +36,17 @@ export type CriarTarefaInput = {
   status?: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA";
   /** Compromisso firmado numa reunião (painel /reunioes). */
   reuniaoId?: string | null;
+  /** Itens de checklist já na criação, na ordem digitada. */
+  checklist?: string[];
 };
 
-export function criarTarefa(input: CriarTarefaInput) {
-  return prisma.tarefa.create({ data: input });
+export function criarTarefa({ checklist, ...input }: CriarTarefaInput) {
+  return prisma.tarefa.create({
+    data: {
+      ...input,
+      ...(checklist?.length ? { checklist: { create: checklist.map((texto, ordem) => ({ texto, ordem })) } } : {}),
+    },
+  });
 }
 
 export type AtualizarTarefaInput = {

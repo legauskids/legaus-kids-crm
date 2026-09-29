@@ -27,6 +27,7 @@ import {
   moverMiniFormSchema,
 } from "@/lib/validators/conversa";
 import { reaisParaCentavos } from "@/lib/utils/money";
+import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 
 function revalidateAtendimento() {
   revalidatePath("/atendimento");
@@ -121,7 +122,7 @@ export async function criarAgendadaAction(
   await criarMensagemAgendada({
     conversaId: parsed.data.conversaId,
     texto: parsed.data.texto,
-    agendadaPara: new Date(parsed.data.agendadaPara),
+    agendadaPara: dataHoraDoFormulario(parsed.data.agendadaPara),
     criadaPorId: user.id,
   });
   revalidateAtendimento();
@@ -187,7 +188,7 @@ export async function criarNegocioMiniFormAction(
       conversaId: parsed.data.conversaId,
       responsavelId: parsed.data.tarefaResponsavelId || parsed.data.responsavelId,
       solicitanteId: user.id,
-      prazo: new Date(parsed.data.tarefaPrazo),
+      prazo: dataHoraDoFormulario(parsed.data.tarefaPrazo),
       descricao: parsed.data.tarefaDescricao || null,
     });
   }
@@ -214,7 +215,7 @@ export async function criarTarefaMiniFormAction(
     conversaId: parsed.data.conversaId,
     responsavelId: parsed.data.responsavelId,
     solicitanteId: user.id,
-    prazo: new Date(parsed.data.prazo),
+    prazo: dataHoraDoFormulario(parsed.data.prazo),
     descricao: parsed.data.descricao || null,
   });
   revalidateAtendimento();

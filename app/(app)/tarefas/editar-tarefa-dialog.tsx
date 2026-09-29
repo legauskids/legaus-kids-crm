@@ -50,7 +50,7 @@ export function EditarTarefaDialog({
 
   return (
     <Dialog open={!!tarefa} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Editar tarefa</DialogTitle>
         </DialogHeader>
@@ -60,7 +60,7 @@ export function EditarTarefaDialog({
             <Input id="titulo-editar" name="titulo" defaultValue={tarefa.titulo} required />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="responsavelId-editar">Responsável</Label>
               <Select name="responsavelId" defaultValue={tarefa.responsavelId} required>
