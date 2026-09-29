@@ -41,10 +41,12 @@ export function EditarTarefaDialog({
   const atualizarComId = atualizarTarefaAction.bind(null, tarefa?.id ?? "");
   const [state, formAction, pending] = useActionState(atualizarComId, initialState);
 
+  // Depende do objeto de estado (novo a cada envio), não só de state.success —
+  // senão, da 2ª vez em diante (true→true), o diálogo não fechava.
   useEffect(() => {
     if (state.success) onOpenChange(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.success]);
+  }, [state]);
 
   if (!tarefa) return null;
 

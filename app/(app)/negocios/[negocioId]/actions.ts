@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
 import { criarTarefa, moverTarefaStatus } from "@/lib/server/tarefas";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
+import { itensDoChecklist } from "@/lib/utils/checklist";
 
 export type CriarTarefaRapidaState = { error?: string; success?: boolean };
 
@@ -29,6 +30,7 @@ export async function criarTarefaRapidaAction(
     solicitanteId: user.id,
     prazo: dataHoraDoFormulario(prazo),
     descricao: descricao || null,
+    checklist: itensDoChecklist(formData),
   });
 
   revalidatePath(`/negocios/${negocioId}`);

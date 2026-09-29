@@ -24,6 +24,7 @@ import {
   criarTarefaMiniFormAction,
   type TarefaMiniFormState,
 } from "@/app/(app)/atendimento/actions";
+import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
 
 const initialState: TarefaMiniFormState = {};
 
@@ -49,11 +50,11 @@ export function TarefaMiniForm({
       router.refresh();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.success]);
+  }, [state]); // objeto novo a cada envio — com state.success, da 2ª vez não fechava
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Criar tarefa vinculada à conversa</DialogTitle>
         </DialogHeader>
@@ -66,7 +67,7 @@ export function TarefaMiniForm({
             <Input id="titulo-tarefa" name="titulo" required />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="responsavelId-tarefa">Responsável</Label>
               <Select name="responsavelId" required>
@@ -92,6 +93,8 @@ export function TarefaMiniForm({
             <Label htmlFor="descricao-tarefa">Descrição</Label>
             <Textarea id="descricao-tarefa" name="descricao" />
           </div>
+
+          <ChecklistNovaTarefa id="checklist-atendimento" />
 
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/server/tarefas";
 import { criarTarefaSchema } from "@/lib/validators/tarefa";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
+import { itensDoChecklist } from "@/lib/utils/checklist";
 
 export type CriarTarefaState = { error?: string; success?: boolean };
 
@@ -28,11 +29,7 @@ export async function criarTarefaAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
-  // Itens do checklist montados no próprio diálogo de criação (campos "checklist" repetidos).
-  const checklist = formData
-    .getAll("checklist")
-    .map((item) => String(item).trim())
-    .filter(Boolean);
+  const checklist = itensDoChecklist(formData);
 
   let prazo: Date;
   try {

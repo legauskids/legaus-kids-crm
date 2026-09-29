@@ -28,6 +28,7 @@ import {
 } from "@/lib/validators/conversa";
 import { reaisParaCentavos } from "@/lib/utils/money";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
+import { itensDoChecklist } from "@/lib/utils/checklist";
 
 function revalidateAtendimento() {
   revalidatePath("/atendimento");
@@ -217,6 +218,7 @@ export async function criarTarefaMiniFormAction(
     solicitanteId: user.id,
     prazo: dataHoraDoFormulario(parsed.data.prazo),
     descricao: parsed.data.descricao || null,
+    checklist: itensDoChecklist(formData),
   });
   revalidateAtendimento();
   return { success: true };

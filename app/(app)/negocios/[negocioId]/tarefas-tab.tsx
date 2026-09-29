@@ -20,6 +20,7 @@ import {
   concluirTarefaRapidaAction,
   type CriarTarefaRapidaState,
 } from "@/app/(app)/negocios/[negocioId]/actions";
+import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
 
 type Tarefa = {
   id: string;
@@ -56,10 +57,12 @@ export function TarefasTab({
     initialState,
   );
   const [, startTransition] = useTransition();
-  const [successAnterior, setSuccessAnterior] = useState(state.success);
+  // Compara o objeto (cada envio devolve um novo): só com state.success, a partir
+  // da 2ª tarefa criada o valor ficava true→true e o formulário não fechava.
+  const [estadoAnterior, setEstadoAnterior] = useState(state);
 
-  if (state.success !== successAnterior) {
-    setSuccessAnterior(state.success);
+  if (state !== estadoAnterior) {
+    setEstadoAnterior(state);
     if (state.success) setFormOpen(false);
   }
 
@@ -108,7 +111,7 @@ export function TarefasTab({
                 <Label htmlFor="titulo">Título</Label>
                 <Input id="titulo" name="titulo" required />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="responsavelId">Responsável</Label>
                   <Select name="responsavelId" required>
@@ -133,6 +136,7 @@ export function TarefasTab({
                 <Label htmlFor="descricao">Descrição</Label>
                 <Textarea id="descricao" name="descricao" />
               </div>
+              <ChecklistNovaTarefa id="checklist-negocio" />
               {state.error && <p className="text-sm text-destructive">{state.error}</p>}
               <div className="flex gap-2">
                 <Button type="submit" disabled={pending}>
