@@ -17,6 +17,12 @@ import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { itensDoChecklist } from "@/lib/utils/checklist";
 import { categoriaDoFormulario } from "@/lib/utils/categoria-tarefa";
 
+// Tarefas e o Painel (card de Compromissos conta as tarefas concluídas e planejadas).
+function revalidarTarefas() {
+  revalidatePath("/tarefas");
+  revalidatePath("/");
+}
+
 export type CriarTarefaState = { error?: string; success?: boolean };
 
 export async function criarTarefaAction(
@@ -51,7 +57,7 @@ export async function criarTarefaAction(
     ...categoriaDoFormulario(formData),
   });
 
-  revalidatePath("/tarefas");
+  revalidarTarefas();
   return { success: true };
 }
 
@@ -87,14 +93,14 @@ export async function atualizarTarefaAction(
     ...categoriaDoFormulario(formData),
   });
 
-  revalidatePath("/tarefas");
+  revalidarTarefas();
   return { success: true };
 }
 
 export async function atualizarPrazoTarefaAction(tarefaId: string, prazo: string): Promise<void> {
   await requireUser();
   await atualizarPrazoTarefa(tarefaId, dataHoraDoFormulario(prazo));
-  revalidatePath("/tarefas");
+  revalidarTarefas();
 }
 
 export async function moverTarefaAction(
@@ -103,13 +109,13 @@ export async function moverTarefaAction(
 ): Promise<void> {
   await requireUser();
   await moverTarefaStatus(tarefaId, novoStatus);
-  revalidatePath("/tarefas");
+  revalidarTarefas();
 }
 
 export async function aprovarTarefaAction(tarefaId: string): Promise<void> {
   await requireUser();
   await aprovarTarefa(tarefaId);
-  revalidatePath("/tarefas");
+  revalidarTarefas();
 }
 
 export async function adicionarItemChecklistAction(tarefaId: string, texto: string): Promise<void> {
@@ -117,17 +123,17 @@ export async function adicionarItemChecklistAction(tarefaId: string, texto: stri
   const limpo = texto.trim();
   if (!limpo) return;
   await adicionarItemChecklist(tarefaId, limpo);
-  revalidatePath("/tarefas");
+  revalidarTarefas();
 }
 
 export async function alternarItemChecklistAction(itemId: string): Promise<void> {
   await requireUser();
   await alternarItemChecklist(itemId);
-  revalidatePath("/tarefas");
+  revalidarTarefas();
 }
 
 export async function excluirItemChecklistAction(itemId: string): Promise<void> {
   await requireUser();
   await excluirItemChecklist(itemId);
-  revalidatePath("/tarefas");
+  revalidarTarefas();
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma, type StatusItemPauta, type TipoReuniao } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { URL_BASE } from "@/lib/constants/app";
 import { criarTarefa, moverTarefaStatus } from "@/lib/server/tarefas";
 import { carregarTransacoes } from "@/lib/server/resultado-financeiro";
 import { calcularResultado } from "@/lib/utils/resultado-financeiro";
@@ -376,6 +377,50 @@ export async function encerrarReuniao(id: string) {
     where: { id },
     data: { status: "ENCERRADA", encerradaEm: new Date(), resumoEncerramento: resumo as unknown as Prisma.InputJsonValue },
   });
+  try {
+    await registrarReuniaoDeEquipe(reuniao);
+  } catch (erro) {
+    // Não impede o encerramento — só o compromisso da semana deixa de ser contado sozinho.
+    console.error("[reunioes] Falha ao registrar a tarefa de Reunião de Equipe:", erro);
+  }
+}
+
+/**
+ * Compromisso "Reunião de Equipe" (módulo Compromissos, decisão do Marcos em
+ * 2026-09-30): encerrar a reunião aqui já conta a semana — cria a tarefa da
+ * categoria concluída, com o link da reunião como pauta, pra cada pessoa que
+ * tem compromisso ativo dessa categoria. Não duplica se reabrir e encerrar de novo.
+ * Categoria: a do cadastro inicial (cat-reuniao-equipe) ou, se ela não existir
+ * mais, a primeira categoria ativa com campo de pauta.
+ */
+async function registrarReuniaoDeEquipe(reuniao: { id: string; titulo: string; criadoPorId: string }) {
+  const categoria =
+    (await prisma.categoriaTarefa.findFirst({ where: { id: "cat-reuniao-equipe", ativa: true } })) ??
+    (await prisma.categoriaTarefa.findFirst({ where: { campoExtra: "PAUTA", ativa: true }, orderBy: { ordem: "asc" } }));
+  if (!categoria) return;
+  const pessoas = await prisma.compromissoUsuario.findMany({
+    where: { compromisso: { ativo: true, categoriaId: categoria.id } },
+    select: { usuarioId: true },
+    distinct: ["usuarioId"],
+  });
+  const link = `${URL_BASE}/reunioes/${reuniao.id}`;
+  for (const { usuarioId } of pessoas) {
+    const jaTem = await prisma.tarefa.findFirst({ where: { responsavelId: usuarioId, categoriaId: categoria.id, link } });
+    if (jaTem) continue;
+    await prisma.tarefa.create({
+      data: {
+        titulo: `${categoria.nome} — ${reuniao.titulo}`,
+        responsavelId: usuarioId,
+        solicitanteId: reuniao.criadoPorId,
+        prazo: new Date(),
+        status: "CONCLUIDA",
+        automatica: true,
+        categoriaId: categoria.id,
+        link,
+        descricao: `Reunião encerrada no painel Reuniões — pauta, compromissos firmados e avaliação em ${link}`,
+      },
+    });
+  }
 }
 
 export async function reabrirReuniao(id: string) {

@@ -42,7 +42,8 @@ export function ExpandablePanel({
       <CardContent className="py-4">{children}</CardContent>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+        {/* sm:max-w-3xl: sem o sm:, o sm:max-w-sm do diálogo base vencia e a janela expandida abria com 384px no computador. */}
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
