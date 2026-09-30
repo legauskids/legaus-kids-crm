@@ -11,6 +11,7 @@ import {
   percentualCumprimento,
   proximoDiaUtil,
   sequenciaDeDias,
+  tarefasQueContam,
   versaoVigente,
   type CompromissoParaCalculo,
   type ContextoCalculo,
@@ -195,5 +196,91 @@ export async function getPainelCompromissos(usuarioId: string, agora: Date = new
         diasUteis: v.diasUteis,
       })),
     })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Link do card pra aba Tarefas: as tarefas que estão somando no compromisso.
+// ---------------------------------------------------------------------------
+
+export type FiltroTarefasCompromisso = {
+  /** Frase explicando o que está sendo mostrado (ex.: "Gerar Receita em 30/09: concluídas no dia (1 de 2)"). */
+  descricao: string;
+  ids: string[];
+  /** Pré-preenchimento do "Nova tarefa" na aba, pra já criar na categoria certa. */
+  valoresIniciais?: { categoriaId?: string; prazo?: string; responsavelId?: string };
+};
+
+function ddmm(dia: string): string {
+  return `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+}
+
+/**
+ * As tarefas da pessoa que somam no compromisso (ou em todos os diários, com
+ * compromissoId "diarios") no dia — ou na semana do dia, nos semanais. Mesmo
+ * critério do progresso (tarefasQueContam).
+ */
+export async function getFiltroTarefasCompromisso(params: {
+  usuarioId: string;
+  compromissoId: string;
+  dia: string;
+  agora?: Date;
+}): Promise<FiltroTarefasCompromisso | null> {
+  const agora = params.agora ?? new Date();
+  const todos = await prisma.compromisso.findMany({
+    where: { ativo: true },
+    orderBy: [{ ordem: "asc" }, { nome: "asc" }],
+    include: { versoes: true, usuarios: { select: { usuarioId: true } }, categoria: { select: { nome: true } } },
+  });
+  const doUsuario = todos.filter((c) => c.usuarios.some((u) => u.usuarioId === params.usuarioId));
+  const alvo =
+    params.compromissoId === "diarios"
+      ? doUsuario.filter((c) => c.frequencia === "DIARIA")
+      : doUsuario.filter((c) => c.id === params.compromissoId);
+  if (alvo.length === 0) return null;
+
+  const categorias = [...new Set(alvo.map((c) => c.categoriaId).filter((id): id is string => !!id))];
+  // Janela folgada: semana do dia (semanais) até o próximo dia útil (planejar).
+  const inicio = inicioDoDiaBrasilia(somarDias(inicioDaSemana(params.dia), -1));
+  const fim = inicioDoDiaBrasilia(somarDias(params.dia, 9));
+  const tarefas = await prisma.tarefa.findMany({
+    where: {
+      responsavelId: params.usuarioId,
+      categoriaId: { in: categorias },
+      OR: [{ concluidaEm: { gte: inicio, lt: fim } }, { prazo: { gte: inicio, lt: fim } }],
+    },
+    select: { id: true, categoriaId: true, prazo: true, concluidaEm: true, prazoDefinidoEm: true },
+  });
+  const ctx: ContextoCalculo = { compromissos: todos.map(paraCalculo), tarefas, agora };
+
+  const ids = new Set<string>();
+  const partes: string[] = [];
+  let valoresIniciais: FiltroTarefasCompromisso["valoresIniciais"];
+  for (const c of alvo) {
+    const calc = paraCalculo(c);
+    for (const t of tarefasQueContam(calc, params.dia, tarefas)) ids.add(t.id);
+    const r = c.frequencia === "DIARIA" ? avaliarDiario(calc, params.dia, ctx) : avaliarSemanal(calc, inicioDaSemana(params.dia), ctx);
+    const placar = r ? ` (${r.realizado} de ${r.meta})` : "";
+    const categoria = c.categoria?.nome ?? "da categoria";
+    if (c.frequencia === "SEMANAL") {
+      const segunda = inicioDaSemana(params.dia);
+      partes.push(`${c.nome} na semana de ${ddmm(segunda)} a ${ddmm(somarDias(segunda, 6))}: concluídas na semana${placar}`);
+      valoresIniciais = { categoriaId: c.categoriaId ?? undefined, responsavelId: params.usuarioId };
+    } else if (c.regra === "PLANEJAR_DIA_SEGUINTE") {
+      const versao = versaoVigente(calc.versoes, inicioDoDiaBrasilia(params.dia));
+      const diaAlvo = versao ? proximoDiaUtil(params.dia, versao.diasUteis) : somarDias(params.dia, 1);
+      partes.push(`Planejar ${ddmm(diaAlvo)}: tarefas ${categoria} com prazo em ${ddmm(diaAlvo)} agendadas até ${versao?.horarioCorte ?? "o corte"} de ${ddmm(params.dia)}${placar}`);
+      valoresIniciais = { categoriaId: c.categoriaId ?? undefined, prazo: `${diaAlvo}T09:00`, responsavelId: params.usuarioId };
+    } else {
+      partes.push(`${c.nome} em ${ddmm(params.dia)}: concluídas no dia${placar}`);
+      valoresIniciais = { categoriaId: c.categoriaId ?? undefined, responsavelId: params.usuarioId };
+    }
+  }
+
+  return {
+    descricao: alvo.length > 1 ? `Compromissos diários em ${ddmm(params.dia)} — ${partes.join(" · ")}` : partes[0],
+    ids: [...ids],
+    // Com vários compromissos juntos não dá pra saber em qual categoria criar.
+    valoresIniciais: alvo.length === 1 ? valoresIniciais : undefined,
   };
 }

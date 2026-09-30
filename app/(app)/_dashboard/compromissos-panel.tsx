@@ -50,12 +50,22 @@ function pct(c: Contagem | { planejadas: number; executadas: number }): string {
   return den === 0 ? "—" : `${Math.round((num / den) * 100)}%`;
 }
 
-function LinhaItem({ item }: { item: ItemPainel }) {
+/** Aba Tarefas filtrada pelas tarefas que estão somando no compromisso (ou em todos os diários do dia). */
+function linkTarefas(compromissoId: string, usuarioId: string, dia: string): string {
+  return `/tarefas?compromisso=${encodeURIComponent(compromissoId)}&de=${encodeURIComponent(usuarioId)}&dia=${dia}`;
+}
+
+function LinhaItem({ item, href }: { item: ItemPainel; href: string }) {
   const cor = COR_STATUS[item.status];
   const nome = item.regra === "PLANEJAR_DIA_SEGUINTE" && item.diaAlvo ? `Planejar ${diaCurto(item.diaAlvo)}` : item.nome;
   const progresso = item.meta > 0 ? Math.min(100, Math.round((item.realizado / item.meta) * 100)) : 100;
   return (
-    <li className="space-y-1">
+    <li>
+      <Link
+        href={href}
+        title="Ver as tarefas que estão somando"
+        className="-mx-1.5 block space-y-1 rounded-md px-1.5 py-1 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+      >
       <div className="flex items-baseline justify-between gap-2 text-sm">
         <span className="flex min-w-0 items-center gap-1.5">
           {item.categoriaCor && <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: item.categoriaCor }} />}
@@ -70,6 +80,7 @@ function LinhaItem({ item }: { item: ItemPainel }) {
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full transition-all", cor.barra)} style={{ width: `${progresso}%` }} />
       </div>
+      </Link>
     </li>
   );
 }
@@ -98,7 +109,7 @@ export function CompromissosPanel({
         ) : (
           <ul className="space-y-2.5">
             {painel.hoje.itens.map((i) => (
-              <LinhaItem key={i.compromissoId} item={i} />
+              <LinhaItem key={i.compromissoId} item={i} href={linkTarefas(i.compromissoId, painel.usuario.id, painel.hoje.dia)} />
             ))}
           </ul>
         )}
@@ -112,7 +123,7 @@ export function CompromissosPanel({
         ) : (
           <ul className="space-y-2.5">
             {painel.semana.itens.map((i) => (
-              <LinhaItem key={i.compromissoId} item={i} />
+              <LinhaItem key={i.compromissoId} item={i} href={linkTarefas(i.compromissoId, painel.usuario.id, painel.hoje.dia)} />
             ))}
           </ul>
         )}
@@ -269,6 +280,7 @@ function GradeQuatroSemanas({ painel }: { painel: PainelCompromissos }) {
   return (
     <section className="space-y-2">
       <h3 className="text-sm font-semibold">Últimas 4 semanas (compromissos diários)</h3>
+      <p className="text-xs text-muted-foreground">Clique num dia pra ver as tarefas que somaram nele.</p>
       <div className="grid grid-cols-7 gap-1 text-center text-[11px]">
         {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((d) => (
           <span key={d} className="font-medium text-muted-foreground">
@@ -278,19 +290,26 @@ function GradeQuatroSemanas({ painel }: { painel: PainelCompromissos }) {
         {semanas.flat().map((g) => {
           const titulo =
             g.itens.length > 0 ? `${diaCurto(g.dia)}: ${g.itens.map((i) => `${i.nome} ${i.realizado}/${i.meta}`).join(" · ")}` : diaCurto(g.dia);
-          return (
-            <div
+          const clicavel = g.itens.length > 0;
+          const classe = cn(
+            "flex h-9 items-center justify-center rounded-md tabular-nums",
+            g.estado === "cumprido" && COR_STATUS.cumprido.fundo,
+            g.estado === "andamento" && COR_STATUS.andamento.fundo,
+            g.estado === "nao_cumprido" && COR_STATUS.nao_cumprido.fundo,
+            g.estado === "sem" && "bg-muted/60 text-muted-foreground",
+            g.estado === "futuro" && "border border-dashed text-muted-foreground/60",
+          );
+          return clicavel ? (
+            <Link
               key={g.dia}
-              title={titulo}
-              className={cn(
-                "flex h-9 items-center justify-center rounded-md tabular-nums",
-                g.estado === "cumprido" && COR_STATUS.cumprido.fundo,
-                g.estado === "andamento" && COR_STATUS.andamento.fundo,
-                g.estado === "nao_cumprido" && COR_STATUS.nao_cumprido.fundo,
-                g.estado === "sem" && "bg-muted/60 text-muted-foreground",
-                g.estado === "futuro" && "border border-dashed text-muted-foreground/60",
-              )}
+              href={linkTarefas("diarios", painel.usuario.id, g.dia)}
+              title={`${titulo} — ver as tarefas`}
+              className={cn(classe, "transition-opacity hover:opacity-80 hover:ring-2 hover:ring-primary/40")}
             >
+              {Number(g.dia.slice(8))}
+            </Link>
+          ) : (
+            <div key={g.dia} title={titulo} className={classe}>
               {Number(g.dia.slice(8))}
             </div>
           );

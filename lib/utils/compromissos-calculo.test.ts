@@ -7,6 +7,7 @@ import {
   percentualCumprimento,
   proximoDiaUtil,
   sequenciaDeDias,
+  tarefasQueContam,
   type CompromissoParaCalculo,
   type ContextoCalculo,
   type ResultadoCompromisso,
@@ -158,5 +159,19 @@ describe("percentuais e taxa do plano", () => {
       tarefa("cat-mel", "2026-10-01 10:00", { definida: "2026-09-30 10:00" }), // outra categoria
     ];
     expect(execucaoDoPlano("cat-gr", "2026-10-01", tarefas)).toEqual({ planejadas: 2, executadas: 1 });
+  });
+});
+
+describe("tarefasQueContam (link do card pra aba Tarefas)", () => {
+  it("devolve exatamente as tarefas que somam, com os dados originais (ids)", () => {
+    const tarefas = [
+      { ...tarefa("cat-gr", "2026-09-29 10:00", { concluida: "2026-09-30 09:00" }), id: "atrasada-concluida-hoje" },
+      { ...tarefa("cat-gr", "2026-09-30 10:00"), id: "aberta" },
+      { ...tarefa("cat-mel", "2026-09-30 10:00", { concluida: "2026-09-30 11:00" }), id: "outra-categoria" },
+      { ...tarefa("cat-gr", "2026-10-01 09:00", { definida: "2026-09-30 18:00" }), id: "planejada" },
+    ];
+    expect(tarefasQueContam(GR, "2026-09-30", tarefas).map((t) => t.id)).toEqual(["atrasada-concluida-hoje"]);
+    expect(tarefasQueContam(PLANEJAR, "2026-09-30", tarefas).map((t) => t.id)).toEqual(["planejada"]);
+    expect(tarefasQueContam(MELHORIA, "2026-10-02", tarefas).map((t) => t.id)).toEqual(["outra-categoria"]);
   });
 });

@@ -134,6 +134,35 @@ function metaExigidaPlanejar(c: CompromissoParaCalculo, versao: VersaoCompromiss
   return versao.meta ?? 1;
 }
 
+/**
+ * As tarefas que somam no compromisso — o critério único usado no progresso e
+ * no link do card do Painel pra aba Tarefas:
+ * - diário por categoria: concluídas no dia (pelo dia da conclusão, não do prazo);
+ * - planejar o dia seguinte: da categoria, com prazo no próximo dia útil e
+ *   prazo definido até o horário de corte do dia;
+ * - semanal: concluídas na semana (segunda a domingo) que contém o dia.
+ */
+export function tarefasQueContam<T extends TarefaParaCompromisso>(c: CompromissoParaCalculo, dia: string, tarefas: T[]): T[] {
+  const daCategoria = tarefas.filter((t) => t.categoriaId === c.categoriaId);
+  if (c.frequencia === "SEMANAL") {
+    const segunda = inicioDaSemana(dia);
+    const fim = somarDias(segunda, 7);
+    return daCategoria.filter((t) => {
+      if (!t.concluidaEm) return false;
+      const d = diaBrasilia(t.concluidaEm);
+      return d >= segunda && d < fim;
+    });
+  }
+  if (c.regra === "PLANEJAR_DIA_SEGUINTE") {
+    const versao = versaoVigente(c.versoes, inicioDoDiaBrasilia(dia));
+    if (!versao) return [];
+    const corte = instanteNoDia(dia, versao.horarioCorte ?? "23:59");
+    const alvo = proximoDiaUtil(dia, versao.diasUteis);
+    return daCategoria.filter((t) => diaBrasilia(t.prazo) === alvo && t.prazoDefinidoEm.getTime() <= corte.getTime());
+  }
+  return daCategoria.filter((t) => t.concluidaEm && diaBrasilia(t.concluidaEm) === dia);
+}
+
 /** Compromisso diário num dia; null = não se aplica (antes de existir, dia não considerado ou futuro). */
 export function avaliarDiario(c: CompromissoParaCalculo, dia: string, ctx: ContextoCalculo): ResultadoCompromisso | null {
   const hoje = diaBrasilia(ctx.agora);
@@ -147,16 +176,13 @@ export function avaliarDiario(c: CompromissoParaCalculo, dia: string, ctx: Conte
     const corte = instanteNoDia(dia, corteHhmm);
     const alvo = proximoDiaUtil(dia, versao.diasUteis);
     const meta = metaExigidaPlanejar(c, versao, dia, alvo, ctx);
-    // Planejada = da categoria, com prazo no próximo dia útil e prazo definido até o corte.
-    const realizado = ctx.tarefas.filter(
-      (t) => t.categoriaId === c.categoriaId && diaBrasilia(t.prazo) === alvo && t.prazoDefinidoEm.getTime() <= corte.getTime(),
-    ).length;
+    const realizado = tarefasQueContam(c, dia, ctx.tarefas).length;
     const status: StatusCompromisso = realizado >= meta ? "cumprido" : ctx.agora.getTime() < corte.getTime() ? "andamento" : "nao_cumprido";
     return { ...base, realizado, meta, status, diaAlvo: alvo, horarioCorte: corteHhmm };
   }
 
   const meta = versao.meta ?? 1;
-  const realizado = ctx.tarefas.filter((t) => t.categoriaId === c.categoriaId && t.concluidaEm && diaBrasilia(t.concluidaEm) === dia).length;
+  const realizado = tarefasQueContam(c, dia, ctx.tarefas).length;
   const status: StatusCompromisso = realizado >= meta ? "cumprido" : dia === hoje ? "andamento" : "nao_cumprido";
   return { ...base, realizado, meta, status };
 }
@@ -169,11 +195,7 @@ export function avaliarSemanal(c: CompromissoParaCalculo, segunda: string, ctx: 
   if (!versao) return null;
   const fim = somarDias(segunda, 7);
   const meta = versao.meta ?? 1;
-  const realizado = ctx.tarefas.filter((t) => {
-    if (t.categoriaId !== c.categoriaId || !t.concluidaEm) return false;
-    const d = diaBrasilia(t.concluidaEm);
-    return d >= segunda && d < fim;
-  }).length;
+  const realizado = tarefasQueContam(c, segunda, ctx.tarefas).length;
   const status: StatusCompromisso = realizado >= meta ? "cumprido" : hoje < fim ? "andamento" : "nao_cumprido";
   return { compromissoId: c.id, nome: c.nome, regra: c.regra, realizado, meta, status };
 }

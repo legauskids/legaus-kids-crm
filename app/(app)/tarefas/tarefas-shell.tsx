@@ -20,6 +20,8 @@ import { NovaTarefaDialog } from "@/app/(app)/tarefas/nova-tarefa-dialog";
 import { EditarTarefaDialog } from "@/app/(app)/tarefas/editar-tarefa-dialog";
 import { useCategoriasTarefa } from "@/components/tarefas/categorias-context";
 import { SEM_CATEGORIA } from "@/lib/utils/categoria-tarefa";
+import Link from "next/link";
+import type { FiltroTarefasCompromisso } from "@/lib/server/compromissos";
 
 type Funil = { id: string; nome: string; etapas: { id: string; nome: string }[] };
 
@@ -38,6 +40,7 @@ export function TarefasShell({
   usuarios,
   negocios,
   statusInicial,
+  filtroCompromisso,
 }: {
   tarefas: TarefaVM[];
   funis: Funil[];
@@ -45,8 +48,12 @@ export function TarefasShell({
   negocios: { id: string; titulo: string; contatoNome: string }[];
   /** Filtro de status já aplicado ao abrir (ex.: ?status=ATRASADA vindo do dashboard). */
   statusInicial?: string;
+  /** Vindo do card de Compromissos: só as tarefas que estão somando no compromisso. */
+  filtroCompromisso?: FiltroTarefasCompromisso | null;
 }) {
-  const [view, setView] = useState<(typeof VIEWS)[number]["id"]>("kanban");
+  // Do card de Compromissos abre em Lista: mostra também as já concluídas, com o status.
+  const [view, setView] = useState<(typeof VIEWS)[number]["id"]>(filtroCompromisso ? "lista" : "kanban");
+  const idsDoCompromisso = useMemo(() => (filtroCompromisso ? new Set(filtroCompromisso.ids) : null), [filtroCompromisso]);
   const [responsavelId, setResponsavelId] = useState(TODOS);
   // Categoria de compromisso: todas, sem categoria ou uma específica.
   const [categoriaId, setCategoriaId] = useState(TODOS);
@@ -70,6 +77,7 @@ export function TarefasShell({
 
   const filtradasSemStatus = useMemo(() => {
     return tarefas.filter((t) => {
+      if (idsDoCompromisso && !idsDoCompromisso.has(t.id)) return false;
       if (responsavelId !== TODOS && t.responsavelId !== responsavelId) return false;
       if (categoriaId === SEM_CATEGORIA && t.categoriaId) return false;
       if (categoriaId !== TODOS && categoriaId !== SEM_CATEGORIA && t.categoriaId !== categoriaId) return false;
@@ -78,7 +86,7 @@ export function TarefasShell({
       if (periodo !== TODOS && !estaNoPeriodo(new Date(t.prazo), periodo)) return false;
       return true;
     });
-  }, [tarefas, responsavelId, categoriaId, funilId, etapaId, periodo]);
+  }, [tarefas, idsDoCompromisso, responsavelId, categoriaId, funilId, etapaId, periodo]);
 
   const contagens = useMemo(() => {
     const counts: Record<string, number> = { A_FAZER: 0, EM_ANDAMENTO: 0, APROVACAO: 0, ATRASADA: 0, CONCLUIDA: 0 };
@@ -117,6 +125,17 @@ export function TarefasShell({
           Nova tarefa
         </Button>
       </div>
+
+      {filtroCompromisso && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-primary/5 px-4 py-2 text-sm">
+          <span className="font-medium text-primary">Somando no compromisso:</span>
+          <span className="text-foreground">{filtroCompromisso.descricao}</span>
+          {filtroCompromisso.ids.length === 0 && <span className="text-muted-foreground">— nenhuma tarefa ainda.</span>}
+          <Link href="/tarefas" className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:underline">
+            Ver todas as tarefas
+          </Link>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 border-b bg-muted/20 px-4 py-2">
         <Select value={responsavelId} onValueChange={setResponsavelId}>
@@ -238,7 +257,14 @@ export function TarefasShell({
         )}
       </div>
 
-      <NovaTarefaDialog open={novaAberta} onOpenChange={setNovaAberta} usuarios={usuarios} negocios={negocios} />
+      <NovaTarefaDialog
+        key={novaAberta ? "nova-aberta" : "nova-fechada"}
+        open={novaAberta}
+        onOpenChange={setNovaAberta}
+        usuarios={usuarios}
+        negocios={negocios}
+        valoresIniciais={filtroCompromisso?.valoresIniciais}
+      />
       <EditarTarefaDialog
         tarefa={tarefaEditando}
         onOpenChange={(open) => !open && setTarefaEditandoId(null)}

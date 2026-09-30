@@ -3,11 +3,27 @@ import { listTarefas } from "@/lib/server/tarefas";
 import { listFunisComEtapas } from "@/lib/server/negocios";
 import { prisma } from "@/lib/db";
 import { TarefasShell } from "@/app/(app)/tarefas/tarefas-shell";
+import { getFiltroTarefasCompromisso } from "@/lib/server/compromissos";
+import { diaBrasilia } from "@/lib/utils/brasilia";
 
-export default async function TarefasPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
-  await requireModulo("tarefas");
+export default async function TarefasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; compromisso?: string; de?: string; dia?: string }>;
+}) {
+  const user = await requireModulo("tarefas");
   // ?status=ATRASADA / APROVACAO — vindo dos cards do dashboard.
-  const { status: statusInicial } = await searchParams;
+  // ?compromisso=<id|diarios>&de=<usuário>&dia=AAAA-MM-DD — vindo do card de
+  // Compromissos: mostra só as tarefas que estão somando ali. Só o
+  // administrador vê as de outra pessoa.
+  const { status: statusInicial, compromisso, de, dia } = await searchParams;
+  const filtroCompromisso = compromisso
+    ? await getFiltroTarefasCompromisso({
+        usuarioId: user.isAdmin && de ? de : user.id,
+        compromissoId: compromisso,
+        dia: dia && /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia : diaBrasilia(new Date()),
+      })
+    : null;
 
   const [tarefas, funis, usuarios, negocios] = await Promise.all([
     listTarefas(),
@@ -23,6 +39,7 @@ export default async function TarefasPage({ searchParams }: { searchParams: Prom
   return (
     <TarefasShell
       statusInicial={statusInicial}
+      filtroCompromisso={filtroCompromisso}
       tarefas={tarefas.map((t) => ({
         id: t.id,
         titulo: t.titulo,

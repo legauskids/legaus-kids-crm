@@ -52,7 +52,7 @@ export function NovaTarefaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{valoresIniciais?.categoriaId ? "Planejar tarefa" : "Nova tarefa"}</DialogTitle>
+          <DialogTitle>{valoresIniciais?.prazo ? "Planejar tarefa" : "Nova tarefa"}</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
