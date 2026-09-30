@@ -2,20 +2,15 @@
 // resumo e os "sinais de atenção" que o CRM levanta sozinho pra pauta.
 // Pedido de 2026-09-25. Dados vêm de lib/server/reunioes.ts.
 
+import { diaBrasilia, inicioDoDiaBrasilia } from "./brasilia";
+
+// Mantidos exportados daqui porque as telas de Reuniões já importam deste arquivo.
+export { diaBrasilia, inicioDoDiaBrasilia };
+
 const DIA_MS = 24 * 60 * 60 * 1000;
 const NOMES_MES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
 export type TipoReuniao = "SEMANAL" | "MENSAL";
-
-/** "AAAA-MM-DD" do dia em Brasília (o servidor da Vercel roda em UTC). */
-export function diaBrasilia(data: Date): string {
-  return data.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-}
-
-/** Meia-noite de Brasília (-03:00 fixo; o Brasil não tem mais horário de verão). */
-export function inicioDoDiaBrasilia(diaIso: string): Date {
-  return new Date(`${diaIso}T00:00:00-03:00`);
-}
 
 function inicioDoMesBrasilia(ano: number, mes: number): Date {
   // mes 1-12; aceita 0 e 13 (vira o ano vizinho)
