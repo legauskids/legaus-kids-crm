@@ -38,6 +38,9 @@ export type CriarTarefaInput = {
   reuniaoId?: string | null;
   /** Itens de checklist já na criação, na ordem digitada. */
   checklist?: string[];
+  /** Categoria de compromisso (módulo Compromissos) e link opcional (ex.: da postagem). */
+  categoriaId?: string | null;
+  link?: string | null;
 };
 
 export function criarTarefa({ checklist, ...input }: CriarTarefaInput) {
@@ -55,6 +58,8 @@ export type AtualizarTarefaInput = {
   responsavelId: string;
   prazo: Date;
   descricao?: string | null;
+  categoriaId?: string | null;
+  link?: string | null;
   status: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA";
 };
 

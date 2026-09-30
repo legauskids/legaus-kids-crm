@@ -11,6 +11,15 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
+/** Configurações (categorias, compromissos): só administrador. */
+export async function requireAdmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!user.isAdmin) {
+    redirect("/");
+  }
+  return user;
+}
+
 export async function requireModulo(modulo: ModuloKey): Promise<SessionUser> {
   const user = await requireUser();
   if (!moduloPermitido(user, modulo)) {

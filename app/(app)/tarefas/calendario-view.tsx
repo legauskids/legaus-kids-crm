@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { corPrazoTarefa } from "@/lib/utils/dates";
 import { EditarTarefaDialog } from "@/app/(app)/tarefas/editar-tarefa-dialog";
 import type { TarefaVM } from "@/app/(app)/tarefas/types";
+import { useCategoriasTarefa } from "@/components/tarefas/categorias-context";
 
 const COR_DOT: Record<string, string> = {
   atrasada: "bg-destructive",
@@ -41,6 +42,10 @@ export function CalendarioView({
   // Guarda o id (não a tarefa): assim o diálogo acompanha o checklist e o que mais mudar depois de salvar.
   const [tarefaSelecionadaId, setTarefaSelecionadaId] = useState<string | null>(null);
   const tarefaSelecionada = tarefas.find((t) => t.id === tarefaSelecionadaId) ?? null;
+  // Categoria de compromisso: faixa colorida à esquerda do título.
+  const categorias = useCategoriasTarefa();
+  const corCategoria = (id: string | null) => categorias.find((c) => c.id === id)?.cor;
+  const nomeCategoria = (id: string | null) => categorias.find((c) => c.id === id)?.nome;
 
   const dias = useMemo(() => {
     const inicio = startOfWeek(startOfMonth(mesAtual), { weekStartsOn: 0 });
@@ -88,8 +93,9 @@ export function CalendarioView({
                     <button
                       type="button"
                       onClick={() => setTarefaSelecionadaId(t.id)}
-                      className="flex w-full items-center gap-1 truncate rounded text-left hover:bg-muted"
-                      title={t.titulo}
+                      className="flex w-full items-center gap-1 truncate rounded border-l-2 border-transparent pl-0.5 text-left hover:bg-muted"
+                      style={corCategoria(t.categoriaId) ? { borderLeftColor: corCategoria(t.categoriaId)! } : undefined}
+                      title={nomeCategoria(t.categoriaId) ? `${t.titulo} — ${nomeCategoria(t.categoriaId)}` : t.titulo}
                     >
                       <span className={cn("size-1.5 shrink-0 rounded-full", COR_DOT[corPrazoTarefa(new Date(t.prazo), t.status)])} />
                       <span className="truncate">{t.titulo}</span>

@@ -6,7 +6,8 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ThumbsUp, Pencil } from "lucide-react";
+import { Check, ThumbsUp, Pencil, Link2 } from "lucide-react";
+import { EtiquetaCategoria } from "@/components/tarefas/etiqueta-categoria";
 import { corPrazoTarefa } from "@/lib/utils/dates";
 import { moverTarefaAction, aprovarTarefaAction, atualizarPrazoTarefaAction } from "@/app/(app)/tarefas/actions";
 import { STATUS_LABEL, type TarefaVM } from "@/app/(app)/tarefas/types";
@@ -69,6 +70,8 @@ export function TaskCard({
         </div>
       </div>
 
+      {tarefa.categoriaId && <EtiquetaCategoria categoriaId={tarefa.categoriaId} />}
+
       {tarefa.negocioTitulo && (
         <Link
           href={`/negocios/${tarefa.negocioId}`}
@@ -80,8 +83,21 @@ export function TaskCard({
 
       {tarefa.reuniaoId && (
         <Link href={`/reunioes/${tarefa.reuniaoId}#compromissos`} className="block text-xs font-medium text-primary hover:underline">
-          Compromisso · {tarefa.reuniaoTitulo}
+          Reunião · {tarefa.reuniaoTitulo}
         </Link>
+      )}
+
+      {tarefa.link && (
+        <a
+          href={tarefa.link}
+          target="_blank"
+          rel="noreferrer"
+          onPointerDown={(e) => e.stopPropagation()}
+          className="flex items-center gap-1 truncate text-xs text-primary hover:underline"
+        >
+          <Link2 className="size-3 shrink-0" />
+          {tarefa.link.replace(/^https?:\/\//, "")}
+        </a>
       )}
 
       {tarefa.descricao && <p className="text-xs text-muted-foreground">{tarefa.descricao}</p>}

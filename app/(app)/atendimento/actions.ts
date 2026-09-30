@@ -29,6 +29,7 @@ import {
 import { reaisParaCentavos } from "@/lib/utils/money";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { itensDoChecklist } from "@/lib/utils/checklist";
+import { categoriaDoFormulario } from "@/lib/utils/categoria-tarefa";
 
 function revalidateAtendimento() {
   revalidatePath("/atendimento");
@@ -219,6 +220,7 @@ export async function criarTarefaMiniFormAction(
     prazo: dataHoraDoFormulario(parsed.data.prazo),
     descricao: parsed.data.descricao || null,
     checklist: itensDoChecklist(formData),
+    ...categoriaDoFormulario(formData),
   });
   revalidateAtendimento();
   return { success: true };

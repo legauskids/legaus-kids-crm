@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Check, Plus } from "lucide-react";
 import {
@@ -21,6 +20,8 @@ import {
   type CriarTarefaRapidaState,
 } from "@/app/(app)/negocios/[negocioId]/actions";
 import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
+import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
+import { EtiquetaCategoria } from "@/components/tarefas/etiqueta-categoria";
 
 type Tarefa = {
   id: string;
@@ -29,6 +30,7 @@ type Tarefa = {
   status: string;
   descricao: string | null;
   automatica: boolean;
+  categoriaId: string | null;
   responsavel: { nome: string };
 };
 
@@ -80,6 +82,7 @@ export function TarefasTab({
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium">{tarefa.titulo}</p>
                     {tarefa.automatica && <Badge variant="secondary">automática</Badge>}
+                    <EtiquetaCategoria categoriaId={tarefa.categoriaId} />
                     <Badge variant="outline">{STATUS_LABEL[tarefa.status]}</Badge>
                   </div>
                   {tarefa.descricao && <p className="text-xs text-muted-foreground">{tarefa.descricao}</p>}
@@ -132,10 +135,7 @@ export function TarefasTab({
                   <Input id="prazo" name="prazo" type="datetime-local" required />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="descricao">Descrição</Label>
-                <Textarea id="descricao" name="descricao" />
-              </div>
+              <CamposCategoriaTarefa idPrefixo="negocio" placeholderDescricao="" />
               <ChecklistNovaTarefa id="checklist-negocio" />
               {state.error && <p className="text-sm text-destructive">{state.error}</p>}
               <div className="flex gap-2">

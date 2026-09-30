@@ -18,6 +18,8 @@ import { ListaView } from "@/app/(app)/tarefas/lista-view";
 import { CalendarioView } from "@/app/(app)/tarefas/calendario-view";
 import { NovaTarefaDialog } from "@/app/(app)/tarefas/nova-tarefa-dialog";
 import { EditarTarefaDialog } from "@/app/(app)/tarefas/editar-tarefa-dialog";
+import { useCategoriasTarefa } from "@/components/tarefas/categorias-context";
+import { SEM_CATEGORIA } from "@/lib/utils/categoria-tarefa";
 
 type Funil = { id: string; nome: string; etapas: { id: string; nome: string }[] };
 
@@ -46,6 +48,9 @@ export function TarefasShell({
 }) {
   const [view, setView] = useState<(typeof VIEWS)[number]["id"]>("kanban");
   const [responsavelId, setResponsavelId] = useState(TODOS);
+  // Categoria de compromisso: todas, sem categoria ou uma específica.
+  const [categoriaId, setCategoriaId] = useState(TODOS);
+  const categorias = useCategoriasTarefa();
   const [funilId, setFunilId] = useState(TODOS);
   const [etapaId, setEtapaId] = useState(TODOS);
   const [status, setStatus] = useState<string>(() =>
@@ -66,12 +71,14 @@ export function TarefasShell({
   const filtradasSemStatus = useMemo(() => {
     return tarefas.filter((t) => {
       if (responsavelId !== TODOS && t.responsavelId !== responsavelId) return false;
+      if (categoriaId === SEM_CATEGORIA && t.categoriaId) return false;
+      if (categoriaId !== TODOS && categoriaId !== SEM_CATEGORIA && t.categoriaId !== categoriaId) return false;
       if (funilId !== TODOS && t.funilId !== funilId) return false;
       if (etapaId !== TODOS && t.etapaId !== etapaId) return false;
       if (periodo !== TODOS && !estaNoPeriodo(new Date(t.prazo), periodo)) return false;
       return true;
     });
-  }, [tarefas, responsavelId, funilId, etapaId, periodo]);
+  }, [tarefas, responsavelId, categoriaId, funilId, etapaId, periodo]);
 
   const contagens = useMemo(() => {
     const counts: Record<string, number> = { A_FAZER: 0, EM_ANDAMENTO: 0, APROVACAO: 0, ATRASADA: 0, CONCLUIDA: 0 };
@@ -121,6 +128,24 @@ export function TarefasShell({
             {usuarios.map((u) => (
               <SelectItem key={u.id} value={u.id}>
                 {u.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={categoriaId} onValueChange={setCategoriaId}>
+          <SelectTrigger size="sm" className="w-44">
+            <SelectValue placeholder="Categoria" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={TODOS}>Todas as categorias</SelectItem>
+            <SelectItem value={SEM_CATEGORIA}>Sem categoria</SelectItem>
+            {categorias.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                <span className="flex items-center gap-2">
+                  <span className="size-2 rounded-full" style={{ backgroundColor: c.cor }} />
+                  {c.nome}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

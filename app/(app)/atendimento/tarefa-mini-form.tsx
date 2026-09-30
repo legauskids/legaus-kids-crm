@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -25,6 +24,7 @@ import {
   type TarefaMiniFormState,
 } from "@/app/(app)/atendimento/actions";
 import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
+import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
 
 const initialState: TarefaMiniFormState = {};
 
@@ -89,10 +89,7 @@ export function TarefaMiniForm({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="descricao-tarefa">Descrição</Label>
-            <Textarea id="descricao-tarefa" name="descricao" />
-          </div>
+          <CamposCategoriaTarefa idPrefixo="atendimento" placeholderDescricao="" />
 
           <ChecklistNovaTarefa id="checklist-atendimento" />
 

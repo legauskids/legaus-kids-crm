@@ -16,11 +16,13 @@ import {
   Wallet,
   Megaphone,
   CalendarCheck,
+  Settings,
 } from "lucide-react";
 import { LogoMark } from "@/components/layout/logo-mark";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
 
-export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; modulo?: ModuloKey }[] = [
+// somenteAdmin: item que só administrador vê (ex.: Configurações).
+export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; modulo?: ModuloKey; somenteAdmin?: boolean }[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/atendimento", label: "Atendimento", icon: MessageCircle, modulo: "atendimento" },
   { href: "/negocios", label: "Negócios", icon: Handshake, modulo: "negocios" },
@@ -36,6 +38,7 @@ export const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashbo
 
 const NAV_ITEMS_SECUNDARIOS: typeof NAV_ITEMS = [
   { href: "/extensao", label: "Extensão", icon: Puzzle, modulo: "extensao" },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, somenteAdmin: true },
 ];
 
 type UsuarioComPermissoes = { isAdmin: boolean; permissoes: unknown };
@@ -65,7 +68,9 @@ function NavLink({ href, label, icon: Icon, active }: { href: string; label: str
 export function Sidebar({ user }: { user: UsuarioComPermissoes }) {
   const pathname = usePathname();
   const itensPrincipais = NAV_ITEMS.filter((item) => !item.modulo || moduloPermitido(user, item.modulo));
-  const itensSecundarios = NAV_ITEMS_SECUNDARIOS.filter((item) => !item.modulo || moduloPermitido(user, item.modulo));
+  const itensSecundarios = NAV_ITEMS_SECUNDARIOS.filter(
+    (item) => (!item.modulo || moduloPermitido(user, item.modulo)) && (!item.somenteAdmin || user.isAdmin),
+  );
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar sm:flex print:hidden">

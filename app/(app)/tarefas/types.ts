@@ -22,6 +22,9 @@ export type TarefaVM = {
   /** Compromisso firmado numa reunião (painel /reunioes). */
   reuniaoId?: string | null;
   reuniaoTitulo?: string | null;
+  /** Categoria de compromisso (módulo Compromissos) e link opcional (ex.: da postagem). */
+  categoriaId: string | null;
+  link: string | null;
 };
 
 export const STATUS_LABEL: Record<string, string> = {

@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -21,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { criarTarefaAction, type CriarTarefaState } from "@/app/(app)/tarefas/actions";
 import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
+import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
 
 const initialState: CriarTarefaState = {};
 const SEM_NEGOCIO = "__nenhum__";
@@ -30,11 +30,14 @@ export function NovaTarefaDialog({
   onOpenChange,
   usuarios,
   negocios,
+  valoresIniciais,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   usuarios: { id: string; nome: string }[];
   negocios: { id: string; titulo: string; contatoNome: string }[];
+  /** Pré-preenchimento (ex.: "Planejar amanhã" do Painel: categoria Gerar Receita + próximo dia útil). */
+  valoresIniciais?: { categoriaId?: string; prazo?: string; responsavelId?: string; titulo?: string };
 }) {
   const [state, formAction, pending] = useActionState(criarTarefaAction, initialState);
 
@@ -49,18 +52,18 @@ export function NovaTarefaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Nova tarefa</DialogTitle>
+          <DialogTitle>{valoresIniciais?.categoriaId ? "Planejar tarefa" : "Nova tarefa"}</DialogTitle>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="titulo">Título</Label>
-            <Input id="titulo" name="titulo" required />
+            <Input id="titulo" name="titulo" defaultValue={valoresIniciais?.titulo} required />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="responsavelId">Responsável</Label>
-              <Select name="responsavelId" required>
+              <Select name="responsavelId" defaultValue={valoresIniciais?.responsavelId} required>
                 <SelectTrigger id="responsavelId" className="w-full">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
@@ -75,7 +78,7 @@ export function NovaTarefaDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="prazo">Prazo</Label>
-              <Input id="prazo" name="prazo" type="datetime-local" required />
+              <Input id="prazo" name="prazo" type="datetime-local" defaultValue={valoresIniciais?.prazo} required />
             </div>
           </div>
 
@@ -111,10 +114,7 @@ export function NovaTarefaDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="descricao">Descrição</Label>
-            <Textarea id="descricao" name="descricao" placeholder="O que precisa ser feito (ou aprovado)?" />
-          </div>
+          <CamposCategoriaTarefa idPrefixo="nova" categoriaIdInicial={valoresIniciais?.categoriaId} />
 
           <ChecklistNovaTarefa />
 

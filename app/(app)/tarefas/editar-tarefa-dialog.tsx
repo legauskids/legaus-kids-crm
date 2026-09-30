@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -22,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { atualizarTarefaAction, type AtualizarTarefaState } from "@/app/(app)/tarefas/actions";
 import { ChecklistTarefa } from "@/app/(app)/tarefas/checklist-tarefa";
+import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
 import type { TarefaVM } from "@/app/(app)/tarefas/types";
 
 const initialState: AtualizarTarefaState = {};
@@ -122,15 +122,12 @@ export function EditarTarefaDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="descricao-editar">Descrição</Label>
-            <Textarea
-              id="descricao-editar"
-              name="descricao"
-              defaultValue={tarefa.descricao ?? ""}
-              placeholder="O que precisa ser feito (ou aprovado)?"
-            />
-          </div>
+          <CamposCategoriaTarefa
+            idPrefixo="editar"
+            categoriaIdInicial={tarefa.categoriaId}
+            linkInicial={tarefa.link}
+            descricaoInicial={tarefa.descricao}
+          />
 
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 

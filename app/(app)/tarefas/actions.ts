@@ -15,6 +15,7 @@ import {
 import { criarTarefaSchema } from "@/lib/validators/tarefa";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { itensDoChecklist } from "@/lib/utils/checklist";
+import { categoriaDoFormulario } from "@/lib/utils/categoria-tarefa";
 
 export type CriarTarefaState = { error?: string; success?: boolean };
 
@@ -47,6 +48,7 @@ export async function criarTarefaAction(
     status: parsed.data.status,
     descricao: parsed.data.descricao || null,
     checklist,
+    ...categoriaDoFormulario(formData),
   });
 
   revalidatePath("/tarefas");
@@ -82,6 +84,7 @@ export async function atualizarTarefaAction(
     prazo,
     status: parsed.data.status,
     descricao: parsed.data.descricao || null,
+    ...categoriaDoFormulario(formData),
   });
 
   revalidatePath("/tarefas");
