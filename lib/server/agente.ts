@@ -48,8 +48,10 @@ import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
 import { pareceTelefone } from "@/lib/utils/telefone";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
+import { normalizarLink } from "@/lib/utils/categoria-tarefa";
 import { criarReuniao, adicionarOpiniao } from "@/lib/server/reunioes";
 import { gerarPautaSugerida, ErroReuniaoIa } from "@/lib/server/reuniao-ia";
+import { getPainelCompromissos } from "@/lib/server/compromissos";
 import type { OrigemComando, StatusOrcamento } from "@prisma/client";
 
 const MODELO = "claude-sonnet-5";
@@ -209,6 +211,28 @@ function parseDataHoraBrasilia(valor: string): Date {
   const data = new Date(comOffset);
   if (isNaN(data.getTime())) throw new Error("Data/hora inválida.");
   return data;
+}
+
+function semAcento(texto: string): string {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+/**
+ * Categoria de compromisso da tarefa pelo nome falado — aproximado ("receita"
+ * → Gerar Receita, "postagem" → Postagem no Feed, "reunião" → Reunião de Equipe).
+ * undefined = não mexer; null = tirar a categoria ("nenhuma", "sem categoria").
+ */
+async function resolverCategoriaTarefa(nome: string | undefined): Promise<string | null | undefined> {
+  if (!nome || !nome.trim()) return undefined;
+  const n = semAcento(nome);
+  if (["nenhuma", "nenhum", "sem categoria", "sem", "remover", "tirar"].includes(n)) return null;
+  const categorias = await prisma.categoriaTarefa.findMany({ where: { ativa: true }, orderBy: { ordem: "asc" } });
+  const achada =
+    categorias.find((c) => semAcento(c.nome) === n) ??
+    categorias.find((c) => semAcento(c.nome).includes(n) || n.includes(semAcento(c.nome))) ??
+    categorias.find((c) => semAcento(c.nome).split(/\s+/).some((palavra) => palavra.length >= 4 && n.includes(palavra)));
+  if (!achada) throw new Error(`Não existe a categoria "${nome}". Categorias: ${categorias.map((c) => c.nome).join(", ")}.`);
+  return achada.id;
 }
 
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -1410,7 +1434,7 @@ const FERRAMENTAS: Ferramenta[] = [
     },
     async executar(args) {
       const { termo } = args as { termo?: string };
-      const include = { responsavel: true, negocio: true, contato: true } as const;
+      const include = { responsavel: true, negocio: true, contato: true, categoria: { select: { nome: true } } } as const;
       let tarefas;
       if (termo) {
         const ids = await buscarTarefasSimilarIds(termo);
@@ -1426,6 +1450,7 @@ const FERRAMENTAS: Ferramenta[] = [
             prazo: t.prazo.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
             status: t.status,
             negocio: t.negocio?.titulo ?? null,
+            categoria: t.categoria?.nome ?? null,
           }))
         : "Nenhuma tarefa encontrada.";
     },
@@ -1433,23 +1458,32 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "criar_tarefa",
     description:
-      "Cria uma tarefa/lembrete de trabalho, com prazo. Se o comando mencionar uma data específica (ex: 'dia 01/09 às 09:30'), use dataHora. Se for relativo (ex: 'em 3 dias'), use prazoDias.",
+      "Cria uma tarefa/lembrete de trabalho, com prazo. Se o comando mencionar uma data específica (ex: 'dia 01/09 às 09:30'), use dataHora. Se for relativo (ex: 'em 3 dias'), use prazoDias. Categoria de compromisso (Gerar Receita, Melhoria, Postagem no Feed, Reunião de Equipe) quando o comando indicar — é o que o módulo Compromissos conta.",
     input_schema: {
       type: "object",
       properties: {
         titulo: { type: "string" },
-        dataHora: { type: "string", description: "Data e hora exata no formato AAAA-MM-DDTHH:mm, ex: 2026-09-01T09:30" },
+        dataHora: { type: "string", description: "Data e hora exata (horário de Brasília) no formato AAAA-MM-DDTHH:mm, ex: 2026-09-01T09:30" },
         prazoDias: { type: "integer", description: "Alternativa a dataHora — em quantos dias a partir de hoje. Padrão 1 (amanhã) se nenhum dos dois vier." },
-        descricao: { type: "string" },
+        descricao: { type: "string", description: "Descrição; na categoria Reunião de Equipe, a pauta/anotações" },
+        categoria: { type: "string", description: "Categoria de compromisso: Gerar Receita, Melhoria, Postagem no Feed ou Reunião de Equipe (aceita nome aproximado)" },
+        link: { type: "string", description: "Link opcional (ex.: da postagem, na categoria Postagem no Feed)" },
       },
       required: ["titulo"],
     },
     async executar(args, { usuarioId }) {
-      const { titulo, dataHora, prazoDias, descricao } = args as { titulo: string; dataHora?: string; prazoDias?: number; descricao?: string };
+      const { titulo, dataHora, prazoDias, descricao, categoria, link } = args as {
+        titulo: string;
+        dataHora?: string;
+        prazoDias?: number;
+        descricao?: string;
+        categoria?: string;
+        link?: string;
+      };
+      const categoriaId = await resolverCategoriaTarefa(categoria);
       let prazo: Date;
       if (dataHora) {
-        prazo = new Date(dataHora);
-        if (isNaN(prazo.getTime())) throw new Error("Data/hora inválida.");
+        prazo = parseDataHoraBrasilia(dataHora);
       } else {
         prazo = new Date();
         prazo.setDate(prazo.getDate() + (prazoDias ?? 1));
@@ -1460,13 +1494,22 @@ const FERRAMENTAS: Ferramenta[] = [
         prazo,
         responsavelId: usuarioId,
         solicitanteId: usuarioId,
+        categoriaId: categoriaId ?? null,
+        link: normalizarLink(link),
       });
-      return { id: tarefa.id, titulo: tarefa.titulo, prazo: prazo.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) };
+      const nomeCategoria = categoriaId ? (await prisma.categoriaTarefa.findUnique({ where: { id: categoriaId }, select: { nome: true } }))?.nome : null;
+      return {
+        id: tarefa.id,
+        titulo: tarefa.titulo,
+        prazo: prazo.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+        categoria: nomeCategoria ?? null,
+      };
     },
   },
   {
     name: "atualizar_tarefa",
-    description: "Edita título, descrição, prazo ou status de uma tarefa já existente. Informe tarefaId ou tituloBusca.",
+    description:
+      "Edita título, descrição, prazo, status, categoria de compromisso ou link de uma tarefa já existente. Informe tarefaId ou tituloBusca. Concluir (novoStatus CONCLUIDA) já conta no compromisso da categoria.",
     input_schema: {
       type: "object",
       properties: {
@@ -1477,6 +1520,8 @@ const FERRAMENTAS: Ferramenta[] = [
         novoStatus: { type: "string", enum: ["A_FAZER", "EM_ANDAMENTO", "APROVACAO", "CONCLUIDA"] },
         novaDataHora: { type: "string", description: "Novo prazo exato, formato AAAA-MM-DDTHH:mm" },
         novoPrazoDias: { type: "integer", description: "Alternativa a novaDataHora — em quantos dias a partir de hoje" },
+        novaCategoria: { type: "string", description: "Categoria de compromisso (nome aproximado) ou 'nenhuma' pra tirar" },
+        novoLink: { type: "string", description: "Link (ex.: da postagem)" },
       },
     },
     async executar(args) {
@@ -1488,7 +1533,10 @@ const FERRAMENTAS: Ferramenta[] = [
         novoStatus?: "A_FAZER" | "EM_ANDAMENTO" | "APROVACAO" | "CONCLUIDA";
         novaDataHora?: string;
         novoPrazoDias?: number;
+        novaCategoria?: string;
+        novoLink?: string;
       };
+      const novaCategoriaId = await resolverCategoriaTarefa(a.novaCategoria);
       const resolvido = await resolverPorBusca(a.tarefaId, a.tituloBusca, buscarTarefasSimilarIds);
       if (!resolvido) throw new Error(`Não achei nenhuma tarefa parecida com "${a.tituloBusca}".`);
       if ("ambiguo" in resolvido) {
@@ -1498,8 +1546,7 @@ const FERRAMENTAS: Ferramenta[] = [
       const atual = await prisma.tarefa.findUniqueOrThrow({ where: { id: resolvido.id } });
       let novoPrazo = atual.prazo;
       if (a.novaDataHora) {
-        novoPrazo = new Date(a.novaDataHora);
-        if (isNaN(novoPrazo.getTime())) throw new Error("Data/hora inválida.");
+        novoPrazo = parseDataHoraBrasilia(a.novaDataHora);
       } else if (a.novoPrazoDias != null) {
         novoPrazo = new Date();
         novoPrazo.setDate(novoPrazo.getDate() + a.novoPrazoDias);
@@ -1511,6 +1558,8 @@ const FERRAMENTAS: Ferramenta[] = [
         prazo: novoPrazo,
         descricao: a.novaDescricao !== undefined ? a.novaDescricao : atual.descricao,
         status: a.novoStatus || atual.status,
+        categoriaId: novaCategoriaId === undefined ? atual.categoriaId : novaCategoriaId,
+        link: a.novoLink !== undefined ? normalizarLink(a.novoLink) : atual.link,
       });
       return {
         id: resolvido.id,
@@ -1846,6 +1895,36 @@ const FERRAMENTAS: Ferramenta[] = [
       return { ok: true, reuniao: reuniao.titulo, item: `${item}. ${alvo.titulo}` };
     },
   },
+  {
+    // Módulo Compromissos (pedido de 2026-09-30): o mesmo cálculo do card do Painel.
+    name: "resumo_compromissos",
+    description:
+      "Como estão os compromissos (metas de hábito do CRM) de hoje e da semana: Gerar Receita, Planejar o dia seguinte, Melhoria, Postagem no Feed, Reunião de Equipe — quanto já foi feito, quanto falta, até que horas planejar o próximo dia útil e a sequência de dias cumpridos. Use pra 'como estão meus compromissos', 'quanto falta de gerar receita hoje', 'já planejei amanhã?'.",
+    input_schema: { type: "object", properties: {} },
+    async executar(_args, { usuarioId }) {
+      const painel = await getPainelCompromissos(usuarioId);
+      if (!painel) return "Nenhum compromisso configurado pra você (Configurações > Compromissos, no CRM).";
+      const rotulo = { cumprido: "cumprido", andamento: "em andamento", nao_cumprido: "não cumprido" } as const;
+      const linha = (i: (typeof painel.hoje.itens)[number]) => ({
+        compromisso: i.regra === "PLANEJAR_DIA_SEGUINTE" && i.diaAlvo ? `Planejar ${i.diaAlvo}` : i.nome,
+        feito: i.realizado,
+        meta: i.meta,
+        falta: Math.max(0, i.meta - i.realizado),
+        status: rotulo[i.status],
+        ...(i.regra === "PLANEJAR_DIA_SEGUINTE" && i.horarioCorte ? { planejarAte: i.horarioCorte } : {}),
+      });
+      return {
+        hoje: painel.hoje.itens.map(linha),
+        semana: painel.semana.itens.map(linha),
+        sequenciaDiasUteis: painel.sequencia,
+        proximoDiaUtil: painel.planejar?.diaAlvo ?? null,
+        execucaoDoPlanoNaSemana: painel.taxaPlano
+          ? `${painel.taxaPlano.semana.executadas} de ${painel.taxaPlano.semana.planejadas} tarefas planejadas concluídas no dia`
+          : null,
+        regraDoPlanejar: "Conta no 'Planejar' a tarefa da categoria Gerar Receita com prazo no próximo dia útil, agendada até o horário de corte.",
+      };
+    },
+  },
 ];
 
 function paraToolAnthropic(f: Ferramenta): Anthropic.Tool {
@@ -1875,6 +1954,7 @@ Regras:
 - Pra saber se um número já está cadastrado, ou achar um cliente pelo telefone, use buscar_clientes com o telefone como termo (aceita qualquer formato: com ou sem 55, com ou sem o 9, com máscara). Se criar_cliente responder "jaExiste", não tente criar de novo: use o cadastro existente (atualize com atualizar_cliente, ex.: pra pôr o nome).
 - Às vezes o comando começa com "[Contexto: contato(s) colado(s) no WhatsApp logo antes deste comando: ...]" — são números (ou cartões de contato) que o Marcos colou no WhatsApp antes de mandar o comando. "Esse contato", "esses números", "ele", "cadastra esse" etc. se referem a eles. Se o comando não tiver relação com esses números, ignore o contexto.
 - Pra perguntas sobre entrada de leads ("quantos leads entraram hoje", "quem chamou essa semana"), use resumo_leads.
+- Compromissos (metas de hábito do CRM): tarefas de Gerar Receita, Melhoria, Postagem no Feed e Reunião de Equipe vão com a categoria em criar_tarefa (parâmetro categoria) quando o Marcos disser a categoria ou quando for o planejamento do dia seguinte. "Planeja amanhã: ligar pro João e mandar proposta pra Escola X" = uma criar_tarefa por item, categoria Gerar Receita, dataHora no próximo dia útil (sexta → segunda; 09:00 se não disser a hora). Postagem com link: passe em link. Na dúvida sobre a categoria, crie sem e pergunte. Pra "como estão meus compromissos", "quanto falta hoje", "já planejei amanhã?", use resumo_compromissos. Concluir a tarefa (atualizar_tarefa com novoStatus CONCLUIDA) já conta.
 - Reuniões de gestão (semanal/mensal, painel Reuniões): "prepara a pauta da reunião (de amanhã)" → preparar_pauta_reuniao; responda com a pauta numerada, a pergunta de cada item e o link, pedindo as opiniões. Quando responderem opinando sobre itens ("item 2: ...", "no 3 acho que..."), registre cada uma com opinar_pauta_reuniao.
 - Se o Marcos disser que um cliente/contato "está duplicado" ou "é o mesmo", use mesclar_clientes (nunca crie/edite tentando contornar) — ela junta o histórico dos dois (conversas, negócios, orçamentos, tarefas, notas fiscais) no que for mantido e apaga o duplicado. Pra apagar um cadastro de cliente sem nada vinculado, use excluir_cliente. Antes de dizer que não consegue fazer alguma ação de cliente/contato (corrigir, editar, apagar, mesclar), confira se não existe ferramenta pra isso — você tem criar_cliente, atualizar_cliente, excluir_cliente e mesclar_clientes.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
