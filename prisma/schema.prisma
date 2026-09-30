@@ -110,6 +110,7 @@ model User {
   simulacoesFinanceiras SimulacaoFinanceira[]       @relation("CriadorSimulacao")
   reunioesCriadas       Reuniao[]                   @relation("CriadorReuniao")
   opinioesPauta         OpiniaoPauta[]
+  compromissos          CompromissoUsuario[]
 }
 
 enum OrigemComando {
@@ -401,34 +402,48 @@ model Contrato {
 }
 
 model Tarefa {
-  id            String       @id @default(cuid())
-  titulo        String
-  negocioId     String?
-  negocio       Negocio?     @relation(fields: [negocioId], references: [id])
-  contatoId     String?
-  contato       Contato?     @relation(fields: [contatoId], references: [id])
-  conversaId    String?
-  conversa      Conversa?    @relation(fields: [conversaId], references: [id])
-  responsavelId String
-  responsavel   User         @relation("ResponsavelTarefa", fields: [responsavelId], references: [id])
-  solicitanteId String
-  solicitante   User         @relation("SolicitanteTarefa", fields: [solicitanteId], references: [id])
-  prazo         DateTime
-  status        StatusTarefa @default(A_FAZER)
-  descricao     String?
-  automatica    Boolean      @default(false)
+  id              String           @id @default(cuid())
+  titulo          String
+  negocioId       String?
+  negocio         Negocio?         @relation(fields: [negocioId], references: [id])
+  contatoId       String?
+  contato         Contato?         @relation(fields: [contatoId], references: [id])
+  conversaId      String?
+  conversa        Conversa?        @relation(fields: [conversaId], references: [id])
+  responsavelId   String
+  responsavel     User             @relation("ResponsavelTarefa", fields: [responsavelId], references: [id])
+  solicitanteId   String
+  solicitante     User             @relation("SolicitanteTarefa", fields: [solicitanteId], references: [id])
+  prazo           DateTime
+  status          StatusTarefa     @default(A_FAZER)
+  descricao       String?
+  automatica      Boolean          @default(false)
   // Compromisso firmado numa reunião de gestão (o quê = titulo, quem =
   // responsavel, quando = prazo) — continua sendo uma tarefa normal, só
   // aparece também no painel da reunião e no acompanhamento das próximas.
-  reuniaoId     String?
-  reuniao       Reuniao?     @relation(fields: [reuniaoId], references: [id], onDelete: SetNull)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  reuniaoId       String?
+  reuniao         Reuniao?         @relation(fields: [reuniaoId], references: [id], onDelete: SetNull)
+  // Categoria de compromisso (Gerar Receita, Melhoria...) — é o que os
+  // Compromissos contam. Opcional, uma por tarefa.
+  categoriaId     String?
+  categoria       CategoriaTarefa? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  // Link opcional (ex.: da postagem, na categoria "Postagem no Feed").
+  link            String?
+  // Preenchidos pelo PRÓPRIO BANCO (trigger tarefa_datas_automaticas, migração
+  // 20260930120000_compromissos) em qualquer caminho — tela, agente, reuniões,
+  // automações: concluidaEm = quando virou CONCLUIDA (limpa ao reabrir);
+  // prazoDefinidoEm = quando o prazo atual foi definido (pro "planejar o dia
+  // seguinte" saber se foi planejado antes do horário de corte).
+  concluidaEm     DateTime?
+  prazoDefinidoEm DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   lembretes Lembrete[]
   checklist ItemChecklistTarefa[]
 
   @@index([reuniaoId])
+  @@index([categoriaId, concluidaEm])
 }
 
 model ItemChecklistTarefa {
@@ -954,4 +969,94 @@ model OpiniaoPauta {
   criadoEm DateTime  @default(now())
 
   @@index([itemId])
+}
+
+// ---------------------------------------------------------------------------
+// Compromissos (pedido de 2026-09-30): metas recorrentes de hábitos de gestão
+// (diárias e semanais), medidas pelas tarefas concluídas. Não confundir com os
+// "compromissos firmados" das Reuniões (Tarefa.reuniaoId).
+// ---------------------------------------------------------------------------
+
+enum CampoExtraCategoria {
+  NENHUM
+  LINK
+  PAUTA
+}
+
+// Categoria de compromisso da tarefa — cadastrável em Configurações.
+// campoExtra: o que a tarefa dessa categoria mostra a mais (LINK = "Link da
+// postagem"; PAUTA = a descrição vira "Pauta / anotações").
+model CategoriaTarefa {
+  id         String              @id @default(cuid())
+  nome       String              @unique
+  cor        String              @default("#64748b")
+  campoExtra CampoExtraCategoria @default(NENHUM)
+  ativa      Boolean             @default(true)
+  ordem      Int                 @default(0)
+  criadoEm   DateTime            @default(now())
+
+  tarefas      Tarefa[]
+  compromissos Compromisso[]
+}
+
+enum FrequenciaCompromisso {
+  DIARIA
+  SEMANAL
+}
+
+enum RegraCompromisso {
+  // Conta tarefas da categoria concluídas no período (pelo responsável).
+  CATEGORIA
+  // Cumprido quando, até o horário de corte, há tarefas da categoria com prazo
+  // no próximo dia útil em quantidade >= meta do compromisso em metaDe.
+  PLANEJAR_DIA_SEGUINTE
+}
+
+model Compromisso {
+  id          String                @id @default(cuid())
+  nome        String
+  frequencia  FrequenciaCompromisso
+  regra       RegraCompromisso      @default(CATEGORIA)
+  categoriaId String?
+  categoria   CategoriaTarefa?      @relation(fields: [categoriaId], references: [id])
+  // PLANEJAR_DIA_SEGUINTE: a quantidade exigida acompanha a meta vigente deste
+  // outro compromisso (Gerar Receita) — muda sozinha quando ela mudar.
+  metaDeId    String?
+  metaDe      Compromisso?          @relation("MetaEspelhada", fields: [metaDeId], references: [id])
+  espelhos    Compromisso[]         @relation("MetaEspelhada")
+  ativo       Boolean               @default(true)
+  ordem       Int                   @default(0)
+  criadoEm    DateTime              @default(now())
+
+  usuarios CompromissoUsuario[]
+  versoes  CompromissoVersao[]
+}
+
+model CompromissoUsuario {
+  compromissoId String
+  compromisso   Compromisso @relation(fields: [compromissoId], references: [id], onDelete: Cascade)
+  usuarioId     String
+  usuario       User        @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([compromissoId, usuarioId])
+}
+
+// Parâmetros vigentes a partir de uma data — o histórico das metas. Alterar a
+// configuração cria uma versão nova com vigenteDesde = início do período atual
+// (dia ou semana, horário de Brasília); períodos anteriores continuam avaliados
+// pela versão da época.
+model CompromissoVersao {
+  id            String      @id @default(cuid())
+  compromissoId String
+  compromisso   Compromisso @relation(fields: [compromissoId], references: [id], onDelete: Cascade)
+  vigenteDesde  DateTime
+  // Quantidade (null em PLANEJAR_DIA_SEGUINTE quando usa a meta de metaDe).
+  meta          Int?
+  // Dias da semana considerados: 0 = domingo ... 6 = sábado (padrão seg a sex).
+  diasUteis     Int[]       @default([1, 2, 3, 4, 5])
+  // "HH:MM" — horário de corte do PLANEJAR_DIA_SEGUINTE.
+  horarioCorte  String?
+  criadoEm      DateTime    @default(now())
+
+  @@index([compromissoId, vigenteDesde])
 }
