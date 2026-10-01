@@ -18,9 +18,20 @@ export function getFunilComEtapas(funilId: string) {
   });
 }
 
-export function listNegociosPorFunil(funilId: string) {
+/**
+ * opcoes.fechadosDesde: o quadro mostra em Ganho/Perdido só quem entrou nessas
+ * etapas a partir dessa data (início do mês atual) — os meses anteriores ficam
+ * na guia Histórico (/negocios/historico). Nada é movido: o negócio continua na
+ * etapa, só deixa de aparecer no quadro. Pedido de 2026-10-01.
+ */
+export function listNegociosPorFunil(funilId: string, opcoes?: { fechadosDesde?: Date }) {
   return prisma.negocio.findMany({
-    where: { funilId },
+    where: opcoes?.fechadosDesde
+      ? {
+          funilId,
+          OR: [{ etapa: { tipo: { in: ["NORMAL", "CONCLUIDO"] } } }, { dataEntradaNaEtapa: { gte: opcoes.fechadosDesde } }],
+        }
+      : { funilId },
     include: {
       contato: true,
       responsavel: true,

@@ -4,7 +4,9 @@ import { prisma } from "@/lib/db";
 import { listFunisComEtapas, listNegociosPorFunil } from "@/lib/server/negocios";
 import { negocioParadoAlemDoPrazo } from "@/lib/utils/dates";
 import { Button } from "@/components/ui/button";
-import { Settings2 } from "lucide-react";
+import { History, Settings2 } from "lucide-react";
+import { inicioDoMesAtual } from "@/lib/server/negocios-historico";
+import { mesDoFechamento, rotuloMes } from "@/lib/utils/historico-negocios";
 import { NegociosBoardShell } from "@/app/(app)/negocios/board-shell";
 
 export default async function NegociosPage({
@@ -37,7 +39,8 @@ export default async function NegociosPage({
   const funilSelecionado = funis.find((f) => f.id === (funilIdParam ?? funilComMaisParados)) ?? funis[0];
 
   const [negocios, contatos, usuarios] = await Promise.all([
-    funilSelecionado ? listNegociosPorFunil(funilSelecionado.id) : Promise.resolve([]),
+    // Ganho/Perdido: só o mês atual no quadro; os anteriores ficam no Histórico.
+    funilSelecionado ? listNegociosPorFunil(funilSelecionado.id, { fechadosDesde: inicioDoMesAtual() }) : Promise.resolve([]),
     prisma.contato.findMany({ orderBy: { nome: "asc" } }),
     prisma.user.findMany({ orderBy: { nome: "asc" } }),
   ]);
@@ -46,12 +49,20 @@ export default async function NegociosPage({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-6 py-3">
         <h1 className="text-xl font-semibold">Negócios</h1>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/negocios/funis">
-            <Settings2 className="size-4" />
-            Editar funis
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/negocios/historico${funilSelecionado ? `?funil=${funilSelecionado.id}` : ""}`}>
+              <History className="size-4" />
+              Histórico
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/negocios/funis">
+              <Settings2 className="size-4" />
+              Editar funis
+            </Link>
+          </Button>
+        </div>
       </div>
       <div className="flex-1 overflow-hidden">
         <NegociosBoardShell
@@ -62,6 +73,7 @@ export default async function NegociosPage({
           }))}
           funilSelecionadoId={funilSelecionado?.id ?? ""}
           somenteParadosInicial={somenteParados}
+          mesAtualRotulo={rotuloMes(mesDoFechamento(new Date())).split(" ")[0]}
           negocios={negocios.map((n) => {
             const checklistEtapaAtual = n.checklistEtapas.filter((c) => c.etapaId === n.etapaId);
             return {

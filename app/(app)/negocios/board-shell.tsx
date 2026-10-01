@@ -36,6 +36,7 @@ export function NegociosBoardShell({
   negocios,
   contatos,
   usuarios,
+  mesAtualRotulo,
   somenteParadosInicial = false,
 }: {
   funis: Funil[];
@@ -45,6 +46,8 @@ export function NegociosBoardShell({
   usuarios: { id: string; nome: string }[];
   /** Abre já filtrado nos parados além do SLA (?parados=1, vindo do dashboard). */
   somenteParadosInicial?: boolean;
+  /** Ex.: "outubro" — aviso nas colunas Ganho/Perdido (só o mês atual; anteriores no Histórico). */
+  mesAtualRotulo?: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -159,6 +162,7 @@ export function NegociosBoardShell({
                 etapa={e}
                 totalCentavos={totalPorEtapa.get(e.id) ?? 0}
                 onSlaChange={() => router.refresh()}
+                mesAtualRotulo={mesAtualRotulo}
               />
             ),
             accent: e.tipo === "PERDIDO" ? "danger" : "default",
@@ -244,10 +248,12 @@ function EtapaColunaLabel({
   etapa,
   totalCentavos,
   onSlaChange,
+  mesAtualRotulo,
 }: {
   etapa: Etapa;
   totalCentavos: number;
   onSlaChange: () => void;
+  mesAtualRotulo?: string;
 }) {
   const [, startTransition] = useTransition();
 
@@ -286,6 +292,14 @@ function EtapaColunaLabel({
       </span>
       {totalCentavos > 0 && (
         <span className="text-xs font-semibold text-success">{centavosParaReais(totalCentavos)}</span>
+      )}
+      {(etapa.tipo === "GANHO" || etapa.tipo === "PERDIDO") && mesAtualRotulo && (
+        <span className="text-[10px] text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+          só {mesAtualRotulo} ·{" "}
+          <Link href="/negocios/historico" className="underline-offset-2 hover:underline">
+            meses anteriores
+          </Link>
+        </span>
       )}
     </div>
   );
