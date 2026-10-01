@@ -9,14 +9,14 @@ import { diaBrasilia } from "@/lib/utils/brasilia";
 export default async function TarefasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; compromisso?: string; de?: string; dia?: string }>;
+  searchParams: Promise<{ status?: string; categoria?: string; compromisso?: string; de?: string; dia?: string }>;
 }) {
   const user = await requireModulo("tarefas");
   // ?status=ATRASADA / APROVACAO — vindo dos cards do dashboard.
   // ?compromisso=<id|diarios>&de=<usuário>&dia=AAAA-MM-DD — vindo do card de
   // Compromissos: mostra só as tarefas que estão somando ali. Só o
   // administrador vê as de outra pessoa.
-  const { status: statusInicial, compromisso, de, dia } = await searchParams;
+  const { status: statusInicial, categoria, compromisso, de, dia } = await searchParams;
   const filtroCompromisso = compromisso
     ? await getFiltroTarefasCompromisso({
         usuarioId: user.isAdmin && de ? de : user.id,
@@ -39,6 +39,7 @@ export default async function TarefasPage({
   return (
     <TarefasShell
       statusInicial={statusInicial}
+      categoriaInicial={categoria}
       filtroCompromisso={filtroCompromisso}
       tarefas={tarefas.map((t) => ({
         id: t.id,

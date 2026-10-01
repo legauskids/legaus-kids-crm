@@ -40,6 +40,7 @@ export function TarefasShell({
   usuarios,
   negocios,
   statusInicial,
+  categoriaInicial,
   filtroCompromisso,
 }: {
   tarefas: TarefaVM[];
@@ -48,6 +49,8 @@ export function TarefasShell({
   negocios: { id: string; titulo: string; contatoNome: string }[];
   /** Filtro de status já aplicado ao abrir (ex.: ?status=ATRASADA vindo do dashboard). */
   statusInicial?: string;
+  /** Categoria já filtrada ao abrir (?categoria=<id>). */
+  categoriaInicial?: string;
   /** Vindo do card de Compromissos: só as tarefas que estão somando no compromisso. */
   filtroCompromisso?: FiltroTarefasCompromisso | null;
 }) {
@@ -55,9 +58,11 @@ export function TarefasShell({
   const [view, setView] = useState<(typeof VIEWS)[number]["id"]>(filtroCompromisso ? "lista" : "kanban");
   const idsDoCompromisso = useMemo(() => (filtroCompromisso ? new Set(filtroCompromisso.ids) : null), [filtroCompromisso]);
   const [responsavelId, setResponsavelId] = useState(TODOS);
-  // Categoria de compromisso: todas, sem categoria ou uma específica.
-  const [categoriaId, setCategoriaId] = useState(TODOS);
+  // Categoria de compromisso: todas, sem categoria ou uma específica (?categoria= abre já filtrado).
   const categorias = useCategoriasTarefa();
+  const [categoriaId, setCategoriaId] = useState(() =>
+    categoriaInicial && categorias.some((c) => c.id === categoriaInicial) ? categoriaInicial : TODOS,
+  );
   const [funilId, setFunilId] = useState(TODOS);
   const [etapaId, setEtapaId] = useState(TODOS);
   const [status, setStatus] = useState<string>(() =>
@@ -75,18 +80,34 @@ export function TarefasShell({
 
   const etapasDoFunil = funis.find((f) => f.id === funilId)?.etapas ?? [];
 
-  const filtradasSemStatus = useMemo(() => {
+  // Tudo menos categoria e status — base das contagens dos atalhos de categoria.
+  const filtradasSemCategoria = useMemo(() => {
     return tarefas.filter((t) => {
       if (idsDoCompromisso && !idsDoCompromisso.has(t.id)) return false;
       if (responsavelId !== TODOS && t.responsavelId !== responsavelId) return false;
-      if (categoriaId === SEM_CATEGORIA && t.categoriaId) return false;
-      if (categoriaId !== TODOS && categoriaId !== SEM_CATEGORIA && t.categoriaId !== categoriaId) return false;
       if (funilId !== TODOS && t.funilId !== funilId) return false;
       if (etapaId !== TODOS && t.etapaId !== etapaId) return false;
       if (periodo !== TODOS && !estaNoPeriodo(new Date(t.prazo), periodo)) return false;
       return true;
     });
-  }, [tarefas, idsDoCompromisso, responsavelId, categoriaId, funilId, etapaId, periodo]);
+  }, [tarefas, idsDoCompromisso, responsavelId, funilId, etapaId, periodo]);
+
+  const filtradasSemStatus = useMemo(() => {
+    return filtradasSemCategoria.filter((t) => {
+      if (categoriaId === SEM_CATEGORIA) return !t.categoriaId;
+      if (categoriaId !== TODOS) return t.categoriaId === categoriaId;
+      return true;
+    });
+  }, [filtradasSemCategoria, categoriaId]);
+
+  // Atalhos de categoria (Gerar Receita primeiro, pela ordem do cadastro): só as ativas.
+  const atalhosCategoria = useMemo(
+    () =>
+      categorias
+        .filter((c) => c.ativa)
+        .map((c) => ({ ...c, qtd: filtradasSemCategoria.filter((t) => t.categoriaId === c.id).length })),
+    [categorias, filtradasSemCategoria],
+  );
 
   const contagens = useMemo(() => {
     const counts: Record<string, number> = { A_FAZER: 0, EM_ANDAMENTO: 0, APROVACAO: 0, ATRASADA: 0, CONCLUIDA: 0 };
@@ -242,6 +263,32 @@ export function TarefasShell({
           ))}
         </div>
       </div>
+
+      {atalhosCategoria.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Compromisso:</span>
+          {atalhosCategoria.map((c) => {
+            const ativo = categoriaId === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                aria-pressed={ativo}
+                onClick={() => setCategoriaId(ativo ? TODOS : c.id)}
+                title={ativo ? "Mostrar todas as categorias" : `Só tarefas de ${c.nome}`}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+                  ativo ? "text-white shadow-sm" : "hover:bg-muted",
+                )}
+                style={ativo ? { backgroundColor: c.cor, borderColor: c.cor } : { borderColor: `${c.cor}66`, color: c.cor }}
+              >
+                <span className="size-1.5 rounded-full" style={{ backgroundColor: ativo ? "white" : c.cor }} />
+                {c.nome} ({c.qtd})
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
         {view === "kanban" && <KanbanView tarefas={tarefasFiltradas} onEditar={(t) => setTarefaEditandoId(t.id)} />}
