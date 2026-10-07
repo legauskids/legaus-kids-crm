@@ -12,7 +12,8 @@ import {
   salvarRateio,
   type LinhaRateio,
 } from "@/lib/server/conciliacao-bancaria";
-import { criarCentroCusto, atualizarCentroCusto } from "@/lib/server/centros-custo";
+import { criarCentroCusto, atualizarCentroCusto, criarCentroGeral, atualizarCentroGeral } from "@/lib/server/centros-custo";
+import { criarDespesa, atualizarDespesa, confirmarDespesa, excluirDespesa, type DadosDespesa } from "@/lib/server/despesas";
 import {
   criarEEmitirNotaFiscal,
   atualizarStatusNotaFiscal,
@@ -25,6 +26,12 @@ import type { StatusContrato, TipoCentroCusto, TipoTransacaoBancaria } from "@pr
 
 function revalidateFinanceiro() {
   revalidatePath("/financeiro");
+}
+
+/** Mensagem legível pro toast — nome repetido (unique) vira frase, o resto passa direto. */
+function mensagemDeErro(erro: unknown, padrao: string): string {
+  if (typeof erro === "object" && erro !== null && "code" in erro && erro.code === "P2002") return "Já existe um cadastro com esse nome.";
+  return erro instanceof Error ? erro.message : padrao;
 }
 
 export type AcaoContratoState = { error?: string; success?: boolean };
@@ -135,12 +142,17 @@ export async function salvarRateioAction(transacaoId: string, linhas: LinhaRatei
 
 export type AcaoCentroCustoState = { error?: string; success?: boolean };
 
-export async function criarCentroCustoAction(nome: string, tipo: TipoCentroCusto, palavrasChave: string[]): Promise<AcaoCentroCustoState> {
+export async function criarCentroCustoAction(
+  nome: string,
+  tipo: TipoCentroCusto,
+  palavrasChave: string[],
+  centroGeralPadraoId: string | null = null,
+): Promise<AcaoCentroCustoState> {
   await requireModulo("financeiro");
   try {
-    await criarCentroCusto({ nome, tipo, palavrasChave });
+    await criarCentroCusto({ nome, tipo, palavrasChave, centroGeralPadraoId });
   } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui criar o centro de custo." };
+    return { error: mensagemDeErro(erro, "Não consegui criar a categoria.") };
   }
   revalidateFinanceiro();
   return { success: true };
@@ -148,13 +160,82 @@ export async function criarCentroCustoAction(nome: string, tipo: TipoCentroCusto
 
 export async function atualizarCentroCustoAction(
   id: string,
-  dados: { nome?: string; tipo?: TipoCentroCusto; palavrasChave?: string[]; ativo?: boolean },
+  dados: { nome?: string; tipo?: TipoCentroCusto; palavrasChave?: string[]; ativo?: boolean; centroGeralPadraoId?: string | null },
 ): Promise<AcaoCentroCustoState> {
   await requireModulo("financeiro");
   try {
     await atualizarCentroCusto(id, dados);
   } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui salvar o centro de custo." };
+    return { error: mensagemDeErro(erro, "Não consegui salvar a categoria.") };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function criarCentroGeralAction(nome: string): Promise<AcaoCentroCustoState> {
+  await requireModulo("financeiro");
+  try {
+    await criarCentroGeral(nome);
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui criar o centro de custo.") };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function atualizarCentroGeralAction(id: string, dados: { nome?: string; ativo?: boolean }): Promise<AcaoCentroCustoState> {
+  await requireModulo("financeiro");
+  try {
+    await atualizarCentroGeral(id, dados);
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui salvar o centro de custo.") };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export type AcaoDespesaState = { error?: string; success?: boolean };
+
+/** Lançamento manual pela tela — já entra aguardando conciliação. */
+export async function criarDespesaAction(dados: DadosDespesa): Promise<AcaoDespesaState> {
+  const user = await requireModulo("financeiro");
+  try {
+    await criarDespesa({ ...dados, origem: "MANUAL", registradaPorId: user.id });
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui registrar a despesa.") };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function atualizarDespesaAction(id: string, dados: DadosDespesa): Promise<AcaoDespesaState> {
+  await requireModulo("financeiro");
+  try {
+    await atualizarDespesa(id, dados);
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui salvar a despesa.") };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function confirmarDespesaAction(id: string): Promise<AcaoDespesaState> {
+  await requireModulo("financeiro");
+  try {
+    await confirmarDespesa(id);
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui confirmar a despesa.") };
+  }
+  revalidateFinanceiro();
+  return { success: true };
+}
+
+export async function excluirDespesaAction(id: string): Promise<AcaoDespesaState> {
+  await requireModulo("financeiro");
+  try {
+    await excluirDespesa(id);
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui excluir a despesa.") };
   }
   revalidateFinanceiro();
   return { success: true };

@@ -21,7 +21,11 @@ import { ConciliacaoTab } from "@/app/(app)/financeiro/conciliacao-tab";
 import { NotasFiscaisTab } from "@/app/(app)/financeiro/notas-fiscais-tab";
 import { SimulacaoTab } from "@/app/(app)/financeiro/simulacao-tab";
 import { listSimulacoes } from "@/lib/server/simulacao-financeira";
-import { listCentrosCusto } from "@/lib/server/centros-custo";
+import { listCentrosCusto, listCentrosGerais } from "@/lib/server/centros-custo";
+import { listDespesas, listNegociosParaDespesa, resumoDespesas } from "@/lib/server/despesas";
+import { filtroDaUrl, type FiltroDespesas } from "@/lib/utils/despesas";
+import { diaBrasilia } from "@/lib/utils/brasilia";
+import { DespesasTab } from "@/app/(app)/financeiro/despesas-tab";
 import { getDashboardFinanceiro, resolverPeriodoFinanceiro } from "@/lib/server/resultado-financeiro";
 import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
 import { prisma } from "@/lib/db";
@@ -31,8 +35,9 @@ import { CentrosCustoTab } from "@/app/(app)/financeiro/centros-custo-tab";
 const ABAS = [
   { id: "visao-geral", label: "Visão geral", href: "/financeiro" },
   { id: "dashboard", label: "Dashboard financeiro", href: "/financeiro?aba=dashboard" },
+  { id: "despesas", label: "Despesas", href: "/financeiro?aba=despesas" },
   { id: "conciliacao", label: "Conciliação bancária", href: "/financeiro?aba=conciliacao" },
-  { id: "centros-custo", label: "Centros de custo", href: "/financeiro?aba=centros-custo" },
+  { id: "centros-custo", label: "Categorias e centros", href: "/financeiro?aba=centros-custo" },
   { id: "contratos", label: "Contratos", href: "/financeiro?aba=contratos" },
   { id: "notas-fiscais", label: "Notas fiscais", href: "/financeiro?aba=notas-fiscais" },
   { id: "simulacao", label: "Simulação", href: "/financeiro?aba=simulacao" },
@@ -41,10 +46,10 @@ const ABAS = [
 export default async function FinanceiroPage({
   searchParams,
 }: {
-  searchParams: Promise<{ aba?: string; filtroTransacao?: string; mes?: string; ano?: string }>;
+  searchParams: Promise<{ aba?: string; filtroTransacao?: string; filtroDespesa?: string; mes?: string; ano?: string }>;
 }) {
   await requireModulo("financeiro");
-  const { aba, filtroTransacao, mes, ano } = await searchParams;
+  const { aba, filtroTransacao, filtroDespesa, mes, ano } = await searchParams;
   const abaAtual = ABAS.find((a) => a.id === aba)?.id ?? "visao-geral";
   const filtroAtual: FiltroTransacoes =
     filtroTransacao === "CONCILIADA" || filtroTransacao === "IGNORADA" || filtroTransacao === "TODAS"
@@ -56,7 +61,7 @@ export default async function FinanceiroPage({
       <div className="border-b bg-card px-6 py-3.5 shadow-xs">
         <h1 className="text-xl font-bold tracking-tight text-foreground">Financeiro</h1>
         <p className="text-sm text-muted-foreground">
-          Resultado de caixa por projeto e centro de custo, faturamento, conciliação bancária, contratos e notas fiscais.
+          Resultado de caixa por projeto e centro de custo, despesas, faturamento, conciliação bancária, contratos e notas fiscais.
         </p>
         <div className="mt-3 flex flex-wrap gap-1">
           {ABAS.map((a) => (
@@ -75,6 +80,7 @@ export default async function FinanceiroPage({
       </div>
 
       {abaAtual === "dashboard" && <DashboardFinanceiroTabData mes={mes} ano={ano} />}
+      {abaAtual === "despesas" && <DespesasTabData filtro={filtroDaUrl(filtroDespesa)} />}
       {abaAtual === "conciliacao" && <ConciliacaoTabData filtroAtual={filtroAtual} />}
       {abaAtual === "centros-custo" && <CentrosCustoTabData />}
       {abaAtual === "contratos" && <ContratosTabData />}
@@ -92,11 +98,14 @@ async function DashboardFinanceiroTabData({ mes, ano }: { mes?: string; ano?: st
 }
 
 async function CentrosCustoTabData() {
-  const [centros, totais] = await Promise.all([
+  const [centros, totais, centrosGerais, despesasPorCentro] = await Promise.all([
     listCentrosCusto({ incluirInativos: true }),
     prisma.rateioTransacao.groupBy({ by: ["centroCustoId"], where: { centroCustoId: { not: null } }, _sum: { valorCentavos: true } }),
+    listCentrosGerais({ incluirInativos: true }),
+    prisma.despesa.groupBy({ by: ["centroGeralId"], where: { centroGeralId: { not: null } }, _count: true }),
   ]);
   const totalPorCentro = new Map(totais.map((t) => [t.centroCustoId, t._sum.valorCentavos ?? 0]));
+  const quantidadePorCentroGeral = new Map(despesasPorCentro.map((d) => [d.centroGeralId, d._count]));
   return (
     <CentrosCustoTab
       centros={centros.map((c) => ({
@@ -105,7 +114,51 @@ async function CentrosCustoTabData() {
         tipo: c.tipo,
         palavrasChave: c.palavrasChave,
         ativo: c.ativo,
+        centroGeralPadraoId: c.centroGeralPadraoId,
         totalRateadoCentavos: totalPorCentro.get(c.id) ?? 0,
+      }))}
+      centrosGerais={centrosGerais.map((g) => ({ id: g.id, nome: g.nome, ativo: g.ativo, quantidadeDespesas: quantidadePorCentroGeral.get(g.id) ?? 0 }))}
+    />
+  );
+}
+
+async function DespesasTabData({ filtro }: { filtro: FiltroDespesas }) {
+  const [despesas, resumo, categorias, centrosGerais, negocios] = await Promise.all([
+    listDespesas(filtro),
+    resumoDespesas(),
+    listCentrosCusto(),
+    listCentrosGerais(),
+    listNegociosParaDespesa(),
+  ]);
+  return (
+    <DespesasTab
+      filtroAtual={filtro}
+      hoje={diaBrasilia(new Date())}
+      resumo={resumo}
+      categorias={categorias.filter((c) => c.tipo === "DESPESA").map((c) => ({ id: c.id, nome: c.nome, centroGeralPadraoId: c.centroGeralPadraoId }))}
+      centrosGerais={centrosGerais.map((g) => ({ id: g.id, nome: g.nome }))}
+      projetos={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null }))}
+      despesas={despesas.map((d) => ({
+        id: d.id,
+        dia: diaBrasilia(d.data),
+        valorCentavos: d.valorCentavos,
+        fornecedor: d.fornecedor,
+        descricao: d.descricao,
+        status: d.status,
+        origem: d.origem,
+        categoriaId: d.categoriaId,
+        categoriaNome: d.categoria?.nome ?? null,
+        centroGeralId: d.centroGeralId,
+        centroGeralNome: d.centroGeral?.nome ?? null,
+        negocioId: d.negocioId,
+        negocioTitulo: d.negocio?.titulo ?? null,
+        contatoNome: d.negocio?.contato?.nome ?? null,
+        transacaoDia: d.transacao ? diaBrasilia(d.transacao.data) : null,
+        transacaoDescricao: d.transacao?.descricao ?? null,
+        temAnexo: d.anexoMime !== null,
+        anexoMime: d.anexoMime,
+        textoOriginal: d.textoOriginal,
+        registradaPorNome: d.registradaPor.nome,
       }))}
     />
   );

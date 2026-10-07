@@ -111,6 +111,7 @@ model User {
   reunioesCriadas       Reuniao[]                   @relation("CriadorReuniao")
   opinioesPauta         OpiniaoPauta[]
   compromissos          CompromissoUsuario[]
+  despesasRegistradas   Despesa[]                   @relation("RegistradorDespesa")
 }
 
 enum OrigemComando {
@@ -335,6 +336,7 @@ model Negocio {
   // Parcelas de lançamentos do extrato atribuídas a este negócio como
   // projeto (centro de custo por projeto) — ver RateioTransacao.
   rateiosTransacao    RateioTransacao[]
+  despesas            Despesa[]
 
   @@index([contatoId])
 }
@@ -814,6 +816,7 @@ model TransacaoBancaria {
   conciliadaPor   User?                     @relation("ConciliadorTransacao", fields: [conciliadaPorId], references: [id])
   conciliadaEm    DateTime?
   rateios         RateioTransacao[]
+  despesa         Despesa?
 
   @@index([importacaoId])
   @@index([negocioId])
@@ -824,20 +827,101 @@ enum TipoCentroCusto {
   RECEITA
 }
 
-// Centro de custo padrão pras despesas/receitas que não são de um projeto
-// específico (folha, impostos, tarifas, marketing...). Projeto = Negocio.
-// palavrasChave: trechos da descrição do extrato que sugerem este centro na
-// conciliação (ex.: "TARIFA", "IOF") — só sugestão, nunca aplica sozinho.
+// Na tela é a CATEGORIA (natureza do gasto/receita: combustível, folha,
+// impostos, tarifas...) — o nome da tabela ficou do primeiro desenho, em que
+// categoria e centro de custo eram a mesma coisa. O centro de custo de
+// verdade é um CentroGeral (Veículos, Produção...) ou um projeto (Negocio).
+// palavrasChave: trechos da descrição do extrato que sugerem esta categoria
+// na conciliação (ex.: "TARIFA", "IOF") — só sugestão, nunca aplica sozinho.
+// centroGeralPadrao: centro sugerido quando a categoria é escolhida
+// (Combustível -> Veículos).
 model CentroCusto {
-  id            String          @id @default(cuid())
-  nome          String          @unique
-  tipo          TipoCentroCusto @default(DESPESA)
-  palavrasChave String[]        @default([])
-  ativo         Boolean         @default(true)
-  ordem         Int             @default(0)
-  criadoEm      DateTime        @default(now())
+  id                  String          @id @default(cuid())
+  nome                String          @unique
+  tipo                TipoCentroCusto @default(DESPESA)
+  palavrasChave       String[]        @default([])
+  ativo               Boolean         @default(true)
+  ordem               Int             @default(0)
+  centroGeralPadraoId String?
+  centroGeralPadrao   CentroGeral?    @relation(fields: [centroGeralPadraoId], references: [id])
+  criadoEm            DateTime        @default(now())
 
-  rateios RateioTransacao[]
+  rateios  RateioTransacao[]
+  despesas Despesa[]
+}
+
+// Centro de custo geral (Veículos, Produção, Instalação, Administrativo,
+// Marketing) — onde a despesa é alocada quando não é de um projeto. Editável
+// em Financeiro → Categorias e centros. Pedido de 2026-10-07.
+model CentroGeral {
+  id       String   @id @default(cuid())
+  nome     String   @unique
+  ativo    Boolean  @default(true)
+  ordem    Int      @default(0)
+  criadoEm DateTime @default(now())
+
+  despesas         Despesa[]
+  categoriasPadrao CentroCusto[]
+}
+
+enum StatusDespesa {
+  // Rascunho do agente do WhatsApp esperando o "1" (ou a correção) de quem mandou.
+  A_CONFIRMAR
+  AGUARDANDO_CONCILIACAO
+  CONCILIADA
+}
+
+enum OrigemDespesa {
+  AUDIO
+  COMPROVANTE
+  TEXTO
+  MANUAL
+  EXTRATO
+}
+
+// Despesa registrada na hora do gasto (áudio, comprovante, texto no WhatsApp
+// ou lançamento manual), antes de o extrato chegar — fica aguardando
+// conciliação até ser pareada com UMA linha do extrato (transacaoId único:
+// uma despesa por linha, e confirmar o par não cria lançamento novo).
+// Despesa de origem EXTRATO é a classificação de uma saída do extrato que
+// não tinha despesa registrada. Centro = um CentroGeral OU um projeto
+// (negocioId), nunca os dois. data: meio-dia de Brasília do dia, igual às
+// datas do OFX. Pedido de 2026-10-07.
+model Despesa {
+  id              String             @id @default(cuid())
+  data            DateTime
+  valorCentavos   Int
+  fornecedor      String
+  descricao       String?
+  categoriaId     String?
+  categoria       CentroCusto?       @relation(fields: [categoriaId], references: [id])
+  centroGeralId   String?
+  centroGeral     CentroGeral?       @relation(fields: [centroGeralId], references: [id])
+  negocioId       String?
+  negocio         Negocio?           @relation(fields: [negocioId], references: [id])
+  status          StatusDespesa      @default(AGUARDANDO_CONCILIACAO)
+  origem          OrigemDespesa
+  transacaoId     String?            @unique
+  transacao       TransacaoBancaria? @relation(fields: [transacaoId], references: [id])
+  // Arquivo original (comprovante ou áudio) e o texto de onde a despesa
+  // saiu (mensagem digitada ou transcrição do áudio).
+  anexoBytes      Bytes?
+  anexoMime       String?
+  anexoNome       String?
+  textoOriginal   String?
+  // JSON extraído pela IA + decisão da regra de confirmação (log).
+  extracao        Json?
+  telefoneOrigem  String?
+  registradaPorId String
+  registradaPor   User               @relation("RegistradorDespesa", fields: [registradaPorId], references: [id])
+  confirmadaEm    DateTime?
+  conciliadaEm    DateTime?
+  criadoEm        DateTime           @default(now())
+  atualizadoEm    DateTime           @updatedAt
+
+  @@index([status, data])
+  @@index([valorCentavos])
+  @@index([negocioId])
 }
 
 // Pedaço (total ou parcial) de um lançamento do extrato atribuído a UM

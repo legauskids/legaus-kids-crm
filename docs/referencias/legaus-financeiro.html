@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Financeiro – Legaus Kids</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F2F4EF; --surface:#FFFFFF; --ink:#1B2A22; --muted:#5D6B63; --line:#DCE3DC;
+  --green:#1F5C43; --green-soft:#E2EEE6; --sun:#E9A90E; --sun-soft:#FCF1D3; --sun-ink:#7A5600;
+  --red:#B93A28; --red-soft:#F8E3DF; --chat:#E9EEE7; --me:#D9F0DF;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121815; --surface:#1A221E; --ink:#E6ECE8; --muted:#9AA8A0; --line:#2C3832;
+  --green:#5FBF92; --green-soft:#1E3329; --sun:#F2BC3A; --sun-soft:#3A2F12; --sun-ink:#F5D27A;
+  --red:#EE7A66; --red-soft:#3A201B; --chat:#161D19; --me:#21402F;
+}}
+:root[data-theme="dark"]{
+  --bg:#121815; --surface:#1A221E; --ink:#E6ECE8; --muted:#9AA8A0; --line:#2C3832;
+  --green:#5FBF92; --green-soft:#1E3329; --sun:#F2BC3A; --sun-soft:#3A2F12; --sun-ink:#F5D27A;
+  --red:#EE7A66; --red-soft:#3A201B; --chat:#161D19; --me:#21402F;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3{font-family:"Bricolage Grotesque",Figtree,system-ui,sans-serif;margin:0;line-height:1.15}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;justify-content:space-between;padding:22px clamp(16px,4vw,40px) 0;max-width:1320px;margin:0 auto}
+.brand{display:flex;gap:14px;align-items:center}
+.logo{width:44px;height:44px;border-radius:14px 14px 14px 4px;background:var(--green);color:#fff;display:grid;place-items:center;font:700 16px "Bricolage Grotesque",sans-serif}
+.brand h1{font-size:28px}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px}
+.tabs button{border:0;background:none;padding:8px 16px;border-radius:9px;font-weight:600;color:var(--muted);display:flex;gap:8px;align-items:center}
+.tabs button.on{background:var(--green);color:#fff}
+.count{background:var(--sun);color:#3a2a00;border-radius:99px;font-size:12px;padding:0 7px;line-height:20px;font-weight:700}
+
+main{max-width:1320px;margin:0 auto;padding:20px clamp(16px,4vw,40px) 40px}
+[hidden]{display:none!important}
+
+/* despesas */
+.grid{display:grid;grid-template-columns:minmax(320px,410px) 1fr;gap:20px;align-items:start}
+@media (max-width:880px){.grid{grid-template-columns:1fr}}
+
+.chat{background:var(--chat);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;height:min(78vh,720px);overflow:hidden}
+.chat-head{display:flex;gap:10px;align-items:center;padding:12px 14px;background:var(--surface);border-bottom:1px solid var(--line)}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--green-soft);color:var(--green);display:grid;place-items:center;font-weight:700}
+.chat-head b{display:block;font-size:15px}
+.chat-head span{font-size:12.5px;color:var(--muted)}
+.msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.b{max-width:88%;padding:9px 12px;border-radius:14px;background:var(--surface);border:1px solid var(--line);font-size:14px}
+.b.me{align-self:flex-end;background:var(--me);border-color:transparent;border-bottom-right-radius:4px}
+.b.bot{align-self:flex-start;border-bottom-left-radius:4px}
+.audio-row{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--green)}
+.wave{display:flex;gap:2px;align-items:center}
+.wave i{display:block;width:3px;background:var(--green);border-radius:2px;opacity:.7}
+.transc{margin-top:6px;font-size:13.5px;color:var(--ink)}
+.transc small{display:block;color:var(--muted);font-size:11.5px}
+.receipt{display:flex;gap:10px;align-items:center}
+.receipt .doc{width:38px;height:46px;border-radius:6px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;font-size:20px}
+.receipt img{width:64px;height:64px;object-fit:cover;border-radius:8px}
+
+.card{display:grid;gap:8px;margin-top:8px}
+.card label{display:grid;gap:3px;font-size:12px;color:var(--muted);font-weight:600}
+.card .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.field-tag{font-weight:600;font-size:11px;color:var(--sun-ink);background:var(--sun-soft);padding:0 6px;border-radius:5px;margin-left:4px}
+.card input,.card select,.inline-form input,.inline-form select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:14px;font-weight:500}
+.card .guess{border-color:var(--sun);background:var(--sun-soft)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 13px;border-radius:9px;font-weight:600;font-size:14px}
+.btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn.small{padding:4px 10px;font-size:13px}
+.err{color:var(--red);font-size:13px;font-weight:600}
+.resolved{margin-top:6px;font-size:13px;color:var(--green);font-weight:600}
+
+.composer{background:var(--surface);border-top:1px solid var(--line);padding:10px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px}
+.chips button{flex:none;border:1px solid var(--line);background:var(--bg);border-radius:99px;padding:4px 11px;font-size:12.5px;color:var(--muted);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row{display:flex;gap:8px;align-items:center}
+.row input[type=text]{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:99px;background:var(--bg)}
+.icon-btn{flex:none;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--bg);display:grid;place-items:center;font-size:18px}
+.icon-btn.mic{background:var(--green);border-color:var(--green);color:#fff}
+.hint{font-size:11.5px;color:var(--muted);margin-top:6px}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px}
+.summary{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:baseline;padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.summary .big{font:700 30px "Bricolage Grotesque",sans-serif;color:var(--sun-ink)}
+.summary .lbl{color:var(--muted);font-size:13.5px}
+.summary .sep{color:var(--green);font:700 20px "Bricolage Grotesque",sans-serif}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filters button{border:1px solid var(--line);background:none;border-radius:99px;padding:5px 12px;font-size:13px;font-weight:600;color:var(--muted)}
+.filters button.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+
+.list{display:flex;flex-direction:column}
+.exp{display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:11px 4px;border-bottom:1px solid var(--line)}
+.exp:last-child{border-bottom:0}
+.date{font-size:12.5px;color:var(--muted);text-align:center;line-height:1.2}
+.date b{display:block;font-size:17px;color:var(--ink);font-family:"Bricolage Grotesque",sans-serif}
+.exp .who{font-weight:600}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:3px;font-size:12.5px;color:var(--muted);align-items:center}
+.tag{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 7px}
+.tag.deal{background:var(--green-soft);border-color:transparent;color:var(--green);font-weight:600}
+.right{text-align:right}
+.val{font-weight:700;font-size:16px;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;border-radius:99px;padding:1px 9px;margin-top:3px}
+.pill.wait{background:var(--sun-soft);color:var(--sun-ink)}
+.pill.ok{background:var(--green-soft);color:var(--green)}
+.trash{border:0;background:none;color:var(--muted);font-size:13px;padding:2px 4px}
+.empty{padding:30px 10px;text-align:center;color:var(--muted)}
+
+/* conciliação */
+.conc-head{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-bottom:16px}
+.conc-head p{margin:4px 0 0;color:var(--muted);font-size:14px;max-width:64ch}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.notice{background:var(--green-soft);color:var(--green);border-radius:12px;padding:10px 14px;font-size:14px;font-weight:600;margin-bottom:16px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:22px}
+@media (max-width:700px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.stat b{display:block;font:700 26px "Bricolage Grotesque",sans-serif}
+.stat span{font-size:13px;color:var(--muted)}
+.stat.sun b{color:var(--sun-ink)} .stat.red b{color:var(--red)} .stat.green b{color:var(--green)}
+.sec{margin-bottom:26px}
+.sec h2{font-size:20px;margin-bottom:4px}
+.sec > p{margin:0 0 12px;color:var(--muted);font-size:14px}
+
+.pair{display:grid;grid-template-columns:1fr 46px 1fr;gap:0;align-items:stretch;background:var(--surface);border:1px solid var(--line);border-radius:16px;margin-bottom:12px;overflow:hidden}
+@media (max-width:760px){.pair{grid-template-columns:1fr}.pair .link{transform:rotate(90deg);height:34px}}
+.side{padding:13px 15px}
+.side small{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:4px}
+.side .who{font-weight:600}
+.link{display:grid;place-items:center;color:var(--sun);font-size:22px;background:var(--sun-soft)}
+.pair-foot{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;padding:10px 15px;border-top:1px solid var(--line);background:var(--bg)}
+.why{font-size:12.5px;color:var(--muted)}
+.why b{color:var(--ink);font-weight:600}
+
+.line{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 15px;margin-bottom:10px}
+.line-top{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.line .desc{font-weight:600;font-size:14px}
+.neg{color:var(--red)} .pos{color:var(--green)}
+.inline-form{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:8px;margin-top:10px;align-items:end}
+.inline-form label{display:grid;gap:3px;font-size:12px;color:var(--muted);font-weight:600}
+@media (max-width:760px){.inline-form{grid-template-columns:1fr}}
+.done-line{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--line);font-size:14px}
+.done-line:last-child{border-bottom:0}
+.foot{margin-top:8px;text-align:right}
+@media (prefers-reduced-motion:no-preference){.flash{animation:fl 1.2s ease-out}@keyframes fl{from{background:var(--sun-soft)}to{background:transparent}}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo">LK</div>
+    <div><h1>Financeiro</h1><p>Despesas registradas na hora, prontas para o extrato</p></div>
+  </div>
+  <nav class="tabs" aria-label="Seções">
+    <button data-act="tab" data-tab="despesas" id="t-despesas">Despesas</button>
+    <button data-act="tab" data-tab="conc" id="t-conc">Conciliação <span id="concBadge"></span></button>
+  </nav>
+</header>
+
+<main>
+  <section id="v-despesas" class="grid">
+    <div class="chat" aria-label="Conversa com o agente financeiro">
+      <div class="chat-head">
+        <div class="avatar">$</div>
+        <div><b>Agente financeiro</b><span>WhatsApp da Legaus Kids</span></div>
+      </div>
+      <div class="msgs" id="msgs"></div>
+      <div class="composer">
+        <div class="chips" id="chips"></div>
+        <div class="row">
+          <label class="icon-btn file-btn" title="Enviar comprovante" aria-label="Enviar comprovante">🧾<input type="file" id="fileIn" accept="image/*,application/pdf"></label>
+          <input type="text" id="txt" placeholder="Fale ou digite o que você gastou…" autocomplete="off">
+          <button class="icon-btn mic" id="send" title="Enviar como áudio" aria-label="Enviar como áudio">🎤</button>
+        </div>
+        <div class="hint">No protótipo, o texto digitado faz o papel da transcrição do áudio. Os botões acima são exemplos prontos.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="summary" id="summary"></div>
+      <div class="toolbar">
+        <div class="filters" id="filters"></div>
+        <button class="btn small" data-act="manual">+ Registrar sem áudio</button>
+      </div>
+      <div class="list" id="list"></div>
+    </div>
+  </section>
+
+  <section id="v-conc" hidden>
+    <div class="conc-head">
+      <div>
+        <h2>Conciliação com o extrato</h2>
+        <p>O sistema procura, para cada saída do extrato, uma despesa que já foi registrada com o mesmo valor e data próxima. Nada é conciliado sem a sua confirmação.</p>
+      </div>
+      <div class="actions">
+        <label class="btn file-btn">Importar extrato OFX<input type="file" id="ofxIn" accept=".ofx,.OFX,text/plain"></label>
+        <button class="btn primary" data-act="sample">Carregar extrato de exemplo</button>
+      </div>
+    </div>
+    <div id="importMsg"></div>
+    <div id="conc"></div>
+    <div class="foot"><button class="btn ghost small" data-act="reset">Restaurar dados de exemplo</button></div>
+  </section>
+</main>
+
+<script>
+const KEY='legaus-financeiro-v1';
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const TODAY=iso(new Date());
+const addDays=(s,n)=>{const d=new Date(s+'T12:00:00');d.setDate(d.getDate()+n);return iso(d)};
+const dayDiff=(a,b)=>Math.round(Math.abs(new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/864e5);
+const brl=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const fd=s=>{const p=s.split('-');return `${p[2]}/${p[1]}`};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const uid=()=>Math.random().toString(36).slice(2,9);
+const titulo=s=>s.trim().split(/\s+/).map(w=>w.length<3&&!/^\d/.test(w)?w.toLowerCase():w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
+const MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+
+const CATS=[
+ {nome:'Combustível',kw:['abastec','combust','gasolina','diesel','etanol'],centro:'Veículos'},
+ {nome:'Manutenção de veículo',kw:['oficina','pneu','troca de oleo','mecanic','borracharia'],centro:'Veículos'},
+ {nome:'Pedágio',kw:['pedagio'],centro:'Veículos'},
+ {nome:'Matéria-prima',kw:['madeira','madeireira','parafuso','tinta','compensado','corda','lona','eva','material'],centro:'Produção'},
+ {nome:'Ferramentas',kw:['ferramenta','ferragem','broca','lixa'],centro:'Produção'},
+ {nome:'Alimentação',kw:['almoco','lanche','janta','restaurante','lancheria','cafe'],centro:'Administrativo'},
+ {nome:'Frete',kw:['frete','transportadora'],centro:'Instalação'},
+ {nome:'Hospedagem',kw:['hotel','pousada','hospedagem'],centro:'Instalação'},
+ {nome:'Marketing',kw:['anuncio','impulsion','panfleto'],centro:'Marketing'},
+ {nome:'Tarifas bancárias',kw:['tarifa','taxa banc'],centro:'Administrativo'},
+ {nome:'Outros',kw:[],centro:'Administrativo'}
+];
+const GERAIS=['Veículos','Produção','Instalação','Administrativo','Marketing'];
+const NEG=[
+ {nome:'Playground Escola Arco-Íris',kw:['arco-iris','arco iris']},
+ {nome:'Kidplay Restaurante Sabor da Serra',kw:['sabor da serra']},
+ {nome:'Espaço kids Condomínio Bela Vista',kw:['bela vista']}
+];
+const EXEMPLOS=[
+ 'Acabei de abastecer o veículo da Legaus Kids, 250 reais de combustível no posto Ipiranga',
+ 'Paguei R$ 480 na madeireira Pinheiro, é pra obra do Arco-Íris',
+ 'Almoço da equipe de instalação, 96 reais no restaurante Sabor Gaúcho, categoria alimentação, centro de custo instalação'
+];
+const RECIBOS=[
+ {valor:487.9,fornecedor:'Madeireira Pinheiro',categoria:'Matéria-prima',centro:'Produção'},
+ {valor:58.4,fornecedor:'Pedágio Rota Sul',categoria:'Pedágio',centro:'Veículos'},
+ {valor:312,fornecedor:'Transportadora Gaúcha',categoria:'Frete',centro:'Instalação'}
+];
+
+function seed(){return{
+ tab:'despesas',filtro:'todas',reciboIdx:0,importMsg:'',
+ expenses:[
+  {id:'e1',data:addDays(TODAY,-3),fornecedor:'Posto Ipiranga',categoria:'Combustível',centro:'Veículos',valor:250,origem:'audio',status:'aguardando'},
+  {id:'e2',data:addDays(TODAY,-2),fornecedor:'Madeireira Pinheiro',categoria:'Matéria-prima',centro:'Playground Escola Arco-Íris',valor:1840,origem:'comprovante',status:'aguardando'},
+  {id:'e3',data:addDays(TODAY,-1),fornecedor:'Restaurante Sabor Gaúcho',categoria:'Alimentação',centro:'Administrativo',valor:62.5,origem:'audio',status:'aguardando'},
+  {id:'e4',data:TODAY,fornecedor:'Ferragem Central',categoria:'Ferramentas',centro:'Produção',valor:134.9,origem:'manual',status:'aguardando'}
+ ],
+ statement:[],
+ msgs:[{id:'m0',from:'bot',kind:'text',text:'Oi! Sempre que gastar algo, me manda um áudio ou o comprovante. Eu registro a despesa e deixo pronta pra conciliar quando o extrato chegar.'}]
+}}
+function sampleStatement(){return[
+ {id:'sx1',data:addDays(TODAY,-2),descricao:'COMPRA CARTAO DEB POSTO IPIRANGA',valor:-250},
+ {id:'sx2',data:addDays(TODAY,-2),descricao:'PIX ENVIADO MADEIREIRA PINHEIRO LTDA',valor:-1840},
+ {id:'sx3',data:addDays(TODAY,-1),descricao:'COMPRA CARTAO DEB REST SABOR GAUCHO',valor:-62.5},
+ {id:'sx4',data:addDays(TODAY,-1),descricao:'TARIFA PACOTE SERVICOS',valor:-39.9},
+ {id:'sx5',data:addDays(TODAY,-3),descricao:'PIX RECEBIDO COND RES BELA VISTA',valor:6500},
+ {id:'sx6',data:TODAY,descricao:'PIX ENVIADO JOAO SILVA',valor:-300}
+]}
+
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))||seed()}catch(e){S=seed()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+/* ---------- leitura do áudio (simulada) ---------- */
+function toNum(s){if(s.includes(','))return parseFloat(s.replace(/\./g,'').replace(',','.'));if(/\.\d{3}$/.test(s))return parseFloat(s.replace(/\./g,''));return parseFloat(s)}
+function catByText(t){const n=norm(t);return CATS.find(c=>c.kw.some(k=>n.includes(k)))}
+function parse(t){
+ const n=norm(t);
+ const r={valor:null,fornecedor:'',categoria:'',centro:'',data:TODAY,inf:{}};
+ let m=t.match(/r\$\s*([\d.]+(?:,\d{1,2})?)/i)||t.match(/([\d.]+(?:,\d{1,2})?)\s*(?:reais|real|pila|conto)/i);
+ if(m)r.valor=toNum(m[1]);
+ if(/\bontem\b/.test(n))r.data=addDays(TODAY,-1);
+ m=t.match(/\b(?:no|na|em|do|da)\s+((?:posto|loja|mercado|supermercado|restaurante|oficina|ferragem|madeireira|farm[aá]cia|padaria|lancheria|hotel|pousada|borracharia|transportadora)\s+[A-Za-zÀ-ú0-9]+(?:\s+[A-ZÀ-Ú][A-Za-zÀ-ú]+)?)/i);
+ if(m)r.fornecedor=titulo(m[1]);
+ m=n.match(/categoria\s+(?:e\s+|de\s+)?([a-z\s-]+?)(?=,|\.|;|\s+e\s+centro|\s+centro|$)/);
+ if(m){const s=m[1].trim();const c=CATS.find(c=>norm(c.nome).includes(s)||s.includes(norm(c.nome))||c.kw.some(k=>s.includes(k)));if(c){r.categoria=c.nome;r.inf.categoria=false}}
+ if(!r.categoria){const c=catByText(t);if(c){r.categoria=c.nome;r.inf.categoria=true}}
+ m=n.match(/centro de custo\s+(?:e\s+|de\s+|do\s+|da\s+)?([a-z\s-]+?)(?=,|\.|;|$)/);
+ if(m){const s=m[1].trim();const g=GERAIS.find(x=>s.includes(norm(x))||norm(x).startsWith(s.slice(0,5)));if(g){r.centro=g;r.inf.centro=false}}
+ if(!r.centro){const d=NEG.find(x=>x.kw.some(k=>n.includes(k)));if(d){r.centro=d.nome;r.inf.centro=false}}
+ if(!r.centro&&r.categoria){r.centro=CATS.find(c=>c.nome===r.categoria).centro;r.inf.centro=true}
+ return r;
+}
+const precisaConfirmar=r=>!r.valor||!r.fornecedor||!r.categoria||!r.centro||r.inf.categoria||r.inf.centro;
+
+function addExpense(d,origem,status='aguardando'){
+ const e={id:'e'+uid(),data:d.data||TODAY,fornecedor:d.fornecedor,categoria:d.categoria,centro:d.centro,valor:Number(d.valor),origem,status};
+ S.expenses.push(e);return e;
+}
+
+function enviar(texto,kind='audio'){
+ texto=texto.trim();if(!texto)return;
+ S.msgs.push({id:'m'+uid(),from:'me',kind,text:texto});
+ const r=parse(texto);
+ if(!precisaConfirmar(r)){
+  const e=addExpense(r,kind);
+  S.msgs.push({id:'m'+uid(),from:'bot',kind:'done',expenseId:e.id});
+ }else{
+  const faltou=[];if(!r.valor)faltou.push('o valor');if(!r.fornecedor)faltou.push('o fornecedor');if(!r.categoria)faltou.push('a categoria');
+  S.msgs.push({id:'m'+uid(),from:'bot',kind:'confirm',origem:kind,draft:{valor:r.valor||'',data:r.data,fornecedor:r.fornecedor,categoria:r.categoria,centro:r.centro},inf:r.inf,faltou});
+ }
+ save();renderChat();renderList();renderBadge();
+}
+
+function enviarRecibo(nome,src){
+ const rec=RECIBOS[S.reciboIdx%RECIBOS.length];S.reciboIdx++;
+ S.msgs.push({id:'m'+uid(),from:'me',kind:'receipt',nome,src:src&&src.length<400000?src:''});
+ S.msgs.push({id:'m'+uid(),from:'bot',kind:'confirm',origem:'comprovante',leitura:true,draft:{valor:rec.valor,data:TODAY,fornecedor:rec.fornecedor,categoria:rec.categoria,centro:rec.centro},inf:{categoria:true,centro:true},faltou:[]});
+ save();renderChat();
+}
+
+/* ---------- render: chat ---------- */
+function catOptions(sel){return '<option value="">Escolha…</option>'+CATS.map(c=>`<option ${c.nome===sel?'selected':''}>${esc(c.nome)}</option>`).join('')}
+function centroOptions(sel){return '<option value="">Escolha…</option><optgroup label="Centros gerais">'+GERAIS.map(g=>`<option ${g===sel?'selected':''}>${esc(g)}</option>`).join('')+'</optgroup><optgroup label="Negócios">'+NEG.map(g=>`<option ${g.nome===sel?'selected':''}>${esc(g.nome)}</option>`).join('')+'</optgroup>'}
+function wave(){return '<span class="wave">'+[8,14,10,18,12,16,7,13,9,15,11].map(h=>`<i style="height:${h}px"></i>`).join('')+'</span>'}
+
+function msgHTML(m){
+ if(m.from==='me'){
+  if(m.kind==='audio')return `<div class="b me"><div class="audio-row">▶ ${wave()} 0:${pad(Math.min(59,6+Math.round(m.text.length/9)))}</div><div class="transc"><small>Transcrição</small>${esc(m.text)}</div></div>`;
+  if(m.kind==='receipt')return `<div class="b me"><div class="receipt">${m.src?`<img src="${m.src}" alt="">`:'<span class="doc">🧾</span>'}<div><b>Comprovante</b><div style="font-size:12.5px;color:var(--muted)">${esc(m.nome)}</div></div></div></div>`;
+  return `<div class="b me">${esc(m.text)}</div>`;
+ }
+ if(m.kind==='text')return `<div class="b bot">${esc(m.text)}</div>`;
+ if(m.kind==='done'){
+  const e=S.expenses.find(x=>x.id===m.expenseId);
+  if(!e)return `<div class="b bot">Registro desfeito.</div>`;
+  return `<div class="b bot">Registrei: <b>${brl(e.valor)}</b> em ${esc(e.fornecedor)}, ${esc(e.categoria)}, centro de custo ${esc(e.centro)}. Fica aguardando conciliação.
+  ${e.status==='aguardando'?`<div class="actions" style="margin-top:6px"><button class="btn small ghost" data-act="undo" data-id="${m.id}">Desfazer</button></div>`:''}</div>`;
+ }
+ if(m.kind==='confirm'){
+  if(m.resolved){
+   const e=S.expenses.find(x=>x.id===m.resolved);
+   return `<div class="b bot">${e?`Registrado: <b>${brl(e.valor)}</b> em ${esc(e.fornecedor)}, ${esc(e.categoria)}, ${esc(e.centro)}.`:'Despesa descartada.'}</div>`;
+  }
+  const d=m.draft,inf=m.inf||{};
+  const tag=k=>inf[k]?'<span class="field-tag">deduzido</span>':'';
+  let intro=m.manual?'Preencha os dados da despesa.':m.leitura?'Li o comprovante. Confere os dados antes de eu registrar?':'Entendi assim. Confere antes de eu registrar?';
+  if(m.faltou&&m.faltou.length)intro+=` Não consegui identificar ${m.faltou.join(', ')}.`;
+  if(m.leitura)intro+=' <span style="color:var(--muted);font-size:12px">(leitura simulada no protótipo)</span>';
+  return `<div class="b bot" style="width:100%">${intro}
+  <div class="card">
+   <div class="two">
+    <label>Valor (R$)<input inputmode="decimal" data-msg="${m.id}" data-f="valor" value="${esc(d.valor)}" class="${!d.valor?'guess':''}"></label>
+    <label>Data<input type="date" data-msg="${m.id}" data-f="data" value="${esc(d.data)}"></label>
+   </div>
+   <label>Fornecedor<input data-msg="${m.id}" data-f="fornecedor" value="${esc(d.fornecedor)}" class="${!d.fornecedor?'guess':''}"></label>
+   <label><span>Categoria ${tag('categoria')}</span><select data-msg="${m.id}" data-f="categoria" class="${inf.categoria||!d.categoria?'guess':''}">${catOptions(d.categoria)}</select></label>
+   <label><span>Centro de custo ${tag('centro')}</span><select data-msg="${m.id}" data-f="centro" class="${inf.centro||!d.centro?'guess':''}">${centroOptions(d.centro)}</select></label>
+   ${m.err?`<div class="err">${esc(m.err)}</div>`:''}
+   <div class="actions"><button class="btn primary" data-act="confirm" data-id="${m.id}">Confirmar e registrar</button><button class="btn ghost" data-act="discard" data-id="${m.id}">Descartar</button></div>
+  </div></div>`;
+ }
+ return '';
+}
+function renderChat(){
+ const el=document.getElementById('msgs');
+ el.innerHTML=S.msgs.map(msgHTML).join('');
+ el.scrollTop=el.scrollHeight;
+}
+
+/* ---------- render: lista ---------- */
+const ORIGEM={audio:'🎤 áudio',comprovante:'🧾 comprovante',manual:'✍️ manual',extrato:'🏦 extrato'};
+function renderList(){
+ const ag=S.expenses.filter(e=>e.status==='aguardando'),ok=S.expenses.filter(e=>e.status==='conciliada');
+ const sum=a=>a.reduce((s,e)=>s+e.valor,0);
+ document.getElementById('summary').innerHTML=`
+  <div><div class="big">${brl(sum(ag))}</div><div class="lbl">${ag.length} despesa${ag.length===1?'':'s'} aguardando conciliação</div></div>
+  <div><div class="sep">${brl(sum(ok))}</div><div class="lbl">${ok.length} já conciliada${ok.length===1?'':'s'}</div></div>`;
+ const f=S.filtro;
+ document.getElementById('filters').innerHTML=[['todas','Todas'],['aguardando','Aguardando'],['conciliada','Conciliadas']].map(([k,l])=>`<button class="${f===k?'on':''}" data-act="filtro" data-f="${k}">${l}</button>`).join('');
+ const lista=S.expenses.filter(e=>f==='todas'||e.status===f).sort((a,b)=>b.data.localeCompare(a.data));
+ const isDeal=c=>NEG.some(n=>n.nome===c);
+ document.getElementById('list').innerHTML=lista.length?lista.map(e=>{
+  const [y,mo,d]=e.data.split('-');
+  return `<div class="exp" id="row-${e.id}">
+   <div class="date"><b>${d}</b>${MESES[+mo-1]}</div>
+   <div><div class="who">${esc(e.fornecedor)}</div>
+    <div class="meta"><span>${esc(e.categoria)}</span><span class="tag ${isDeal(e.centro)?'deal':''}">${esc(e.centro)}</span><span>${ORIGEM[e.origem]||''}</span></div></div>
+   <div class="right"><div class="val">${brl(e.valor)}</div>
+    ${e.status==='aguardando'?`<span class="pill wait">Aguardando conciliação</span> <button class="trash" data-act="del" data-id="${e.id}" aria-label="Excluir">✕</button>`:`<span class="pill ok">Conciliada</span>`}</div>
+  </div>`}).join(''):`<div class="empty">${f==='conciliada'?'Nenhuma despesa conciliada ainda. Importe o extrato na aba Conciliação.':'Nenhuma despesa aqui. Mande um áudio ou comprovante pelo chat ao lado.'}</div>`;
+}
+
+/* ---------- conciliação ---------- */
+function sim(forn,desc){const d=norm(desc);return norm(forn).split(/\s+/).filter(w=>w.length>3&&d.includes(w)).length}
+function candidatos(l){
+ if(l.valor>=0)return[];
+ const v=-l.valor;
+ return S.expenses.filter(e=>e.status==='aguardando'&&Math.abs(e.valor-v)<0.005&&dayDiff(e.data,l.data)<=3&&!(l.rejeitados||[]).includes(e.id))
+  .map(e=>({e,s:sim(e.fornecedor,l.descricao)*2-dayDiff(e.data,l.data)})).sort((a,b)=>b.s-a.s).map(x=>x.e);
+}
+function limpaDesc(d){return titulo(d.replace(/COMPRA CARTAO (DEB|CRED)|PIX (ENVIADO|RECEBIDO)|PAGAMENTO|TED|DOC|LTDA|\bREST\b/gi,' ').replace(/\s+/g,' '))||d}
+
+function renderBadge(){
+ const n=S.statement.filter(l=>l.status==='pendente').length;
+ document.getElementById('concBadge').innerHTML=n?`<span class="count">${n}</span>`:'';
+}
+function renderConc(){
+ const el=document.getElementById('conc');
+ document.getElementById('importMsg').innerHTML=S.importMsg?`<div class="notice">${esc(S.importMsg)}</div>`:'';
+ if(!S.statement.length){
+  el.innerHTML=`<div class="panel empty">Nenhum extrato importado ainda. Importe o arquivo OFX do Sicredi ou carregue o extrato de exemplo para ver como os pares aparecem.</div>`;return;
+ }
+ const pend=S.statement.filter(l=>l.status==='pendente');
+ const pares=pend.filter(l=>l.valor<0&&candidatos(l).length);
+ const semPar=pend.filter(l=>l.valor<0&&!candidatos(l).length);
+ const entradas=pend.filter(l=>l.valor>0);
+ const feitos=S.statement.filter(l=>l.status!=='pendente');
+ let h=`<div class="stats">
+  <div class="stat sun"><b>${pares.length}</b><span>prováveis pares para confirmar</span></div>
+  <div class="stat red"><b>${semPar.length}</b><span>saídas sem despesa registrada</span></div>
+  <div class="stat"><b>${entradas.length}</b><span>entradas para classificar</span></div>
+  <div class="stat green"><b>${feitos.length}</b><span>lançamentos resolvidos</span></div></div>`;
+
+ if(pares.length){
+  h+=`<div class="sec"><h2>Prováveis pares</h2><p>A despesa que você mandou e a linha do extrato viram um lançamento só quando você confirma. Nenhuma despesa nova é criada.</p>`;
+  for(const l of pares){
+   const c=candidatos(l);const e=c.find(x=>x.id===l.escolha)||c[0];
+   const dd=dayDiff(e.data,l.data),s=sim(e.fornecedor,l.descricao);
+   h+=`<div class="pair">
+    <div class="side"><small>Extrato Sicredi, ${fd(l.data)}</small><div class="who">${esc(l.descricao)}</div><div class="val neg">${brl(l.valor)}</div></div>
+    <div class="link" aria-hidden="true">⇄</div>
+    <div class="side"><small>Despesa registrada, ${fd(e.data)} (${ORIGEM[e.origem]||''})</small><div class="who">${esc(e.fornecedor)}</div>
+     <div class="meta"><span>${esc(e.categoria)}</span><span class="tag ${NEG.some(n=>n.nome===e.centro)?'deal':''}">${esc(e.centro)}</span></div><div class="val">${brl(e.valor)}</div>
+     ${c.length>1?`<select style="margin-top:6px;padding:4px;border:1px solid var(--line);border-radius:7px;background:var(--surface);font-size:13px" data-act-change="escolha" data-id="${l.id}">${c.map(x=>`<option value="${x.id}" ${x.id===e.id?'selected':''}>${esc(x.fornecedor)} (${fd(x.data)})</option>`).join('')}</select>`:''}
+    </div>
+    <div class="pair-foot"><span class="why"><b>Mesmo valor</b>, ${dd===0?'<b>mesma data</b>':`<b>${dd} dia${dd>1?'s':''} de diferença</b>`}${s?', <b>fornecedor parecido</b>':''}${c.length>1?`, ${c.length} despesas possíveis`:''}</span>
+     <span class="actions"><button class="btn ghost small" data-act="reject" data-id="${l.id}" data-e="${e.id}">Não é esse</button><button class="btn primary small" data-act="pair" data-id="${l.id}" data-e="${e.id}">Confirmar par</button></span></div>
+   </div>`;
+  }
+  h+='</div>';
+ }
+ if(semPar.length){
+  h+=`<div class="sec"><h2>Saídas sem despesa registrada</h2><p>Esses gastos não foram enviados por áudio nem comprovante. Classifique agora ou ignore, se for uma transferência entre contas.</p>`;
+  for(const l of semPar){
+   const c=catByText(l.descricao);
+   h+=`<div class="line"><div class="line-top"><div><div class="desc">${esc(l.descricao)}</div><div class="meta">${fd(l.data)}</div></div>
+    <div class="actions" style="align-items:center"><span class="val neg">${brl(l.valor)}</span>${l.form?'':`<button class="btn small" data-act="ignore" data-id="${l.id}">Ignorar</button><button class="btn small primary" data-act="openform" data-id="${l.id}">Classificar</button>`}</div></div>
+    ${l.form?`<div class="inline-form">
+     <label>Fornecedor<input id="c-${l.id}-forn" value="${esc(limpaDesc(l.descricao))}"></label>
+     <label>Categoria<select id="c-${l.id}-cat">${catOptions(c?c.nome:'')}</select></label>
+     <label>Centro de custo<select id="c-${l.id}-cen">${centroOptions(c?c.centro:'')}</select></label>
+     <button class="btn primary" data-act="catalog" data-id="${l.id}">Salvar</button></div>${l.err?`<div class="err" style="margin-top:6px">${esc(l.err)}</div>`:''}`:''}
+   </div>`;
+  }
+  h+='</div>';
+ }
+ if(entradas.length){
+  h+=`<div class="sec"><h2>Entradas</h2><p>Vincule cada recebimento ao negócio de origem ou a um centro geral.</p>`;
+  for(const l of entradas){
+   h+=`<div class="line"><div class="line-top"><div><div class="desc">${esc(l.descricao)}</div><div class="meta">${fd(l.data)}</div></div><span class="val pos">${brl(l.valor)}</span></div>
+    <div class="inline-form" style="grid-template-columns:1fr auto auto"><label>Origem do recebimento<select id="c-${l.id}-cen">${centroOptions((NEG.find(n=>n.kw.some(k=>norm(l.descricao).includes(k)))||{}).nome||'')}</select></label>
+    <button class="btn" data-act="ignore" data-id="${l.id}">Ignorar</button><button class="btn primary" data-act="entrada" data-id="${l.id}">Salvar</button></div></div>`;
+  }
+  h+='</div>';
+ }
+ if(feitos.length){
+  h+=`<div class="sec"><h2>Resolvidos</h2><div class="panel" style="padding:6px 14px">`+feitos.map(l=>{
+   const e=l.despesaId&&S.expenses.find(x=>x.id===l.despesaId);
+   const info=l.status==='ignorada'?'Ignorado':e?`${esc(e.categoria)}, ${esc(e.centro)}${e.origem==='extrato'?' (classificado no extrato)':''}`:l.centro?`Recebimento, ${esc(l.centro)}`:'';
+   return `<div class="done-line"><div><b>${fd(l.data)}</b> ${esc(l.descricao)}<div class="meta">${info}</div></div><div class="actions" style="align-items:center"><span class="val ${l.valor<0?'neg':'pos'}" style="font-size:14px">${brl(l.valor)}</span><button class="btn ghost small" data-act="undoline" data-id="${l.id}">Desfazer</button></div></div>`;
+  }).join('')+'</div></div>';
+ }
+ el.innerHTML=h;
+}
+
+function importar(linhas,origem){
+ const ids=new Set(S.statement.map(l=>l.id));
+ const novas=linhas.filter(l=>!ids.has(l.id)).map(l=>({...l,status:'pendente',rejeitados:[]}));
+ const rep=linhas.length-novas.length;
+ S.statement.push(...novas);
+ S.importMsg=novas.length?`${novas.length} lançamento${novas.length>1?'s':''} importado${novas.length>1?'s':''} de ${origem}.${rep?` ${rep} já estava${rep>1?'m':''} no sistema e foi ignorado para não duplicar.`:''}`
+  :`Nenhum lançamento novo: esse extrato já foi importado, nada foi duplicado.`;
+ save();renderConc();renderBadge();
+}
+function parseOFX(t){
+ const out=[];
+ for(const b of t.split(/<STMTTRN>/i).slice(1)){
+  const g=k=>{const m=b.match(new RegExp('<'+k+'>([^<\\r\\n]+)','i'));return m?m[1].trim():''};
+  const d=g('DTPOSTED'),v=parseFloat(g('TRNAMT').replace(',','.'));
+  if(d.length<8||isNaN(v))continue;
+  out.push({id:'ofx-'+(g('FITID')||d+v+g('MEMO')),data:`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`,descricao:g('MEMO')||g('NAME')||'Lançamento',valor:v});
+ }
+ return out;
+}
+
+/* ---------- tabs ---------- */
+function renderTabs(){
+ document.getElementById('v-despesas').hidden=S.tab!=='despesas';
+ document.getElementById('v-conc').hidden=S.tab!=='conc';
+ document.getElementById('t-despesas').classList.toggle('on',S.tab==='despesas');
+ document.getElementById('t-conc').classList.toggle('on',S.tab==='conc');
+}
+
+/* ---------- eventos ---------- */
+document.getElementById('chips').innerHTML=EXEMPLOS.map((t,i)=>`<button data-act="ex" data-i="${i}" title="${esc(t)}">🎤 ${esc(t)}</button>`).join('');
+const txt=document.getElementById('txt');
+document.getElementById('send').onclick=()=>{enviar(txt.value);txt.value='';txt.focus()};
+txt.addEventListener('keydown',e=>{if(e.key==='Enter'){enviar(txt.value);txt.value=''}});
+document.getElementById('fileIn').addEventListener('change',e=>{
+ const f=e.target.files[0];if(!f)return;
+ if(f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>enviarRecibo(f.name,r.result);r.readAsDataURL(f)}else enviarRecibo(f.name,'');
+ e.target.value='';
+});
+document.getElementById('ofxIn').addEventListener('change',e=>{
+ const f=e.target.files[0];if(!f)return;
+ const r=new FileReader();r.onload=()=>{const l=parseOFX(String(r.result));if(!l.length){S.importMsg='Não encontrei lançamentos nesse arquivo. Confira se é o OFX exportado do internet banking.';save();renderConc();return}importar(l,f.name)};r.readAsText(f);
+ e.target.value='';
+});
+
+document.addEventListener('input',e=>{
+ const t=e.target;if(!t.dataset.msg)return;
+ const m=S.msgs.find(x=>x.id===t.dataset.msg);if(!m)return;
+ m.draft[t.dataset.f]=t.value;
+ if(m.inf&&(t.dataset.f==='categoria'||t.dataset.f==='centro')){m.inf[t.dataset.f]=false;t.classList.remove('guess')}
+ save();
+});
+document.addEventListener('change',e=>{
+ const t=e.target;
+ if(t.dataset.actChange==='escolha'){const l=S.statement.find(x=>x.id===t.dataset.id);l.escolha=t.value;save();renderConc()}
+});
+
+document.addEventListener('click',e=>{
+ const b=e.target.closest('[data-act]');if(!b)return;
+ const a=b.dataset.act,id=b.dataset.id;
+ const line=()=>S.statement.find(x=>x.id===id);
+ switch(a){
+  case 'tab':S.tab=b.dataset.tab;save();renderTabs();if(S.tab==='conc')renderConc();else renderList();break;
+  case 'ex':enviar(EXEMPLOS[+b.dataset.i]);break;
+  case 'filtro':S.filtro=b.dataset.f;save();renderList();break;
+  case 'manual':
+   S.msgs.push({id:'m'+uid(),from:'bot',kind:'confirm',manual:true,origem:'manual',draft:{valor:'',data:TODAY,fornecedor:'',categoria:'',centro:''},inf:{},faltou:[]});
+   save();renderChat();break;
+  case 'confirm':{
+   const m=S.msgs.find(x=>x.id===id),d=m.draft;
+   const v=typeof d.valor==='number'?d.valor:toNum(String(d.valor).replace(/[^\d.,]/g,''));
+   if(!(v>0)){m.err='Informe o valor da despesa.';}
+   else if(!String(d.fornecedor).trim()){m.err='Informe o fornecedor.';}
+   else if(!d.categoria||!d.centro){m.err='Escolha a categoria e o centro de custo.';}
+   else{const ex=addExpense({...d,valor:v,fornecedor:String(d.fornecedor).trim()},m.origem==='comprovante'?'comprovante':m.origem==='manual'?'manual':'audio');m.resolved=ex.id;m.err='';}
+   save();renderChat();renderList();break;}
+  case 'discard':{const m=S.msgs.find(x=>x.id===id);m.resolved='x';save();renderChat();break;}
+  case 'undo':{const m=S.msgs.find(x=>x.id===id);S.expenses=S.expenses.filter(x=>x.id!==m.expenseId||x.status!=='aguardando');save();renderChat();renderList();break;}
+  case 'del':S.expenses=S.expenses.filter(x=>x.id!==id);save();renderList();renderChat();break;
+  case 'sample':importar(sampleStatement(),'extrato de exemplo do Sicredi');break;
+  case 'pair':{const l=line(),ex=S.expenses.find(x=>x.id===b.dataset.e);l.status='conciliada';l.despesaId=ex.id;ex.status='conciliada';ex.extratoId=l.id;save();renderConc();renderBadge();renderList();break;}
+  case 'reject':{const l=line();(l.rejeitados=l.rejeitados||[]).push(b.dataset.e);l.escolha=null;save();renderConc();break;}
+  case 'openform':line().form=true;renderConc();break;
+  case 'catalog':{
+   const l=line(),forn=document.getElementById(`c-${id}-forn`).value.trim(),cat=document.getElementById(`c-${id}-cat`).value,cen=document.getElementById(`c-${id}-cen`).value;
+   if(!forn||!cat||!cen){l.err='Preencha fornecedor, categoria e centro de custo.';renderConc();break}
+   const ex=addExpense({data:l.data,fornecedor:forn,categoria:cat,centro:cen,valor:-l.valor},'extrato','conciliada');ex.extratoId=l.id;
+   l.status='conciliada';l.despesaId=ex.id;l.form=false;l.err='';save();renderConc();renderBadge();renderList();break;}
+  case 'entrada':{const l=line(),cen=document.getElementById(`c-${id}-cen`).value;if(!cen)break;l.status='conciliada';l.centro=cen;save();renderConc();renderBadge();break;}
+  case 'ignore':line().status='ignorada';save();renderConc();renderBadge();break;
+  case 'undoline':{
+   const l=line();
+   if(l.despesaId){const ex=S.expenses.find(x=>x.id===l.despesaId);if(ex){if(ex.origem==='extrato')S.expenses=S.expenses.filter(x=>x.id!==ex.id);else{ex.status='aguardando';delete ex.extratoId}}}
+   l.status='pendente';l.despesaId=null;l.centro=null;save();renderConc();renderBadge();renderList();break;}
+  case 'reset':if(confirm('Apagar tudo e voltar aos dados de exemplo?')){S=seed();save();renderAll()}break;
+ }
+});
+
+function renderAll(){renderTabs();renderChat();renderList();renderConc();renderBadge()}
+renderAll();
+</script>
+</body>
+</html>
