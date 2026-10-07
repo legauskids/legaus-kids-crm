@@ -50,6 +50,8 @@ export async function POST(request: Request) {
       origem: "WHATSAPP",
       identificador: telefone,
       usuarioId: usuario.id,
+      // Se o áudio for de uma despesa, a nota de voz fica guardada com ela.
+      anexoAudio: { base64: parsed.data.audioBase64, mimetype: parsed.data.mimetype },
     });
 
     // A resposta do agente entra na mesma fila de envio que qualquer outra

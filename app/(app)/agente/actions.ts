@@ -46,6 +46,7 @@ export async function enviarComandoAudioAction(
       origem: "CRM_TEXTO",
       identificador: `crm:${user.id}`,
       usuarioId: user.id,
+      anexoAudio: { base64: audioBase64, mimetype },
     });
     return { transcricao: texto, resposta: resultado.resposta };
   } catch (erro) {

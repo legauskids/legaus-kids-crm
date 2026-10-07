@@ -52,7 +52,17 @@ import { normalizarLink } from "@/lib/utils/categoria-tarefa";
 import { criarReuniao, adicionarOpiniao } from "@/lib/server/reunioes";
 import { gerarPautaSugerida, ErroReuniaoIa } from "@/lib/server/reuniao-ia";
 import { getPainelCompromissos } from "@/lib/server/compromissos";
-import type { OrigemComando, StatusOrcamento } from "@prisma/client";
+import {
+  registrarDespesaDaMensagem,
+  corrigirDespesaDaConversa,
+  buscarRascunhoAtivo,
+  confirmarRascunho,
+  descartarRascunho,
+  descreverRascunho,
+  carregarCadastrosDespesa,
+} from "@/lib/server/despesa-agente";
+import { interpretarRespostaRascunho, pareceRespostaDeDespesa, type ExtracaoDespesa } from "@/lib/utils/despesa-agente";
+import type { OrigemComando, OrigemDespesa, StatusOrcamento } from "@prisma/client";
 
 const MODELO = "claude-sonnet-5";
 const JANELA_PENDENTE_MS = 10 * 60 * 1000; // 10 minutos pra confirmar antes de expirar
@@ -91,6 +101,11 @@ type Ferramenta = {
   // anexo (em base64) é guardado junto dos argumentos pendentes e
   // reidratado de volta em ctx na hora de confirmar.
   usaAnexoAtual?: boolean;
+  // A ferramenta já devolve { mensagem } pronta pro usuário (ex: o resumo da
+  // despesa terminando em "Responda 1..."): quando só ferramentas assim são
+  // chamadas num turno, a mensagem vai direto, sem outra volta no modelo —
+  // texto exato e uma chamada de API a menos.
+  respostaDireta?: boolean;
   descreverAcao?: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<string>;
   // telefoneOrigem: quando o comando veio pelo WhatsApp, é o telefone de
   // quem mandou (o "identificador" da conversa) — permite ferramentas tipo
@@ -116,7 +131,45 @@ type CtxFerramenta = {
   // .xlsx, .zip, qualquer documento) anexado a ESSE comando. Mesma regra de
   // vida curta que anexoImagem.
   anexoArquivo?: { bytes: Buffer; nomeArquivo: string; mimetype: string };
+  // Despesas (agente financeiro): a conversa (telefone ou "crm:<userId>"), o
+  // texto da mensagem (digitado ou transcrição do áudio) — a regra de
+  // confirmação confere o que foi DITO nele — e os arquivos originais que
+  // ficam guardados com a despesa.
+  identificador?: string;
+  textoMensagem?: string;
+  anexoPdf?: { bytes: Buffer; nomeArquivo: string };
+  anexoAudio?: { bytes: Buffer; mimetype: string };
 };
+
+const PROPRIEDADES_DESPESA = {
+  valor: { type: "number", description: "Valor em reais (ex.: 250 ou 39.9)." },
+  fornecedor: { type: "string", description: "Onde/de quem comprou, como foi dito ou como está no comprovante (ex.: Posto Ipiranga)." },
+  dataTexto: {
+    type: "string",
+    description: "A data como a pessoa falou ('ontem', 'dia 5', 'segunda', '03/10'); vazio se não falou (= hoje). Em comprovante, a data impressa nele (dd/mm/aaaa).",
+  },
+  categoria: {
+    type: "string",
+    description: "Categoria dita pela pessoa ou, se não disse, a que você deduz — sempre um nome da lista de categorias de despesa (não deixe vazio se der pra deduzir).",
+  },
+  centro: {
+    type: "string",
+    description: "Centro de custo dito ou deduzido: um dos centros gerais da lista, ou a obra/cliente/negócio do jeito que foi dito (ex.: 'obra do Arco-Íris').",
+  },
+  descricao: { type: "string", description: "Detalhe útil opcional (ex.: 'almoço da equipe de instalação')." },
+};
+
+function extracaoDosArgs(args: ArgsFerramenta): ExtracaoDespesa {
+  const texto = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    valor: typeof args.valor === "number" ? args.valor : typeof args.valor === "string" ? Number(args.valor.replace(",", ".")) || null : null,
+    fornecedor: texto(args.fornecedor),
+    dataTexto: texto(args.dataTexto),
+    categoria: texto(args.categoria),
+    centro: texto(args.centro),
+    descricao: texto(args.descricao),
+  };
+}
 
 /**
  * Resolve um orçamento por ID interno OU por número humano ("orçamento nº
@@ -1925,17 +1978,66 @@ const FERRAMENTAS: Ferramenta[] = [
       };
     },
   },
+  {
+    // Agente financeiro (pedido de 2026-10-07): a decisão de registrar direto
+    // ou pedir confirmação é do código (lib/utils/despesa-agente.ts), não do
+    // modelo — ele só passa o que entendeu.
+    name: "registrar_despesa",
+    description:
+      "Registra uma DESPESA da empresa (gasto já feito) contada por áudio/texto ou mandada como comprovante (foto ou PDF de cupom, nota, recibo, comprovante de PIX/cartão). Uma chamada por gasto. Passe só o que entendeu — não pergunte nada antes nem busque o negócio: a ferramenta resolve categoria e centro pelos nomes, decide sozinha se registra direto ou pede confirmação e a resposta dela vai direto pro usuário.",
+    input_schema: { type: "object", properties: PROPRIEDADES_DESPESA },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      const origem: OrigemDespesa = ctx.anexoImagem || ctx.anexoPdf ? "COMPROVANTE" : ctx.anexoAudio ? "AUDIO" : "TEXTO";
+      const anexo = ctx.anexoImagem
+        ? { bytes: ctx.anexoImagem.bytes, mime: ctx.anexoImagem.mimetype, nome: `comprovante.${ctx.anexoImagem.mimetype.split("/")[1] ?? "jpg"}` }
+        : ctx.anexoPdf
+          ? { bytes: ctx.anexoPdf.bytes, mime: "application/pdf", nome: ctx.anexoPdf.nomeArquivo }
+          : ctx.anexoAudio
+            ? { bytes: ctx.anexoAudio.bytes, mime: ctx.anexoAudio.mimetype, nome: `audio.${ctx.anexoAudio.mimetype.includes("mp4") ? "m4a" : "ogg"}` }
+            : undefined;
+      const r = await registrarDespesaDaMensagem({
+        extracao: extracaoDosArgs(args),
+        texto: ctx.textoMensagem ?? "",
+        origem,
+        identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`,
+        usuarioId: ctx.usuarioId,
+        anexo,
+      });
+      return { mensagem: r.mensagem, despesaId: r.despesaId };
+    },
+  },
+  {
+    name: "corrigir_despesa",
+    description:
+      "Corrige a despesa que está esperando confirmação (ou a que acabou de ser registrada) quando a pessoa disser o que mudar: 'não, foi 260', 'o centro é produção', 'era ontem', 'a categoria é alimentação', 'foi no posto Shell'. Passe só os campos que mudam. A resposta vai direto pro usuário.",
+    input_schema: { type: "object", properties: PROPRIEDADES_DESPESA },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      const mensagem = await corrigirDespesaDaConversa({
+        identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`,
+        correcao: extracaoDosArgs(args),
+        texto: ctx.textoMensagem ?? "",
+      });
+      return { mensagem };
+    },
+  },
 ];
 
 function paraToolAnthropic(f: Ferramenta): Anthropic.Tool {
   return { name: f.name, description: f.description, input_schema: f.input_schema };
 }
 
-function montarSystemPrompt(): string {
-  const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "full", timeStyle: "short" });
+// O system prompt vai em dois blocos: este, fixo, com cache de prompt
+// (junto com as ferramentas, que vêm antes dele no prefixo) — é a maior
+// parte dos ~25 mil tokens de entrada de cada comando, e com cache os turnos
+// seguintes do mesmo comando (e comandos em sequência) pagam 10% disso; e
+// o dinâmico (hora atual, cadastros do financeiro, rascunho esperando
+// confirmação), que muda a cada chamada e por isso fica depois do cache.
+function montarSystemPromptFixo(): string {
   return `Você é o assistente de automação do CRM da Legaus Kids (fabricante de playgrounds e parques infantis). Marcos, o dono, dá comandos por voz ou texto e você executa usando as ferramentas disponíveis — você é o braço direito dele quando ele não está na frente do computador, então execute com confiança, sem burocracia desnecessária.
 
-Agora é: ${agora} (horário de Brasília). Use isso pra calcular datas relativas ("amanhã", "em 3 dias") e pra entender datas sem ano ("dia 01/09" = 2026-09-01 se ainda não passou esse ano, senão o ano seguinte).
+A data e a hora atuais (Brasília) vêm no fim destas instruções. Use pra calcular datas relativas ("amanhã", "em 3 dias") e pra entender datas sem ano ("dia 01/09" = 2026-09-01 se ainda não passou esse ano, senão o ano seguinte).
 
 Regras:
 - Responda sempre em português do Brasil, direto e objetivo — poucas frases, sem enrolação, como se estivesse falando com o Marcos por WhatsApp.
@@ -1962,7 +2064,20 @@ Regras:
 - Contrato pode ser emitido em nome da Legaus Kids OU da Idezza — duas pessoas jurídicas diferentes que a Legaus Kids usa pra vender. Sempre que for gerar/mencionar um contrato novo (inclusive gerar_contrato_de_orcamento_antigo), confirme qual das duas antes, não assuma Legaus por padrão sem perguntar quando não estiver óbvio pelo contexto.
 - Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto — ela usa a imagem anexada nesse mesmo comando, não peça a foto de outro jeito. Se vier um pedido de anexar foto SEM nenhuma imagem anexada, avise que precisa mandar a foto junto (anexada na mesma mensagem), não invente que não consegue anexar fotos.
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
+- Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
+}
+
+async function montarSystemPromptDinamico(rascunhoId: string | null): Promise<string> {
+  const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "full", timeStyle: "short" });
+  const { categorias, centrosGerais } = await carregarCadastrosDespesa();
+  const linhas = [
+    `Agora é: ${agora} (horário de Brasília).`,
+    `Categorias de despesa: ${categorias.map((c) => c.nome).join("; ")}.`,
+    `Centros de custo gerais: ${centrosGerais.map((g) => g.nome).join("; ")} — ou uma obra/negócio pelo nome.`,
+  ];
+  if (rascunhoId) linhas.push(await descreverRascunho(rascunhoId));
+  return linhas.join("\n");
 }
 
 const JANELA_HISTORICO_MS = 30 * 60 * 1000; // conversas de mais de 30min atrás não entram como contexto
@@ -2002,6 +2117,7 @@ async function rodarAgenteClaude(
   anexoPdf?: { base64: string; nomeArquivo: string },
   anexoImagem?: { base64: string; mimetype: string },
   anexoArquivo?: { base64: string; nomeArquivo: string; mimetype: string },
+  extras: { anexoAudio?: { base64: string; mimetype: string }; rascunhoDespesaId?: string | null } = {},
 ): Promise<{
   texto: string;
   ferramentaPendente: { nome: string; args: unknown; descricao: string } | null;
@@ -2061,11 +2177,32 @@ async function rodarAgenteClaude(
   const ctxAnexoArquivo = anexoArquivo
     ? { bytes: Buffer.from(anexoArquivo.base64, "base64"), nomeArquivo: anexoArquivo.nomeArquivo, mimetype: anexoArquivo.mimetype }
     : undefined;
+  const ctx: CtxFerramenta = {
+    usuarioId,
+    telefoneOrigem: telefoneDeIdentificador(identificador),
+    anexoImagem: ctxAnexoImagem,
+    anexoArquivo: ctxAnexoArquivo,
+    identificador,
+    textoMensagem: textoComando,
+    anexoPdf: anexoPdf ? { bytes: Buffer.from(anexoPdf.base64, "base64"), nomeArquivo: anexoPdf.nomeArquivo } : undefined,
+    anexoAudio: extras.anexoAudio ? { bytes: Buffer.from(extras.anexoAudio.base64, "base64"), mimetype: extras.anexoAudio.mimetype } : undefined,
+  };
+  const system: Anthropic.TextBlockParam[] = [
+    { type: "text", text: montarSystemPromptFixo(), cache_control: { type: "ephemeral" } },
+    { type: "text", text: await montarSystemPromptDinamico(extras.rascunhoDespesaId ?? null) },
+  ];
+  const tools = FERRAMENTAS.map(paraToolAnthropic);
   // Cada turno de tool-calling é uma chamada HTTP própria pra Anthropic, com
   // o histórico reenviado inteiro — soma os dois campos por turno pra saber
-  // o custo real do comando inteiro, não só do último turno.
+  // o custo real do comando inteiro, não só do último turno. Entrada inclui
+  // o que veio do cache (lido ou gravado), pra continuar comparável com os
+  // comandos de antes do cache.
   let tokensEntrada = 0;
   let tokensSaida = 0;
+  // Ferramenta de despesa obrigatória no próximo turno — ver a guarda de
+  // pareceRespostaDeDespesa abaixo.
+  let ferramentaObrigatoria: "registrar_despesa" | "corrigir_despesa" | null = null;
+  let jaForcouDespesa = false;
 
   // 8 turnos (não 5) porque um único áudio costuma emendar várias tarefas
   // diferentes ("cria isso, muda aquilo, e já lembra de ligar pro fulano") —
@@ -2076,10 +2213,12 @@ async function rodarAgenteClaude(
       resposta = await client.messages.create({
         model: MODELO,
         max_tokens: 1024,
-        system: montarSystemPrompt(),
-        tools: FERRAMENTAS.map(paraToolAnthropic),
+        system,
+        tools,
         messages,
+        ...(ferramentaObrigatoria ? { tool_choice: { type: "tool" as const, name: ferramentaObrigatoria } } : {}),
       });
+      ferramentaObrigatoria = null;
     } catch (erro) {
       // Sem isso, um erro aqui (ex: sem crédito na API) subia sem tratamento
       // até a rota HTTP, que devolvia 500 — o whatsapp-service só logava e
@@ -2091,8 +2230,12 @@ async function rodarAgenteClaude(
       return { texto: mensagemErroAnthropic(erro), ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
     }
 
-    tokensEntrada += resposta.usage.input_tokens;
+    tokensEntrada +=
+      resposta.usage.input_tokens + (resposta.usage.cache_creation_input_tokens ?? 0) + (resposta.usage.cache_read_input_tokens ?? 0);
     tokensSaida += resposta.usage.output_tokens;
+    console.log(
+      `[agente] turno ${turno + 1}: entrada ${resposta.usage.input_tokens}, cache gravado ${resposta.usage.cache_creation_input_tokens ?? 0}, cache lido ${resposta.usage.cache_read_input_tokens ?? 0}, saída ${resposta.usage.output_tokens}`,
+    );
     messages.push({ role: "assistant", content: resposta.content });
 
     const usosDeFerramenta = resposta.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
@@ -2102,10 +2245,24 @@ async function rodarAgenteClaude(
         .map((b) => b.text)
         .join("\n")
         .trim();
+      // Resumo/registro de despesa escrito pelo modelo sem a ferramenta ter
+      // rodado = nada foi gravado. Uma volta a mais, obrigando a ferramenta.
+      const usouDespesa = ferramentasChamadas.some((n) => n === "registrar_despesa" || n === "corrigir_despesa");
+      if (!usouDespesa && !jaForcouDespesa && pareceRespostaDeDespesa(textoFinal)) {
+        jaForcouDespesa = true;
+        ferramentaObrigatoria = /corrigi/i.test(textoFinal) ? "corrigir_despesa" : "registrar_despesa";
+        console.warn(`[agente] resposta de despesa sem ferramenta — chamando ${ferramentaObrigatoria} de verdade.`);
+        messages.push({
+          role: "user",
+          content: "Sistema: essa resposta descreve uma despesa, mas nenhuma ferramenta foi chamada e nada foi gravado. Chame a ferramenta agora com os dados da mensagem.",
+        });
+        continue;
+      }
       return { texto: textoFinal || "Feito.", ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
     }
 
     const resultadosFerramenta: Anthropic.ToolResultBlockParam[] = [];
+    const respostasDiretas: string[] = [];
     for (const uso of usosDeFerramenta) {
       const ferramenta = FERRAMENTAS.find((f) => f.name === uso.name);
       ferramentasChamadas.push(uso.name);
@@ -2115,14 +2272,7 @@ async function rodarAgenteClaude(
       }
       const entrada = uso.input as ArgsFerramenta;
       if (ferramenta.sensivel) {
-        const descricao = ferramenta.descreverAcao
-          ? await ferramenta.descreverAcao(entrada, {
-              usuarioId,
-              telefoneOrigem: telefoneDeIdentificador(identificador),
-              anexoImagem: ctxAnexoImagem,
-              anexoArquivo: ctxAnexoArquivo,
-            })
-          : ferramenta.name;
+        const descricao = ferramenta.descreverAcao ? await ferramenta.descreverAcao(entrada, ctx) : ferramenta.name;
         // Ferramentas marcadas usaAnexoAtual (ex: enviar_arquivo_whatsapp)
         // precisam do anexo do comando ATUAL na hora de executar de
         // verdade, mas isso só acontece no PRÓXIMO turno (confirmação) —
@@ -2149,12 +2299,10 @@ async function rodarAgenteClaude(
         continue;
       }
       try {
-        const resultado = await ferramenta.executar(entrada, {
-          usuarioId,
-          telefoneOrigem: telefoneDeIdentificador(identificador),
-          anexoImagem: ctxAnexoImagem,
-          anexoArquivo: ctxAnexoArquivo,
-        });
+        const resultado = await ferramenta.executar(entrada, ctx);
+        if (ferramenta.respostaDireta && typeof (resultado as { mensagem?: unknown })?.mensagem === "string") {
+          respostasDiretas.push((resultado as { mensagem: string }).mensagem);
+        }
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado) });
       } catch (erro) {
         resultadosFerramenta.push({
@@ -2164,6 +2312,11 @@ async function rodarAgenteClaude(
           is_error: true,
         });
       }
+    }
+    // Só ferramentas de resposta direta nesse turno, todas com sucesso: a
+    // mensagem delas é a resposta final (ver respostaDireta).
+    if (respostasDiretas.length > 0 && respostasDiretas.length === usosDeFerramenta.length) {
+      return { texto: respostasDiretas.join("\n\n"), ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
     }
     messages.push({ role: "user", content: resultadosFerramenta });
   }
@@ -2236,10 +2389,35 @@ export async function processarComandoAgente(input: {
   anexoPdf?: { base64: string; nomeArquivo: string };
   anexoImagem?: { base64: string; mimetype: string };
   anexoArquivo?: { base64: string; nomeArquivo: string; mimetype: string };
+  // Nota de voz original (já transcrita em `texto`) — fica guardada com a
+  // despesa, se o áudio for de uma.
+  anexoAudio?: { base64: string; mimetype: string };
 }): Promise<{ resposta: string }> {
   const pendente = await buscarPendenteAtivo(input.identificador);
 
-  if (pendente && pendente.ferramentaPendente) {
+  // Despesa esperando confirmação (agente financeiro): "1"/"sim" confirma e
+  // "não" descarta direto, sem chamar a IA. Qualquer outra coisa segue pro
+  // modelo, que vê o rascunho no contexto e entende a correção. Se houver
+  // também uma ação sensível pendente, vale a mais recente das duas.
+  const rascunho = await buscarRascunhoAtivo(input.identificador);
+  const semAnexo = !input.anexoPdf && !input.anexoImagem && !input.anexoArquivo && !input.anexoAudio;
+  if (rascunho && semAnexo &&(!pendente?.ferramentaPendente || rascunho.atualizadoEm > pendente.criadoEm)) {
+    const decisao = interpretarRespostaRascunho(input.texto);
+    if (decisao !== "outro") {
+      let resposta: string;
+      try {
+        resposta = decisao === "confirmar" ? await confirmarRascunho(rascunho.id, input.identificador) : await descartarRascunho(rascunho.id);
+      } catch (erro) {
+        resposta = `Não consegui ${decisao === "confirmar" ? "confirmar" : "descartar"} a despesa: ${erro instanceof Error ? erro.message : "erro desconhecido"}`;
+      }
+      await prisma.comandoAgente.create({
+        data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta, status: "CONCLUIDO" },
+      });
+      return { resposta };
+    }
+  }
+
+  if (pendente && pendente.ferramentaPendente && !(rascunho && rascunho.atualizadoEm > pendente.criadoEm)) {
     const decisao = interpretarConfirmacao(input.texto);
     if (decisao === "sim") {
       const ferramenta = FERRAMENTAS.find((f) => f.name === pendente.ferramentaPendente);
@@ -2299,7 +2477,10 @@ export async function processarComandoAgente(input: {
     return { resposta };
   }
 
-  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo);
+  const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo, {
+    anexoAudio: input.anexoAudio,
+    rascunhoDespesaId: rascunho?.id ?? null,
+  });
 
   await prisma.comandoAgente.create({
     data: {

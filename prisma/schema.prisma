@@ -914,6 +914,8 @@ model Despesa {
   textoOriginal   String?
   // JSON extraído pela IA + decisão da regra de confirmação (log).
   extracao        Json?
+  // Conversa de onde veio: telefone (WhatsApp) ou "crm:<userId>" (chat do
+  // agente no CRM) — é por ela que o "1" acha o rascunho certo.
   telefoneOrigem  String?
   registradaPorId String
   registradaPor   User               @relation("RegistradorDespesa", fields: [registradaPorId], references: [id])
