@@ -60,8 +60,10 @@ import {
   descartarRascunho,
   descreverRascunho,
   carregarCadastrosDespesa,
+  perguntarOQueCorrigir,
+  type RespostaDespesa,
 } from "@/lib/server/despesa-agente";
-import { interpretarRespostaRascunho, pareceRespostaDeDespesa, type ExtracaoDespesa } from "@/lib/utils/despesa-agente";
+import { interpretarRespostaRascunho, pareceRespostaDeDespesa, type Enquete, type ExtracaoDespesa } from "@/lib/utils/despesa-agente";
 import type { OrigemComando, OrigemDespesa, StatusOrcamento } from "@prisma/client";
 
 const MODELO = "claude-sonnet-5";
@@ -2004,22 +2006,21 @@ const FERRAMENTAS: Ferramenta[] = [
         usuarioId: ctx.usuarioId,
         anexo,
       });
-      return { mensagem: r.mensagem, despesaId: r.despesaId };
+      return { mensagem: r.mensagem, enquete: r.enquete, despesaId: r.despesaId };
     },
   },
   {
     name: "corrigir_despesa",
     description:
-      "Corrige a despesa que está esperando confirmação (ou a que acabou de ser registrada) quando a pessoa disser o que mudar: 'não, foi 260', 'o centro é produção', 'era ontem', 'a categoria é alimentação', 'foi no posto Shell'. Passe só os campos que mudam. A resposta vai direto pro usuário.",
+      "Corrige a despesa que está esperando confirmação (ou a que acabou de ser registrada) quando a pessoa disser o que mudar: 'não, foi 260', 'o centro é produção', 'era ontem', 'a categoria é alimentação', 'foi no posto Shell', 'é da obra do Arco-Íris'. Se a pessoa só disser um nome de cliente/obra depois de perguntarem qual negócio, é o centro (passe em centro). Passe só os campos que mudam. A resposta vai direto pro usuário.",
     input_schema: { type: "object", properties: PROPRIEDADES_DESPESA },
     respostaDireta: true,
     async executar(args, ctx) {
-      const mensagem = await corrigirDespesaDaConversa({
+      return corrigirDespesaDaConversa({
         identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`,
         correcao: extracaoDosArgs(args),
         texto: ctx.textoMensagem ?? "",
       });
-      return { mensagem };
     },
   },
 ];
@@ -2124,6 +2125,8 @@ async function rodarAgenteClaude(
   ferramentasChamadas: string[];
   tokensEntrada: number;
   tokensSaida: number;
+  /** Enquete (WhatsApp) pra ir logo abaixo da resposta — rascunho de despesa esperando confirmação. */
+  enquete?: Enquete;
 }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -2262,7 +2265,7 @@ async function rodarAgenteClaude(
     }
 
     const resultadosFerramenta: Anthropic.ToolResultBlockParam[] = [];
-    const respostasDiretas: string[] = [];
+    const respostasDiretas: RespostaDespesa[] = [];
     for (const uso of usosDeFerramenta) {
       const ferramenta = FERRAMENTAS.find((f) => f.name === uso.name);
       ferramentasChamadas.push(uso.name);
@@ -2301,7 +2304,7 @@ async function rodarAgenteClaude(
       try {
         const resultado = await ferramenta.executar(entrada, ctx);
         if (ferramenta.respostaDireta && typeof (resultado as { mensagem?: unknown })?.mensagem === "string") {
-          respostasDiretas.push((resultado as { mensagem: string }).mensagem);
+          respostasDiretas.push(resultado as RespostaDespesa);
         }
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado) });
       } catch (erro) {
@@ -2316,7 +2319,16 @@ async function rodarAgenteClaude(
     // Só ferramentas de resposta direta nesse turno, todas com sucesso: a
     // mensagem delas é a resposta final (ver respostaDireta).
     if (respostasDiretas.length > 0 && respostasDiretas.length === usosDeFerramenta.length) {
-      return { texto: respostasDiretas.join("\n\n"), ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
+      return {
+        texto: respostasDiretas.map((r) => r.mensagem).join("\n\n"),
+        // Várias despesas no mesmo áudio: a enquete é da última (as outras
+        // confirmam em sequência — ver confirmarRascunho).
+        enquete: respostasDiretas.findLast((r) => r.enquete)?.enquete,
+        ferramentaPendente,
+        ferramentasChamadas,
+        tokensEntrada,
+        tokensSaida,
+      };
     }
     messages.push({ role: "user", content: resultadosFerramenta });
   }
@@ -2392,28 +2404,35 @@ export async function processarComandoAgente(input: {
   // Nota de voz original (já transcrita em `texto`) — fica guardada com a
   // despesa, se o áudio for de uma.
   anexoAudio?: { base64: string; mimetype: string };
-}): Promise<{ resposta: string }> {
+}): Promise<{ resposta: string; enquete?: Enquete }> {
   const pendente = await buscarPendenteAtivo(input.identificador);
 
-  // Despesa esperando confirmação (agente financeiro): "1"/"sim" confirma e
-  // "não" descarta direto, sem chamar a IA. Qualquer outra coisa segue pro
-  // modelo, que vê o rascunho no contexto e entende a correção. Se houver
-  // também uma ação sensível pendente, vale a mais recente das duas.
+  // Despesa esperando confirmação (agente financeiro): "sim"/"1"/"pode
+  // confirmar" — digitado ou falado, o áudio já chega transcrito em `texto`
+  // — confirma, e "cancela"/"descarta" descarta, sem chamar a IA. "Não"
+  // sozinho pergunta o que corrigir. Qualquer outra coisa segue pro modelo,
+  // que vê o rascunho no contexto e entende a correção. Se houver também
+  // uma ação sensível pendente, vale a mais recente das duas.
   const rascunho = await buscarRascunhoAtivo(input.identificador);
-  const semAnexo = !input.anexoPdf && !input.anexoImagem && !input.anexoArquivo && !input.anexoAudio;
-  if (rascunho && semAnexo &&(!pendente?.ferramentaPendente || rascunho.atualizadoEm > pendente.criadoEm)) {
+  const semAnexoDeArquivo = !input.anexoPdf && !input.anexoImagem && !input.anexoArquivo;
+  if (rascunho && semAnexoDeArquivo && (!pendente?.ferramentaPendente || rascunho.atualizadoEm > pendente.criadoEm)) {
     const decisao = interpretarRespostaRascunho(input.texto);
     if (decisao !== "outro") {
-      let resposta: string;
+      let r: RespostaDespesa;
       try {
-        resposta = decisao === "confirmar" ? await confirmarRascunho(rascunho.id, input.identificador) : await descartarRascunho(rascunho.id);
+        r =
+          decisao === "confirmar"
+            ? await confirmarRascunho(rascunho.id, input.identificador)
+            : decisao === "descartar"
+              ? await descartarRascunho(rascunho.id)
+              : perguntarOQueCorrigir();
       } catch (erro) {
-        resposta = `Não consegui ${decisao === "confirmar" ? "confirmar" : "descartar"} a despesa: ${erro instanceof Error ? erro.message : "erro desconhecido"}`;
+        r = { mensagem: `Não consegui ${decisao === "confirmar" ? "confirmar" : "descartar"} a despesa: ${erro instanceof Error ? erro.message : "erro desconhecido"}` };
       }
       await prisma.comandoAgente.create({
-        data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta, status: "CONCLUIDO" },
+        data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta: r.mensagem, status: "CONCLUIDO" },
       });
-      return { resposta };
+      return { resposta: r.mensagem, enquete: r.enquete };
     }
   }
 
@@ -2509,7 +2528,7 @@ export async function processarComandoAgente(input: {
     },
   });
 
-  return { resposta: resultado.texto };
+  return { resposta: resultado.texto, enquete: resultado.enquete };
 }
 
 export function listarHistoricoComandos(identificador: string, limite = 30) {

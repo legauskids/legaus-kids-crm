@@ -5,12 +5,18 @@ import { criarDespesa, confirmarDespesa } from "@/lib/server/despesas";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 import { dataDaDespesa, pendenciasDaDespesa } from "@/lib/utils/despesas";
 import {
+  OPCAO_CONFIRMAR,
+  OPCAO_DESCARTAR,
+  OPCAO_NEGOCIO,
+  canalDoIdentificador,
+  enqueteDaDespesa,
   mensagemDeConfirmacao,
   mensagemDeRegistro,
   montarDespesaDaMensagem,
   resolverCategoria,
   resolverCentro,
   resolverDataFalada,
+  type Enquete,
   type ExtracaoDespesa,
 } from "@/lib/utils/despesa-agente";
 
@@ -18,8 +24,11 @@ import {
 // banco. As regras (o que é "dito", data falada, registrar direto ou pedir
 // confirmação) ficam em lib/utils/despesa-agente.ts, com testes.
 
-/** Rascunho esperando "1" vale por 30 minutos; depois disso só pela tela. */
+/** Rascunho esperando confirmação vale por 30 minutos; depois disso só pela tela. */
 const JANELA_RASCUNHO_MS = 30 * 60 * 1000;
+
+/** Texto pro usuário + a enquete que vai logo abaixo dele no WhatsApp (só quando há rascunho esperando). */
+export type RespostaDespesa = { mensagem: string; enquete?: Enquete };
 
 export async function carregarCadastrosDespesa() {
   const [categorias, centrosGerais, negocios] = await Promise.all([
@@ -38,8 +47,7 @@ export type AnexoDespesa = { bytes: Buffer; mime: string; nome: string | null };
 
 /**
  * Registra a despesa contada na mensagem: direto (aguardando conciliação)
- * quando a regra deixa, senão como rascunho pedindo "1" ou a correção.
- * Devolve o texto pronto pra responder.
+ * quando a regra deixa, senão como rascunho pedindo confirmação ou correção.
  */
 export async function registrarDespesaDaMensagem(input: {
   extracao: ExtracaoDespesa;
@@ -48,7 +56,7 @@ export async function registrarDespesaDaMensagem(input: {
   identificador: string;
   usuarioId: string;
   anexo?: AnexoDespesa;
-}): Promise<{ mensagem: string; despesaId: string; registradaDireto: boolean }> {
+}): Promise<RespostaDespesa & { despesaId: string; registradaDireto: boolean }> {
   const hoje = diaBrasilia(new Date());
   const cadastros = await carregarCadastrosDespesa();
   const montada = montarDespesaDaMensagem({ texto: input.texto, origem: input.origem, hoje, extracao: input.extracao, ...cadastros });
@@ -66,6 +74,9 @@ export async function registrarDespesaDaMensagem(input: {
       fornecedorNaMensagem: montada.fornecedorNaMensagem,
     },
     resolvido: { ...montada.dados, categoria: montada.nomes.categoria, centro: montada.nomes.centro },
+    // Atualizado nas correções: se o centro foi dito pela pessoa, corrigir a
+    // categoria não mexe nele; se foi deduzido, ele acompanha a categoria.
+    centroDeclarado: montada.centroDeclarado,
   };
   console.log(`[despesa-agente] ${input.identificador}: ${JSON.stringify(log)}`);
 
@@ -80,14 +91,19 @@ export async function registrarDespesaDaMensagem(input: {
     telefoneOrigem: input.identificador,
   });
 
+  const canal = canalDoIdentificador(input.identificador);
+  if (montada.registrarDireto) {
+    return { mensagem: mensagemDeRegistro(montada, hoje), despesaId: despesa.id, registradaDireto: true };
+  }
   return {
-    mensagem: montada.registrarDireto ? mensagemDeRegistro(montada, hoje) : mensagemDeConfirmacao(montada, hoje),
+    mensagem: mensagemDeConfirmacao(montada, hoje, undefined, canal),
+    enquete: canal === "whatsapp" ? enqueteDaDespesa({ ...despesa, ehProjeto: montada.nomes.centroEhProjeto }) : undefined,
     despesaId: despesa.id,
-    registradaDireto: montada.registrarDireto,
+    registradaDireto: false,
   };
 }
 
-/** Rascunho mais recente desse WhatsApp (ou chat do CRM) ainda esperando o "1". */
+/** Rascunho mais recente desse WhatsApp (ou chat do CRM) ainda esperando confirmação. */
 export function buscarRascunhoAtivo(identificador: string) {
   return prisma.despesa.findFirst({
     where: { telefoneOrigem: identificador, status: "A_CONFIRMAR", atualizadoEm: { gte: new Date(Date.now() - JANELA_RASCUNHO_MS) } },
@@ -101,55 +117,97 @@ async function resumoParaMensagem(id: string) {
     include: { categoria: { select: { nome: true } }, centroGeral: { select: { nome: true } }, negocio: { select: { titulo: true } } },
   });
   return {
+    despesa: d,
     dados: { ...d, dia: diaBrasilia(d.data) },
     nomes: { categoria: d.categoria?.nome ?? null, centro: d.negocio?.titulo ?? d.centroGeral?.nome ?? null, centroEhProjeto: Boolean(d.negocioId) },
     faltando: pendenciasDaDespesa(d),
   };
 }
 
+/** Resumo de um rascunho + a enquete (no WhatsApp). */
+async function pedirConfirmacao(id: string, identificador: string, intro?: string): Promise<RespostaDespesa> {
+  const r = await resumoParaMensagem(id);
+  const canal = canalDoIdentificador(identificador);
+  return {
+    mensagem: mensagemDeConfirmacao(r, diaBrasilia(new Date()), intro, canal),
+    enquete: canal === "whatsapp" ? enqueteDaDespesa({ ...r.despesa, ehProjeto: r.nomes.centroEhProjeto }) : undefined,
+  };
+}
+
 /** Texto curto do rascunho pro contexto do modelo (pra entender a correção). */
 export async function descreverRascunho(id: string): Promise<string> {
   const r = await resumoParaMensagem(id);
-  return mensagemDeConfirmacao(r, diaBrasilia(new Date()), "Despesa esperando confirmação de quem está falando:").split("\n\n")[0];
+  return mensagemDeConfirmacao(r, diaBrasilia(new Date()), "Despesa esperando confirmação de quem está falando:", "crm").split("\n\n")[0];
 }
 
-/** O "1": confirma o rascunho e já mostra o próximo, se houver outro esperando. */
-export async function confirmarRascunho(id: string, identificador: string): Promise<string> {
+/** Confirmação (enquete, "sim", "1", áudio): confirma o rascunho e já mostra o próximo, se houver outro esperando. */
+export async function confirmarRascunho(id: string, identificador: string): Promise<RespostaDespesa> {
   const hoje = diaBrasilia(new Date());
   const resumo = await resumoParaMensagem(id);
   if (resumo.faltando.length) {
-    return `Ainda falta: ${resumo.faltando.join(", ")}. Me diga pra eu completar (ex.: "o centro é Produção").`;
+    return { mensagem: `Ainda falta: ${resumo.faltando.join(", ")}. Me diga pra eu completar (ex.: "o centro é Produção").` };
   }
   await confirmarDespesa(id);
-  let resposta = mensagemDeRegistro(resumo, hoje);
+  const registrado = mensagemDeRegistro(resumo, hoje);
   const proximo = await buscarRascunhoAtivo(identificador);
-  if (proximo) resposta += `\n\n${mensagemDeConfirmacao(await resumoParaMensagem(proximo.id), hoje, "Tem mais uma esperando:")}`;
-  return resposta;
+  if (!proximo) return { mensagem: registrado };
+  const pedido = await pedirConfirmacao(proximo.id, identificador, "Tem mais uma esperando:");
+  return { mensagem: `${registrado}\n\n${pedido.mensagem}`, enquete: pedido.enquete };
 }
 
-export async function descartarRascunho(id: string): Promise<string> {
+export async function descartarRascunho(id: string): Promise<RespostaDespesa> {
   await prisma.despesa.delete({ where: { id } });
-  return "Descartei essa despesa, não registrei nada.";
+  return { mensagem: "Descartei essa despesa, não registrei nada." };
+}
+
+/** "Não" sozinho: não apaga — pergunta o que corrigir. */
+export function perguntarOQueCorrigir(): RespostaDespesa {
+  return { mensagem: "O que está errado? Me diga o que corrigir (texto ou áudio) — ou responda *descartar* pra apagar." };
+}
+
+/**
+ * Voto na enquete do WhatsApp (ref "despesa:<id>"), já decifrado pelo
+ * whatsapp-service. Só vale pra despesa dessa mesma conversa.
+ */
+export async function responderEnquete(input: { identificador: string; ref: string; opcao: string }): Promise<RespostaDespesa | null> {
+  const id = input.ref.startsWith("despesa:") ? input.ref.slice("despesa:".length) : null;
+  if (!id) return null;
+  const despesa = await prisma.despesa.findUnique({ where: { id }, select: { id: true, status: true, telefoneOrigem: true } });
+  if (!despesa) return { mensagem: "Essa despesa já tinha sido descartada." };
+  if (despesa.telefoneOrigem !== input.identificador) return null;
+  if (despesa.status !== "A_CONFIRMAR") return { mensagem: "Essa despesa já estava confirmada — se precisar mudar algo, ajuste em Financeiro → Despesas." };
+
+  if (input.opcao === OPCAO_CONFIRMAR) return confirmarRascunho(id, input.identificador);
+  if (input.opcao === OPCAO_DESCARTAR) return descartarRascunho(id);
+  if (input.opcao === OPCAO_NEGOCIO) {
+    // Renova a janela do rascunho pra resposta com o nome do negócio cair nele.
+    await prisma.despesa.update({ where: { id }, data: { atualizadoEm: new Date() } });
+    return { mensagem: "Qual negócio? Me diga o nome do cliente ou da obra (texto ou áudio) que eu vinculo." };
+  }
+  return null;
 }
 
 /**
  * Correção em linguagem natural ("não, foi 260", "o centro é produção"):
  * vale pro rascunho esperando confirmação ou, sem rascunho, pra última
  * despesa registrada por essa conversa nos últimos 30 min e ainda não
- * conciliada. Rascunho continua pedindo "1" depois de corrigido.
+ * conciliada. Rascunho continua pedindo confirmação depois de corrigido.
  */
-export async function corrigirDespesaDaConversa(input: { identificador: string; correcao: ExtracaoDespesa; texto: string }): Promise<string> {
+export async function corrigirDespesaDaConversa(input: { identificador: string; correcao: ExtracaoDespesa; texto: string }): Promise<RespostaDespesa> {
   const alvo =
     (await buscarRascunhoAtivo(input.identificador)) ??
     (await prisma.despesa.findFirst({
       where: { telefoneOrigem: input.identificador, status: "AGUARDANDO_CONCILIACAO", criadoEm: { gte: new Date(Date.now() - JANELA_RASCUNHO_MS) } },
       orderBy: { criadoEm: "desc" },
     }));
-  if (!alvo) return "Não achei nenhuma despesa recente sua pra corrigir — se for uma despesa nova, me conte de novo com valor e fornecedor.";
+  if (!alvo) return { mensagem: "Não achei nenhuma despesa recente sua pra corrigir — se for uma despesa nova, me conte de novo com valor e fornecedor." };
 
   const hoje = diaBrasilia(new Date());
   const { categorias, centrosGerais, negocios } = await carregarCadastrosDespesa();
   const c = input.correcao;
+  const log = (alvo.extracao ?? {}) as Prisma.JsonObject;
+  const decisao = (log.decisao ?? {}) as Prisma.JsonObject;
+  let centroDeclarado = Boolean(log.centroDeclarado ?? decisao.centroDeclarado);
   const mudancas: Prisma.DespesaUncheckedUpdateInput = {};
   const naoEntendi: string[] = [];
 
@@ -161,29 +219,45 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
     if (dia) mudancas.data = dataDaDespesa(dia);
     else naoEntendi.push("a data");
   }
-  if (c.categoria?.trim()) {
-    const categoria = resolverCategoria(c.categoria, categorias);
-    if (categoria) mudancas.categoriaId = categoria.id;
-    else naoEntendi.push(`a categoria "${c.categoria}"`);
-  }
   if (c.centro?.trim()) {
     const centro = resolverCentro(c.centro, centrosGerais, negocios);
     if (centro) {
       mudancas.centroGeralId = centro.tipo === "GERAL" ? centro.id : null;
       mudancas.negocioId = centro.tipo === "NEGOCIO" ? centro.id : null;
-    } else naoEntendi.push(`o centro "${c.centro}"`);
+      centroDeclarado = true;
+    } else naoEntendi.push(`o negócio ou centro "${c.centro}"`);
+  }
+  if (c.categoria?.trim()) {
+    const categoria = resolverCategoria(c.categoria, categorias);
+    if (categoria) {
+      mudancas.categoriaId = categoria.id;
+      // Bug do primeiro teste (2026-10-07): pedágio -> corrigido pra
+      // Alimentação continuou com o centro Veículos, que tinha sido deduzido
+      // do pedágio. Centro deduzido (e geral) acompanha a categoria nova.
+      if (!c.centro?.trim() && !centroDeclarado && !alvo.negocioId && categoria.centroGeralPadraoId) {
+        mudancas.centroGeralId = categoria.centroGeralPadraoId;
+      }
+    } else naoEntendi.push(`a categoria "${c.categoria}"`);
   }
 
-  const log = (alvo.extracao ?? {}) as Prisma.JsonObject;
   const correcoes = Array.isArray(log.correcoes) ? log.correcoes : [];
   await prisma.despesa.update({
     where: { id: alvo.id },
-    data: { ...mudancas, extracao: { ...log, correcoes: [...correcoes, { mensagem: input.texto, extraidoPeloModelo: c, em: new Date().toISOString() }] } as Prisma.InputJsonValue },
+    data: {
+      ...mudancas,
+      extracao: {
+        ...log,
+        centroDeclarado,
+        correcoes: [...correcoes, { mensagem: input.texto, extraidoPeloModelo: c, em: new Date().toISOString() }],
+      } as Prisma.InputJsonValue,
+    },
   });
   console.log(`[despesa-agente] correção ${alvo.id}: ${JSON.stringify({ mensagem: input.texto, correcao: c, naoEntendi })}`);
 
-  const resumo = await resumoParaMensagem(alvo.id);
   const aviso = naoEntendi.length ? `Não encontrei ${naoEntendi.join(" nem ")} — diga de outro jeito.\n\n` : "";
-  if (alvo.status === "A_CONFIRMAR") return aviso + mensagemDeConfirmacao(resumo, hoje, "Corrigi, confere?");
-  return aviso + mensagemDeRegistro(resumo, hoje, "✏️ Corrigido");
+  if (alvo.status === "A_CONFIRMAR") {
+    const pedido = await pedirConfirmacao(alvo.id, input.identificador, "Corrigi, confere?");
+    return { mensagem: aviso + pedido.mensagem, enquete: pedido.enquete };
+  }
+  return { mensagem: aviso + mensagemDeRegistro(await resumoParaMensagem(alvo.id), hoje, "✏️ Corrigido") };
 }

@@ -371,11 +371,25 @@ function reais(centavos: number): string {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\s/g, " ");
 }
 
-/** Resumo pro WhatsApp pedindo "1" ou a correção. */
+/** Onde a conversa acontece: no WhatsApp o resumo vai seguido de uma enquete pra tocar. */
+export type CanalDespesa = "whatsapp" | "crm";
+
+export function canalDoIdentificador(identificador: string): CanalDespesa {
+  return identificador.startsWith("crm:") ? "crm" : "whatsapp";
+}
+
+/**
+ * Resumo do rascunho pedindo confirmação. Pedido do Marcos (2026-10-07,
+ * depois do primeiro teste): confirmar tocando um botão ou por áudio, não
+ * digitando "1" — no WhatsApp vem a enquete logo abaixo (ver
+ * enqueteDaDespesa), e "sim" por texto ou áudio também vale. E sempre
+ * perguntar se a despesa é de algum negócio quando o centro não for um.
+ */
 export function mensagemDeConfirmacao(
   d: Pick<DespesaMontada, "dados" | "nomes" | "faltando"> & { categoriaDeclarada?: boolean; centroDeclarado?: boolean },
   hoje: string,
   intro = "Entendi assim, confere?",
+  canal: CanalDespesa = "whatsapp",
 ): string {
   const linhas = [
     intro,
@@ -385,8 +399,30 @@ export function mensagemDeConfirmacao(
     `🎯 Centro: ${d.nomes.centro ?? "?"}${d.nomes.centroEhProjeto ? " (obra)" : ""}${d.nomes.centro && d.centroDeclarado === false ? " _(deduzido)_" : ""}`,
   ];
   if (d.faltando.length) linhas.push(`Não consegui identificar: ${d.faltando.join(", ")}.`);
-  linhas.push("", "Responda *1* para confirmar ou me diga o que corrigir.");
+  if (!d.nomes.centroEhProjeto) linhas.push("", "🏗️ É de algum negócio/obra? Me diga o nome que eu vinculo.");
+  linhas.push(
+    "",
+    canal === "whatsapp"
+      ? "Confirme na enquete abaixo ou responda *sim* (texto ou áudio). Se algo estiver errado, me diga o que corrigir."
+      : "Responda *sim* para confirmar ou me diga o que corrigir.",
+  );
   return linhas.join("\n");
+}
+
+export const OPCAO_CONFIRMAR = "✅ Confirmar";
+export const OPCAO_NEGOCIO = "🏗️ É de um negócio";
+export const OPCAO_DESCARTAR = "❌ Descartar";
+
+export type Enquete = { pergunta: string; opcoes: string[]; ref: string };
+
+/** Enquete do WhatsApp que acompanha o resumo — o voto volta por /api/agente/enquete com o ref. */
+export function enqueteDaDespesa(d: { id: string; valorCentavos: number; fornecedor: string; ehProjeto: boolean }): Enquete {
+  const valor = d.valorCentavos > 0 ? reais(d.valorCentavos) : "valor a definir";
+  return {
+    pergunta: `Confirmar a despesa de ${valor}${d.fornecedor ? ` — ${d.fornecedor}` : ""}?`.slice(0, 250),
+    opcoes: d.ehProjeto ? [OPCAO_CONFIRMAR, OPCAO_DESCARTAR] : [OPCAO_CONFIRMAR, OPCAO_NEGOCIO, OPCAO_DESCARTAR],
+    ref: `despesa:${d.id}`,
+  };
 }
 
 export function mensagemDeRegistro(d: Pick<DespesaMontada, "dados" | "nomes">, hoje: string, prefixo = "✅ Registrado"): string {
@@ -403,14 +439,38 @@ export function mensagemDeRegistro(d: Pick<DespesaMontada, "dados" | "nomes">, h
  * ferramenta, e nada foi gravado).
  */
 export function pareceRespostaDeDespesa(texto: string): boolean {
-  return /responda \*?1\*? para confirmar|✅ registrad|corrigi, confere|💸/i.test(texto);
+  return /para confirmar|confirme na enquete|✅ registrad|corrigi, confere|💸/i.test(texto);
 }
 
-/** "1", "sim", "ok", "confirmo"... (curto) = confirma; "não", "cancela", "descarta" = descarta. */
-export function interpretarRespostaRascunho(texto: string): "confirmar" | "descartar" | "outro" {
-  const t = normalizar(texto.trim()).replace(/[.!]+$/, "");
-  if (t.length > 25) return "outro";
-  if (/^(1|sim|s|ss|ok|okay|confirmo|confirma(do)?|pode( registrar| salvar)?|isso( mesmo)?|certo|correto|exato|beleza|perfeito)$/.test(t)) return "confirmar";
-  if (/^(nao|n|cancela(r)?|descarta(r)?|esquece|deixa( pra la)?|apaga)$/.test(t)) return "descartar";
+// Resposta ao rascunho, digitada ou falada (a transcrição vem com pontuação
+// e palavras a mais: "Sim, pode confirmar.", "Um.", "Tá certo, pode
+// registrar"). Vale se TODAS as palavras forem desse vocabulário e houver
+// pelo menos uma "forte"; qualquer conteúdo a mais ("não, foi 260") vai pro
+// modelo como correção.
+const PALAVRAS_CONFIRMAR_FORTES = new Set([
+  "1", "um", "sim", "s", "ss", "ok", "okay", "oke", "isso", "certo", "correto", "exato", "beleza", "perfeito", "positivo", "fechado", "claro",
+  "confirma", "confirmo", "confirmado", "confirmar", "confirme", "confirmada", "pode", "registra", "registrar", "registre", "salva", "salvar", "salve",
+]);
+const PALAVRAS_CONFIRMAR_LIGACAO = new Set(["ta", "esta", "tudo", "mesmo", "ai", "e", "pode", "la", "entao", "por", "favor", "a", "despesa", "essa", "isso"]);
+const PALAVRAS_DESCARTAR_FORTES = new Set(["cancela", "cancelar", "cancele", "descarta", "descartar", "descarte", "esquece", "esqueca", "apaga", "apagar", "apague", "exclui", "excluir"]);
+const PALAVRAS_DESCARTAR_LIGACAO = new Set(["nao", "pode", "essa", "isso", "a", "despesa", "pra", "la", "deixa", "tudo", "por", "favor", "registra", "registrar"]);
+
+/**
+ * "1"/"sim"/"pode confirmar" = confirmar; "cancela"/"descarta" = descartar;
+ * "não" sozinho = "duvida" (pergunta o que corrigir em vez de apagar); o
+ * resto = "outro" (vai pro modelo como correção ou comando novo).
+ */
+export function interpretarRespostaRascunho(texto: string): "confirmar" | "descartar" | "duvida" | "outro" {
+  const ps = palavras(texto);
+  if (ps.length === 0 || ps.length > 8) return "outro";
+  if (ps.every((p) => p === "nao" || p === "n")) return "duvida";
+  if (ps.every((p) => PALAVRAS_CONFIRMAR_FORTES.has(p) || PALAVRAS_CONFIRMAR_LIGACAO.has(p)) && ps.some((p) => PALAVRAS_CONFIRMAR_FORTES.has(p))) {
+    return "confirmar";
+  }
+  if (ps.every((p) => PALAVRAS_DESCARTAR_FORTES.has(p) || PALAVRAS_DESCARTAR_LIGACAO.has(p)) && ps.some((p) => PALAVRAS_DESCARTAR_FORTES.has(p))) {
+    return "descartar";
+  }
+  // "não registra", "não, pode descartar" já caíram acima; "não precisa registrar" vai pro modelo.
+  if (ps.every((p) => PALAVRAS_DESCARTAR_LIGACAO.has(p)) && ps.includes("nao") && ps.some((p) => p.startsWith("registr"))) return "descartar";
   return "outro";
 }

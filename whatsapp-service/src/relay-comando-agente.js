@@ -5,6 +5,7 @@ import { mesmoTelefone } from "./telefone.js";
 import { foiEnviadoPeloRelay, comandoJaProcessado, marcarComandoProcessado } from "./ids-relay.js";
 import { extrairSoTelefones, extrairCartoesDeContato, guardarColagem, retirarContextoDeColagem, comContexto, ehProprioNumero } from "./colagem-contatos.js";
 import { motivoParaNaoSerComando } from "./regras-comando.js";
+import { lerVoto } from "./enquetes.js";
 
 // Números autorizados a dar comando (voz, texto ou PDF) pro agente de IA —
 // só dígitos, com DDI, ver .env.example. Comando é mensagem DE um número da
@@ -136,6 +137,25 @@ export function ligarRelayDeComandoAgente(sock) {
         // meio do processamento (download de mídia, chamada à API).
         if (comandoJaProcessado(msg.key.id)) continue;
         marcarComandoProcessado(msg.key.id);
+
+        // Voto numa enquete mandada pelo CRM (ex.: confirmar despesa) — ver
+        // enquetes.js. Vai direto pro CRM, sem passar pelo agente de IA.
+        const voto = lerVoto(sock, msg);
+        if (voto) {
+          if (voto.ref && voto.opcao) {
+            console.log(`[relay-comando-agente] Voto na enquete (${telefone}): ${voto.ref} -> ${voto.opcao}`);
+            const resultado = await chamarApi("/api/agente/enquete", {
+              method: "POST",
+              body: JSON.stringify({ telefone, ref: voto.ref, opcao: voto.opcao }),
+            });
+            console.log(`[relay-comando-agente] Enquete processada -> ${resultado.resposta ?? "ignorada"}`);
+          } else if (voto.desconhecida) {
+            console.warn(`[relay-comando-agente] Voto em enquete desconhecida (${telefone}) — o serviço reiniciou depois de mandá-la? Responder "sim" por texto ou áudio ainda funciona.`);
+          } else if (voto.indecifravel) {
+            console.warn(`[relay-comando-agente] Não consegui decifrar o voto na enquete (${telefone}).`);
+          }
+          continue;
+        }
 
         // Número(s) ou cartão de contato colado SOZINHO não é comando (rotina
         // de prospecção — ver colagem-contatos.js): só guarda, sem chamar o

@@ -246,6 +246,12 @@ model Mensagem {
   // de só texto solto.
   contatoCompartilhadoNome     String?
   contatoCompartilhadoTelefone String?
+
+  // Enquete que o whatsapp-service manda logo depois do texto — os "botões"
+  // possíveis no WhatsApp comum. { pergunta, opcoes, ref }; o voto volta em
+  // /api/agente/enquete com o ref (ex.: "despesa:<id>"). Pedido de
+  // 2026-10-07 (confirmar despesa tocando, sem digitar "1").
+  enquete Json?
 }
 
 model NotaInterna {

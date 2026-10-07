@@ -26,6 +26,8 @@ export async function GET(request: Request) {
       anexoUrl: m.anexoUrl ?? undefined,
       anexoNome: m.anexoNome ?? undefined,
       anexoMimetype: m.anexoMimetype ?? undefined,
+      // { pergunta, opcoes, ref } — o whatsapp-service manda como enquete logo depois do texto.
+      enquete: m.enquete ?? undefined,
     })),
   });
 }

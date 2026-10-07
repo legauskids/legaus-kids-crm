@@ -156,6 +156,8 @@ export async function registrarMensagem(input: {
   anexoBytes?: Buffer;
   contatoCompartilhadoNome?: string;
   contatoCompartilhadoTelefone?: string;
+  // Enquete que o whatsapp-service manda logo depois do texto (ver Mensagem.enquete).
+  enquete?: { pergunta: string; opcoes: string[]; ref: string };
 }) {
   const mensagem = await prisma.mensagem.create({
     data: {
@@ -172,6 +174,7 @@ export async function registrarMensagem(input: {
       anexoBytes: input.anexoBytes ? new Uint8Array(input.anexoBytes) : undefined,
       contatoCompartilhadoNome: input.contatoCompartilhadoNome,
       contatoCompartilhadoTelefone: input.contatoCompartilhadoTelefone,
+      enquete: input.enquete,
     },
   });
 

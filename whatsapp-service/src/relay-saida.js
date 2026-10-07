@@ -1,6 +1,7 @@
 import { chamarApi, baixarArquivo } from "./crm-api.js";
 import { registrarMapeamento } from "./lid-cache.js";
 import { marcarComoEnviadoPeloRelay } from "./ids-relay.js";
+import { enviarEnquete } from "./enquetes.js";
 
 const INTERVALO_MS = 5000;
 
@@ -171,6 +172,19 @@ async function processarFilaAgora(sock) {
         body: JSON.stringify({ mensagemId: item.mensagemId, externalId: enviada.key.id }),
       });
       console.log(`[relay-saida] Enviado pra ${item.telefone}: "${item.texto.slice(0, 40)}"`);
+      // Enquete logo depois do texto (ex.: confirmar despesa) — o texto já
+      // foi confirmado acima, então uma falha aqui não reenvia nada; quem
+      // recebeu ainda pode responder "sim" por texto ou áudio.
+      if (item.enquete?.opcoes?.length) {
+        try {
+          await aguardar(atrasoAleatorio(800, 2000));
+          const enquete = await enviarEnquete(sock, jid, item.enquete);
+          if (enquete?.key?.id) marcarComoEnviadoPeloRelay(enquete.key.id);
+          console.log(`[relay-saida] Enquete enviada pra ${item.telefone} (${item.enquete.ref}).`);
+        } catch (erro) {
+          console.error(`[relay-saida] Falha ao enviar a enquete pra ${item.telefone}:`, erro.message);
+        }
+      }
     } catch (erro) {
       console.error(`[relay-saida] Falha ao enviar mensagem ${item.mensagemId} pra ${item.telefone}:`, erro.message);
     }

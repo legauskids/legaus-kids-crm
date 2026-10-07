@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     });
 
     const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
-    await registrarMensagem({ conversaId: conversa.id, texto: resultado.resposta, direcao: "SAIDA", origem: "SISTEMA" });
+    await registrarMensagem({ conversaId: conversa.id, texto: resultado.resposta, direcao: "SAIDA", origem: "SISTEMA", enquete: resultado.enquete });
 
     return NextResponse.json({ resposta: resultado.resposta });
   } catch (erro) {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  OPCAO_CONFIRMAR,
+  OPCAO_DESCARTAR,
+  OPCAO_NEGOCIO,
+  enqueteDaDespesa,
   fornecedorNaMensagem,
   interpretarRespostaRascunho,
   mensagemDeConfirmacao,
@@ -124,13 +128,27 @@ describe("regra de confirmação", () => {
     expect(r.registrarDireto).toBe(false);
   });
 
-  it("a mensagem de confirmação marca o que foi deduzido e termina com o pedido do 1", () => {
+  it("a mensagem de confirmação marca o deduzido, pergunta do negócio e aponta pra enquete", () => {
     const r = montar("Acabei de abastecer, 250 reais no posto Ipiranga", { valor: 250, fornecedor: "Posto Ipiranga", categoria: "combustível" });
     const msg = mensagemDeConfirmacao(r, HOJE);
     expect(msg).toContain("*R$ 250,00* — Posto Ipiranga");
     expect(msg).toContain("📅 07/10 (hoje)");
     expect(msg).toContain("Veículos e combustível _(deduzida)_");
-    expect(msg.endsWith("Responda *1* para confirmar ou me diga o que corrigir.")).toBe(true);
+    expect(msg).toContain("🏗️ É de algum negócio/obra?");
+    expect(msg.endsWith("Confirme na enquete abaixo ou responda *sim* (texto ou áudio). Se algo estiver errado, me diga o que corrigir.")).toBe(true);
+    expect(msg).not.toContain("*1*");
+    expect(mensagemDeConfirmacao(r, HOJE, undefined, "crm").endsWith("Responda *sim* para confirmar ou me diga o que corrigir.")).toBe(true);
+  });
+
+  it("centro já é negócio: não pergunta de novo e a enquete não tem a opção de negócio", () => {
+    const r = montar("Paguei R$ 480 na madeireira Pinheiro, é pra obra do Arco-Íris", { valor: 480, fornecedor: "Madeireira Pinheiro", centro: "Arco-Íris" });
+    expect(mensagemDeConfirmacao(r, HOJE)).not.toContain("É de algum negócio");
+    expect(enqueteDaDespesa({ id: "d1", valorCentavos: 48000, fornecedor: "Madeireira Pinheiro", ehProjeto: true })).toEqual({
+      pergunta: "Confirmar a despesa de R$ 480,00 — Madeireira Pinheiro?",
+      opcoes: [OPCAO_CONFIRMAR, OPCAO_DESCARTAR],
+      ref: "despesa:d1",
+    });
+    expect(enqueteDaDespesa({ id: "d2", valorCentavos: 4596, fornecedor: "UFFA", ehProjeto: false }).opcoes).toEqual([OPCAO_CONFIRMAR, OPCAO_NEGOCIO, OPCAO_DESCARTAR]);
   });
 });
 
@@ -231,13 +249,29 @@ describe("pedaços da regra", () => {
     expect(pareceRespostaDeDespesa("Tarefa criada pra amanhã às 9h.")).toBe(false);
   });
 
-  it("interpretarRespostaRascunho", () => {
+  it("interpretarRespostaRascunho: texto", () => {
     expect(interpretarRespostaRascunho("1")).toBe("confirmar");
     expect(interpretarRespostaRascunho("Sim")).toBe("confirmar");
     expect(interpretarRespostaRascunho("ok!")).toBe("confirmar");
-    expect(interpretarRespostaRascunho("não")).toBe("descartar");
+    expect(interpretarRespostaRascunho("pode registrar")).toBe("confirmar");
     expect(interpretarRespostaRascunho("cancela")).toBe("descartar");
+    expect(interpretarRespostaRascunho("pode descartar")).toBe("descartar");
+    expect(interpretarRespostaRascunho("não registra")).toBe("descartar");
+    expect(interpretarRespostaRascunho("não")).toBe("duvida");
     expect(interpretarRespostaRascunho("não, foi 260")).toBe("outro");
     expect(interpretarRespostaRascunho("o centro é produção")).toBe("outro");
+    expect(interpretarRespostaRascunho("é da obra do Arco-Íris")).toBe("outro");
+  });
+
+  it("interpretarRespostaRascunho: transcrição de áudio", () => {
+    expect(interpretarRespostaRascunho("Sim, pode confirmar.")).toBe("confirmar");
+    expect(interpretarRespostaRascunho("Um.")).toBe("confirmar");
+    expect(interpretarRespostaRascunho("Tá certo, pode registrar.")).toBe("confirmar");
+    expect(interpretarRespostaRascunho("Isso mesmo, confirma aí.")).toBe("confirmar");
+    expect(interpretarRespostaRascunho("Confirma, por favor.")).toBe("confirmar");
+    expect(interpretarRespostaRascunho("Não, cancela essa despesa.")).toBe("descartar");
+    expect(interpretarRespostaRascunho("Não.")).toBe("duvida");
+    expect(interpretarRespostaRascunho("Sim, mas o valor foi 260 reais.")).toBe("outro");
+    expect(interpretarRespostaRascunho("Paguei 50 reais de pedágio")).toBe("outro");
   });
 });

@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     // A resposta do agente entra na mesma fila de envio que qualquer outra
     // mensagem de saída — o whatsapp-service já consome isso periodicamente.
     const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
-    await registrarMensagem({ conversaId: conversa.id, texto: resultado.resposta, direcao: "SAIDA", origem: "SISTEMA" });
+    await registrarMensagem({ conversaId: conversa.id, texto: resultado.resposta, direcao: "SAIDA", origem: "SISTEMA", enquete: resultado.enquete });
 
     return NextResponse.json({ transcricao: texto, resposta: resultado.resposta });
   } catch (erro) {
