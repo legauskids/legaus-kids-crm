@@ -134,8 +134,22 @@ export async function listMensagensPendentesDeRelay() {
   return pendentes;
 }
 
+/**
+ * Corrida vista no log em 2026-10-07: o eco do próprio envio (relay-entrada,
+ * fromMe) às vezes chega ao CRM ANTES desta confirmação e vira outra
+ * Mensagem com o mesmo externalId — a confirmação batia no unique, dava 500,
+ * a mensagem da fila ficava sem externalId e o relay a mandava de novo 90s
+ * depois (o Marcos recebeu o "✅ Registrado" duas vezes). Agora o eco é
+ * descartado e a mensagem da fila fica com o externalId.
+ */
 export function confirmarEnvioMensagem(mensagemId: string, externalId: string) {
-  return prisma.mensagem.update({ where: { id: mensagemId }, data: { externalId } });
+  return prisma.$transaction(async (tx) => {
+    const eco = await tx.mensagem.findUnique({ where: { externalId }, select: { id: true, direcao: true } });
+    if (eco && eco.id !== mensagemId && eco.direcao === "SAIDA") {
+      await tx.mensagem.delete({ where: { id: eco.id } });
+    }
+    return tx.mensagem.update({ where: { id: mensagemId }, data: { externalId } });
+  });
 }
 
 export async function registrarMensagem(input: {
