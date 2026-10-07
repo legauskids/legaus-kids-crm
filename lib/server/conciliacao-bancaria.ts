@@ -57,7 +57,7 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
   });
 
   const [despesas, negocios] = await Promise.all([listDespesasParaPar(), listNegociosParaConciliacao()]);
-  const negociosVM = negocios.map((n) => ({ id: n.id, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }));
+  const negociosVM = negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }));
   let paresProvaveis = 0;
   let entradasComSugestao = 0;
   for (const t of importacao.transacoes) {

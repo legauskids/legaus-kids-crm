@@ -78,19 +78,26 @@ describe("motivoDoPar", () => {
 describe("negocioSugeridoParaEntrada", () => {
   const entrada = { descricao: "PIX RECEBIDO COND RES BELA VISTA", valorCentavos: 650000, tipo: "ENTRADA" as const };
   it("valor único sugere o negócio", () => {
-    const n = [{ id: "a", valorCentavos: 650000, contatoNome: "Condomínio Bela Vista" }, { id: "b", valorCentavos: 100, contatoNome: null }];
+    const n = [{ id: "a", titulo: "Playground Bela Vista", valorCentavos: 650000, contatoNome: "Condomínio Bela Vista" }, { id: "b", titulo: "Outro", valorCentavos: 100, contatoNome: null }];
     expect(negocioSugeridoParaEntrada(entrada, n)?.id).toBe("a");
   });
   it("vários com o mesmo valor: desempata pelo nome do cliente na descrição", () => {
     const n = [
-      { id: "a", valorCentavos: 650000, contatoNome: "Escola Arco-Íris" },
-      { id: "b", valorCentavos: 650000, contatoNome: "Condomínio Bela Vista" },
+      { id: "a", titulo: "Playground Arco-Íris", valorCentavos: 650000, contatoNome: "Escola Arco-Íris" },
+      { id: "b", titulo: "Playground Bela Vista", valorCentavos: 650000, contatoNome: "Condomínio Bela Vista" },
     ];
     expect(negocioSugeridoParaEntrada(entrada, n)?.id).toBe("b");
     expect(negocioSugeridoParaEntrada({ ...entrada, descricao: "PIX RECEBIDO" }, n)).toBeNull();
   });
+  it("negócio ganho e a cópia de pós-venda contam como um só: sugere o pós-venda", () => {
+    const n = [
+      { id: "venda", titulo: "Manutenção FEMA", valorCentavos: 650000, contatoNome: "FEMA" },
+      { id: "pos", titulo: "Manutenção FEMA — Pós-venda", valorCentavos: 650000, contatoNome: "FEMA" },
+    ];
+    expect(negocioSugeridoParaEntrada({ ...entrada, descricao: "PIX RECEBIDO" }, n)?.id).toBe("pos");
+  });
   it("saída não sugere negócio", () => {
-    expect(negocioSugeridoParaEntrada({ ...entrada, tipo: "SAIDA" }, [{ id: "a", valorCentavos: 650000, contatoNome: null }])).toBeNull();
+    expect(negocioSugeridoParaEntrada({ ...entrada, tipo: "SAIDA" }, [{ id: "a", titulo: "A", valorCentavos: 650000, contatoNome: null }])).toBeNull();
   });
 });
 

@@ -41,7 +41,7 @@ async function main() {
 
   // 4. "É do negócio KidPlay e julho." — transcrição errada
   const r4 = await corrigirDespesaDaConversa({ identificador: TEL, correcao: { centro: "KidPlay e julho" }, texto: "É do negócio KidPlay e julho." });
-  checar(!r4.enquete && r4.mensagem.includes("Não encontrei") && r4.mensagem.includes("Kidplay Escola Ijuí"), `nome não encontrado: sugere os parecidos, sem resumo nem enquete ("${r4.mensagem.slice(0, 120)}...")`);
+  checar(!r4.enquete && r4.mensagem.includes("Achei mais de um") && r4.mensagem.includes("Kidplay Escola Ijuí"), `nome empatado: sugere os parecidos, sem resumo nem enquete ("${r4.mensagem.slice(0, 120)}...")`);
 
   // 5. "Kidplay e Jui é o negócio." — o modelo chamou registrar_despesa de novo
   const r5 = await registrarDespesaDaMensagem({

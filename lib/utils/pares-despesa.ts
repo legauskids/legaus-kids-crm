@@ -8,6 +8,7 @@
 // tira 1. Candidato descartado com "Não é esse" não volta pra aquela linha.
 
 import { somarDias } from "./brasilia";
+import { semVendaComPosVenda } from "./negocio-pos-venda";
 
 export const JANELA_DIAS_PAR = 3;
 
@@ -73,13 +74,15 @@ export function motivoDoPar(c: Pick<CandidatoPar, "dias" | "palavrasEmComum">, t
  * Negócio sugerido pra uma ENTRADA: mesmo valor exato de um único negócio,
  * ou, havendo vários, o único cujo cliente aparece na descrição (PIX/TED
  * trazem o nome de quem mandou). É só pré-seleção — não concilia sozinho.
+ * Negócio ganho e a cópia de pós-venda (mesmo valor e cliente) contam como
+ * um só, e a sugestão é o pós-venda (ver negocio-pos-venda.ts).
  */
-export function negocioSugeridoParaEntrada<N extends { id: string; valorCentavos: number; contatoNome: string | null }>(
+export function negocioSugeridoParaEntrada<N extends { id: string; titulo: string; valorCentavos: number; contatoNome: string | null }>(
   linha: Pick<LinhaExtratoPar, "descricao" | "valorCentavos" | "tipo">,
   negocios: N[],
 ): N | null {
   if (linha.tipo !== "ENTRADA") return null;
-  const candidatos = negocios.filter((n) => n.valorCentavos === linha.valorCentavos);
+  const candidatos = semVendaComPosVenda(negocios.filter((n) => n.valorCentavos === linha.valorCentavos));
   if (candidatos.length === 1) return candidatos[0];
   if (candidatos.length === 0) return null;
   const descricao = palavras(linha.descricao);

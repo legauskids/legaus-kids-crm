@@ -4,6 +4,7 @@ import type { OrigemDespesa, Prisma } from "@prisma/client";
 import { criarDespesa, confirmarDespesa } from "@/lib/server/despesas";
 import { diaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { dataDaDespesa, pendenciasDaDespesa } from "@/lib/utils/despesas";
+import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
 import {
   OPCAO_CONFIRMAR,
   OPCAO_DESCARTAR,
@@ -41,7 +42,7 @@ export async function carregarCadastrosDespesa() {
   return {
     categorias: categorias.map((c) => ({ id: c.id, nome: c.nome, centroGeralPadraoId: c.centroGeralPadraoId, palavrasChave: c.palavrasChave })),
     centrosGerais: centrosGerais.map((g) => ({ id: g.id, nome: g.nome })),
-    negocios: negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null })),
+    negocios: semVendaComPosVenda(negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null }))),
   };
 }
 
@@ -318,7 +319,7 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
   let centroDeclarado = Boolean(log.centroDeclarado ?? decisao.centroDeclarado);
   const mudancas: Prisma.DespesaUncheckedUpdateInput = {};
   const naoEntendi: string[] = [];
-  let sugestaoNegocios = "";
+  let duvidaNegocio = "";
 
   if (c.valor && c.valor > 0) mudancas.valorCentavos = Math.round(c.valor * 100);
   if (c.fornecedor?.trim()) mudancas.fornecedor = c.fornecedor.trim();
@@ -335,9 +336,13 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
       mudancas.negocioId = centro.tipo === "NEGOCIO" ? centro.id : null;
       centroDeclarado = true;
     } else {
-      naoEntendi.push(`o negócio "${c.centro}"`);
+      // resolverCentro só falha havendo parecidos quando o nome empata entre
+      // eles — "não encontrei" aí confunde (3º teste: "Manutenção FEMA",
+      // dito duas vezes, respondido duas vezes com "não encontrei").
       const parecidos = negociosParecidos(c.centro, negocios);
-      if (parecidos.length) sugestaoNegocios = ` Os mais parecidos: ${parecidos.map((n) => `*${n.titulo}*`).join(", ")} — diga qual (pode ser só um pedaço do nome, ex.: a cidade).`;
+      if (parecidos.length) {
+        duvidaNegocio = `Achei mais de um negócio para "${c.centro}": ${parecidos.map((n) => `*${n.titulo}*`).join(", ")} — diga qual (pode ser só um pedaço do nome, ex.: a cidade).`;
+      } else naoEntendi.push(`o negócio "${c.centro}"`);
     }
   }
   if (c.categoria?.trim()) {
@@ -377,7 +382,9 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
   });
   console.log(`[despesa-agente] correção ${alvo.id}: ${JSON.stringify({ mensagem: input.texto, correcao: c, mudou: Object.keys(mudancas), naoEntendi })}`);
 
-  const naoAchei = naoEntendi.length ? `Não encontrei ${naoEntendi.join(" nem ")}.${sugestaoNegocios || " Diga de outro jeito."}` : "";
+  const naoAchei = [naoEntendi.length ? `Não encontrei ${naoEntendi.join(" nem ")}. Diga de outro jeito.` : "", duvidaNegocio]
+    .filter(Boolean)
+    .join(" ");
   if (!mudou) {
     // Nada mudou: resposta curta, sem repetir o resumo nem mandar outra enquete.
     if (naoAchei) return { mensagem: naoAchei };

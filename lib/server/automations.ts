@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
 import { gerarContrato } from "@/lib/server/contratos";
 import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
+import { SUFIXO_POS_VENDA } from "@/lib/utils/negocio-pos-venda";
 
 // Derivado do client de verdade (com a extensão de soft-delete de Negocio
 // aplicada em lib/db.ts) em vez de Prisma.TransactionClient genérico — os
@@ -99,7 +100,7 @@ async function handleNegocioGanho(
 
   const negocioPosVenda = await tx.negocio.create({
     data: {
-      titulo: `${negocioOriginal.titulo} — Pós-venda`,
+      titulo: `${negocioOriginal.titulo}${SUFIXO_POS_VENDA}`,
       contatoId: negocioOriginal.contatoId,
       funilId: funilPosVenda.id,
       etapaId: etapaInicial.id,
