@@ -88,6 +88,10 @@ model User {
   // um admin desmarca algo pra alguém — assim usuários existentes não
   // "perdem" acesso por causa da migração.
   permissoes   Json     @default("{}")
+  // ID numérico do Telegram (canal exclusivo do agente — ver
+  // lib/server/telegram.ts). Só responde se também estiver em
+  // TELEGRAM_ALLOWED_IDS.
+  telegramId   String?  @unique
   createdAt    DateTime @default(now())
 
   conversasAtendidas    Conversa[]                  @relation("AtendenteConversa")
@@ -118,6 +122,7 @@ model User {
 enum OrigemComando {
   WHATSAPP
   CRM_TEXTO
+  TELEGRAM
 }
 
 enum StatusComando {
@@ -143,6 +148,9 @@ model ComandoAgente {
   argumentosPendentes Json?
   descricaoPendente   String?
   status              StatusComando @default(CONCLUIDO)
+  // ID da mensagem no canal ("tg:<update_id>") — o mesmo update nunca é
+  // processado duas vezes, mesmo que o Telegram reenvie.
+  externalId          String?       @unique
   // Soma de todos os turnos dessa chamada (um comando pode levar até 8
   // turnos de tool-calling — cada turno reenvia o histórico inteiro pra
   // Anthropic, então input cresce a cada turno). Existe pra dar visibilidade
