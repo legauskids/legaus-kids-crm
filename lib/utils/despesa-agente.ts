@@ -202,6 +202,41 @@ export function resolverCentro(
   return melhor && !empate ? { tipo: "NEGOCIO", id: melhor.n.id, nome: melhor.n.titulo } : null;
 }
 
+/**
+ * Negócios com mais palavras em comum com o que foi dito, pra sugerir quando
+ * o nome não bate com um só (ex.: "KidPlay e julho" — a transcrição errou
+ * "Ijuí" — empata entre todos os "Kidplay ...").
+ */
+export function negociosParecidos(texto: string, negocios: NegocioAgente[], limite = 4): NegocioAgente[] {
+  const doTexto = palavrasSignificativas(texto);
+  return negocios
+    .map((n, ordem) => {
+      const doNegocio = palavrasSignificativas(`${n.titulo} ${n.contatoNome ?? ""}`);
+      return { n, ordem, pontos: doTexto.filter((p) => doNegocio.some((q) => casam(p, q))).length };
+    })
+    .filter((x) => x.pontos > 0)
+    .sort((a, b) => b.pontos - a.pontos || a.ordem - b.ordem)
+    .slice(0, limite)
+    .map((x) => x.n);
+}
+
+/**
+ * Mesma despesa já registrada? Mesmo valor, data a até 3 dias e fornecedor
+ * parecido (ou sem fornecedor de um dos lados) — ex.: o comprovante mandado
+ * depois do áudio do mesmo gasto, ou o mesmo PDF mandado duas vezes.
+ */
+export function pareceMesmaDespesa(
+  a: { valorCentavos: number; dia: string; fornecedor: string },
+  b: { valorCentavos: number; dia: string; fornecedor: string },
+): boolean {
+  if (a.valorCentavos <= 0 || a.valorCentavos !== b.valorCentavos) return false;
+  const dias = Math.abs(new Date(`${a.dia}T12:00:00Z`).getTime() - new Date(`${b.dia}T12:00:00Z`).getTime()) / 86_400_000;
+  if (dias > 3) return false;
+  const pa = palavrasSignificativas(a.fornecedor);
+  const pb = palavrasSignificativas(b.fornecedor);
+  return pa.length === 0 || pb.length === 0 || pa.some((p) => pb.some((q) => casam(p, q)));
+}
+
 const DIAS_SEMANA = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
 const MESES = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 

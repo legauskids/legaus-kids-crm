@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import type { OrigemDespesa, Prisma } from "@prisma/client";
 import { criarDespesa, confirmarDespesa } from "@/lib/server/despesas";
-import { diaBrasilia } from "@/lib/utils/brasilia";
+import { diaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { dataDaDespesa, pendenciasDaDespesa } from "@/lib/utils/despesas";
 import {
   OPCAO_CONFIRMAR,
@@ -13,6 +13,8 @@ import {
   mensagemDeConfirmacao,
   mensagemDeRegistro,
   montarDespesaDaMensagem,
+  negociosParecidos,
+  pareceMesmaDespesa,
   resolverCategoria,
   resolverCentro,
   resolverDataFalada,
@@ -80,26 +82,132 @@ export async function registrarDespesaDaMensagem(input: {
   };
   console.log(`[despesa-agente] ${input.identificador}: ${JSON.stringify(log)}`);
 
+  // Duplicação vista no 2º teste do Marcos (2026-10-07): com um rascunho
+  // esperando, "Kidplay e Jui é o negócio" fez o modelo chamar
+  // registrar_despesa de novo (com valor e fornecedor do histórico) e nasceu
+  // uma segunda despesa do mesmo gasto. Mesmo gasto do rascunho (ou sem
+  // valor nenhum) é complemento dele, nunca despesa nova.
+  const rascunho = await buscarRascunhoAtivo(input.identificador);
+  if (
+    rascunho &&
+    (montada.dados.valorCentavos === 0 ||
+      pareceMesmaDespesa(montada.dados, { valorCentavos: rascunho.valorCentavos, dia: diaBrasilia(rascunho.data), fornecedor: rascunho.fornecedor }))
+  ) {
+    const r = await juntarNoRascunho(rascunho, input, montada);
+    return { ...r, despesaId: rascunho.id, registradaDireto: false };
+  }
+
+  // Igual a uma despesa já registrada (o mesmo comprovante mandado de novo,
+  // ou o comprovante de um gasto que já veio por áudio): nunca registra
+  // direto, e avisa no resumo.
+  const parecida = await buscarDespesaParecida(montada.dados);
+  const registrarDireto = montada.registrarDireto && !parecida;
+
   const despesa = await criarDespesa({
     ...montada.dados,
     origem: input.origem,
     registradaPorId: input.usuarioId,
-    rascunho: !montada.registrarDireto,
+    rascunho: !registrarDireto,
     anexo: input.anexo,
     textoOriginal: input.texto,
-    extracao: log as unknown as Prisma.InputJsonValue,
+    extracao: { ...log, parecidaCom: parecida?.id ?? null } as unknown as Prisma.InputJsonValue,
     telefoneOrigem: input.identificador,
   });
 
   const canal = canalDoIdentificador(input.identificador);
-  if (montada.registrarDireto) {
+  if (registrarDireto) {
     return { mensagem: mensagemDeRegistro(montada, hoje), despesaId: despesa.id, registradaDireto: true };
   }
+  const aviso = parecida
+    ? `⚠️ Parece a mesma despesa já registrada: *${reais(parecida.valorCentavos)}* — ${parecida.fornecedor} (${diaBrasilia(parecida.data).split("-").reverse().slice(0, 2).join("/")}). Se for, ${canal === "whatsapp" ? "toque em *Descartar*" : "responda *descartar*"}.\n\n`
+    : "";
   return {
-    mensagem: mensagemDeConfirmacao(montada, hoje, undefined, canal),
+    mensagem: aviso + mensagemDeConfirmacao(montada, hoje, undefined, canal),
     enquete: canal === "whatsapp" ? enqueteDaDespesa({ ...despesa, ehProjeto: montada.nomes.centroEhProjeto }) : undefined,
     despesaId: despesa.id,
     registradaDireto: false,
+  };
+}
+
+function reais(centavos: number): string {
+  return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\s/g, " ");
+}
+
+/** Despesa já registrada (não rascunho) que parece ser o mesmo gasto — ver pareceMesmaDespesa. */
+async function buscarDespesaParecida(d: { valorCentavos: number; dia: string; fornecedor: string }) {
+  if (d.valorCentavos <= 0) return null;
+  const candidatas = await prisma.despesa.findMany({
+    where: {
+      valorCentavos: d.valorCentavos,
+      status: { in: ["AGUARDANDO_CONCILIACAO", "CONCILIADA"] },
+      data: { gte: dataDaDespesa(somarDias(d.dia, -3)), lte: dataDaDespesa(somarDias(d.dia, 3)) },
+    },
+    select: { id: true, valorCentavos: true, fornecedor: true, data: true },
+    orderBy: { criadoEm: "desc" },
+  });
+  return candidatas.find((c) => pareceMesmaDespesa(d, { ...c, dia: diaBrasilia(c.data) })) ?? null;
+}
+
+/**
+ * Complemento do rascunho esperando confirmação (mesmo gasto contado de
+ * novo, ou mensagem sem valor): só entra o que a pessoa DISSE agora
+ * (categoria/centro declarados, negócio citado, data falada) ou o que o
+ * rascunho ainda não tinha. O comprovante substitui um áudio como arquivo.
+ * Nada novo = resposta curta, sem novo resumo nem nova enquete.
+ */
+async function juntarNoRascunho(
+  rascunho: NonNullable<Awaited<ReturnType<typeof buscarRascunhoAtivo>>>,
+  input: { extracao: ExtracaoDespesa; texto: string; origem: OrigemDespesa; identificador: string; anexo?: AnexoDespesa },
+  montada: ReturnType<typeof montarDespesaDaMensagem>,
+): Promise<RespostaDespesa> {
+  const d = montada.dados;
+  const mudancas: Prisma.DespesaUncheckedUpdateInput = {};
+  if (!rascunho.valorCentavos && d.valorCentavos) mudancas.valorCentavos = d.valorCentavos;
+  if (!rascunho.fornecedor.trim() && d.fornecedor) mudancas.fornecedor = d.fornecedor;
+  if (input.extracao.dataTexto?.trim() && d.dia !== diaBrasilia(rascunho.data)) mudancas.data = dataDaDespesa(d.dia);
+  if (d.categoriaId && d.categoriaId !== rascunho.categoriaId && (montada.categoriaDeclarada || !rascunho.categoriaId)) mudancas.categoriaId = d.categoriaId;
+  const centroNovo = d.negocioId ?? d.centroGeralId;
+  const centroAtual = rascunho.negocioId ?? rascunho.centroGeralId;
+  const centroDito = montada.centroDeclarado || montada.nomes.centroEhProjeto;
+  if (centroNovo && centroNovo !== centroAtual && (centroDito || !centroAtual)) {
+    mudancas.centroGeralId = d.centroGeralId;
+    mudancas.negocioId = d.negocioId;
+  }
+  const trocaArquivo = input.anexo && (!rascunho.anexoMime || (input.origem === "COMPROVANTE" && rascunho.origem !== "COMPROVANTE"));
+  if (trocaArquivo && input.anexo) {
+    mudancas.anexoBytes = new Uint8Array(input.anexo.bytes);
+    mudancas.anexoMime = input.anexo.mime;
+    mudancas.anexoNome = input.anexo.nome;
+    if (input.origem === "COMPROVANTE") mudancas.origem = "COMPROVANTE";
+  }
+
+  const log = (rascunho.extracao ?? {}) as Prisma.JsonObject;
+  const complementos = Array.isArray(log.complementos) ? log.complementos : [];
+  const mudou = Object.keys(mudancas).length > 0;
+  await prisma.despesa.update({
+    where: { id: rascunho.id },
+    data: {
+      ...mudancas,
+      textoOriginal: input.texto.trim() ? [rascunho.textoOriginal, input.texto.trim()].filter(Boolean).join("\n\n") : undefined,
+      extracao: {
+        ...log,
+        centroDeclarado: Boolean(log.centroDeclarado) || (mudancas.negocioId !== undefined && centroDito),
+        complementos: [...complementos, { mensagem: input.texto, extraidoPeloModelo: input.extracao, mudou, em: new Date().toISOString() }],
+      } as Prisma.InputJsonValue,
+    },
+  });
+  console.log(`[despesa-agente] complemento do rascunho ${rascunho.id}: ${JSON.stringify(Object.keys(mudancas))}`);
+
+  if (!mudou) return jaEstaAssim(input.identificador);
+  return pedirConfirmacao(rascunho.id, input.identificador, "Atualizei a despesa que estava esperando, confere?");
+}
+
+function jaEstaAssim(identificador: string): RespostaDespesa {
+  return {
+    mensagem:
+      canalDoIdentificador(identificador) === "whatsapp"
+        ? "Já está assim 👍 Confirme na enquete acima ou responda *sim*."
+        : "Já está assim 👍 Responda *sim* pra confirmar.",
   };
 }
 
@@ -210,6 +318,7 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
   let centroDeclarado = Boolean(log.centroDeclarado ?? decisao.centroDeclarado);
   const mudancas: Prisma.DespesaUncheckedUpdateInput = {};
   const naoEntendi: string[] = [];
+  let sugestaoNegocios = "";
 
   if (c.valor && c.valor > 0) mudancas.valorCentavos = Math.round(c.valor * 100);
   if (c.fornecedor?.trim()) mudancas.fornecedor = c.fornecedor.trim();
@@ -225,7 +334,11 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
       mudancas.centroGeralId = centro.tipo === "GERAL" ? centro.id : null;
       mudancas.negocioId = centro.tipo === "NEGOCIO" ? centro.id : null;
       centroDeclarado = true;
-    } else naoEntendi.push(`o negócio ou centro "${c.centro}"`);
+    } else {
+      naoEntendi.push(`o negócio "${c.centro}"`);
+      const parecidos = negociosParecidos(c.centro, negocios);
+      if (parecidos.length) sugestaoNegocios = ` Os mais parecidos: ${parecidos.map((n) => `*${n.titulo}*`).join(", ")} — diga qual (pode ser só um pedaço do nome, ex.: a cidade).`;
+    }
   }
   if (c.categoria?.trim()) {
     const categoria = resolverCategoria(c.categoria, categorias);
@@ -240,6 +353,16 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
     } else naoEntendi.push(`a categoria "${c.categoria}"`);
   }
 
+  // Só o que muda de verdade conta — "lance na categoria Veículos" quando já
+  // era Veículos não gera outro resumo nem outra enquete (2º teste do Marcos).
+  const atual: Record<string, unknown> = alvo;
+  for (const [campo, valor] of Object.entries(mudancas)) {
+    const antes = atual[campo];
+    const igual = valor instanceof Date && antes instanceof Date ? valor.getTime() === antes.getTime() : valor === antes;
+    if (igual) delete (mudancas as Record<string, unknown>)[campo];
+  }
+  const mudou = Object.keys(mudancas).length > 0;
+
   const correcoes = Array.isArray(log.correcoes) ? log.correcoes : [];
   await prisma.despesa.update({
     where: { id: alvo.id },
@@ -248,13 +371,19 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
       extracao: {
         ...log,
         centroDeclarado,
-        correcoes: [...correcoes, { mensagem: input.texto, extraidoPeloModelo: c, em: new Date().toISOString() }],
+        correcoes: [...correcoes, { mensagem: input.texto, extraidoPeloModelo: c, mudou, em: new Date().toISOString() }],
       } as Prisma.InputJsonValue,
     },
   });
-  console.log(`[despesa-agente] correção ${alvo.id}: ${JSON.stringify({ mensagem: input.texto, correcao: c, naoEntendi })}`);
+  console.log(`[despesa-agente] correção ${alvo.id}: ${JSON.stringify({ mensagem: input.texto, correcao: c, mudou: Object.keys(mudancas), naoEntendi })}`);
 
-  const aviso = naoEntendi.length ? `Não encontrei ${naoEntendi.join(" nem ")} — diga de outro jeito.\n\n` : "";
+  const naoAchei = naoEntendi.length ? `Não encontrei ${naoEntendi.join(" nem ")}.${sugestaoNegocios || " Diga de outro jeito."}` : "";
+  if (!mudou) {
+    // Nada mudou: resposta curta, sem repetir o resumo nem mandar outra enquete.
+    if (naoAchei) return { mensagem: naoAchei };
+    return alvo.status === "A_CONFIRMAR" ? jaEstaAssim(input.identificador) : { mensagem: "Já está assim 👍" };
+  }
+  const aviso = naoAchei ? `${naoAchei}\n\n` : "";
   if (alvo.status === "A_CONFIRMAR") {
     const pedido = await pedirConfirmacao(alvo.id, input.identificador, "Corrigi, confere?");
     return { mensagem: aviso + pedido.mensagem, enquete: pedido.enquete };

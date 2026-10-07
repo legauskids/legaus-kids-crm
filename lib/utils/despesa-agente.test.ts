@@ -8,6 +8,8 @@ import {
   interpretarRespostaRascunho,
   mensagemDeConfirmacao,
   montarDespesaDaMensagem,
+  negociosParecidos,
+  pareceMesmaDespesa,
   pareceRespostaDeDespesa,
   resolverCategoria,
   resolverCentro,
@@ -241,6 +243,27 @@ describe("pedaços da regra", () => {
     expect(fornecedorNaMensagem("Posto Ipiranga", "no posto ipiranga")).toBe(true);
     expect(fornecedorNaMensagem("Madeireira Pinheiro Ltda", "na madeireira Pinheiro")).toBe(true);
     expect(fornecedorNaMensagem("Posto Shell", "no posto ipiranga")).toBe(false);
+  });
+
+  it("negociosParecidos sugere quando o nome empata ou veio errado da transcrição", () => {
+    const negocios = [
+      { id: "a", titulo: "Kidplay Padel Sto Angelo", contatoNome: "Tiziano" },
+      { id: "b", titulo: "Kidplay Escola Ijuí", contatoNome: "Escola São Francisco Ijuí" },
+      { id: "c", titulo: "Playground Escola Arco-Íris", contatoNome: null },
+    ];
+    expect(resolverCentro("KidPlay e julho", CENTROS, negocios)).toBeNull();
+    expect(negociosParecidos("KidPlay e julho", negocios).map((n) => n.id)).toEqual(["a", "b"]);
+    expect(resolverCentro("Ijuí", CENTROS, negocios)).toMatchObject({ tipo: "NEGOCIO", id: "b" });
+    expect(negociosParecidos("xpto", negocios)).toEqual([]);
+  });
+
+  it("pareceMesmaDespesa: mesmo valor, até 3 dias, fornecedor parecido", () => {
+    const vaccari = { valorCentavos: 6600, dia: "2026-10-06", fornecedor: "Posto de Combustíveis Vaccari Ltda" };
+    expect(pareceMesmaDespesa(vaccari, { valorCentavos: 6600, dia: "2026-10-07", fornecedor: "Posto Vaccari" })).toBe(true);
+    expect(pareceMesmaDespesa(vaccari, { valorCentavos: 6600, dia: "2026-10-07", fornecedor: "" })).toBe(true);
+    expect(pareceMesmaDespesa(vaccari, { valorCentavos: 6601, dia: "2026-10-06", fornecedor: "Posto Vaccari" })).toBe(false);
+    expect(pareceMesmaDespesa(vaccari, { valorCentavos: 6600, dia: "2026-10-10", fornecedor: "Posto Vaccari" })).toBe(false);
+    expect(pareceMesmaDespesa(vaccari, { valorCentavos: 6600, dia: "2026-10-06", fornecedor: "Restaurante Sabor Gaúcho" })).toBe(false);
   });
 
   it("pareceRespostaDeDespesa pega resumo inventado pelo modelo", () => {
