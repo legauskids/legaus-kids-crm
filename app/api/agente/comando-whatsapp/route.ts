@@ -43,22 +43,23 @@ export async function POST(request: Request) {
   const telefone = parsed.data.telefone.replace(/\D/g, "");
 
   // Extrato bancário (.ofx) não passa pelo agente de IA de propósito —
-  // importar e conciliar é uma operação determinística (parse do arquivo +
-  // match por valor exato), não precisa de julgamento de modelo nenhum, e
+  // importar é uma operação determinística (parse do arquivo + busca de
+  // pares por valor exato), não precisa de julgamento de modelo nenhum, e
   // gastar uma chamada de API pra isso seria desperdício (ver o incidente
-  // de crédito de 2026-09-12). Resposta é montada aqui mesmo, em texto.
+  // de crédito de 2026-09-12). Nada é conciliado aqui: os pares e sugestões
+  // esperam confirmação na tela. Resposta é montada aqui mesmo, em texto.
   if (parsed.data.anexoOfx) {
     const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
     let texto: string;
     try {
       const bytes = Buffer.from(parsed.data.anexoOfx.base64, "base64");
       const resultado = await importarExtratoOfx({ nomeArquivo: parsed.data.anexoOfx.nomeArquivo, bytes, importadoPorId: usuario.id });
-      const pendentes = resultado.novasImportadas - resultado.conciliadasAutomaticamente;
       texto =
         `📄 Extrato *${parsed.data.anexoOfx.nomeArquivo}* importado: *${resultado.novasImportadas}* transação(ões) nova(s)` +
         (resultado.duplicadasIgnoradas > 0 ? ` (${resultado.duplicadasIgnoradas} já existiam, ignoradas)` : "") +
-        `.\n\n✅ *${resultado.conciliadasAutomaticamente}* conciliada(s) automaticamente (mesmo valor exato de um negócio).\n` +
-        `${pendentes > 0 ? `⏳ *${pendentes}* pendente(s) de revisão manual` : "Nenhuma pendência"} em Financeiro → Conciliação bancária.`;
+        `.\n\n🔗 *${resultado.paresProvaveis}* saída(s) com despesa registrada pra confirmar o par` +
+        `\n💰 *${resultado.entradasComSugestao}* entrada(s) com negócio sugerido` +
+        `\n\nConfirme em Financeiro → Conciliação bancária — nada é conciliado sem confirmação.`;
     } catch (erro) {
       texto = erro instanceof Error ? erro.message : "Falha ao importar o extrato.";
     }

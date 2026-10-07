@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
+import { centavosParaTexto, textoParaCentavos } from "@/lib/utils/despesas";
 import { Plus, Trash2 } from "lucide-react";
 import { salvarRateioAction } from "@/app/(app)/financeiro/actions";
 
-export type CentroCustoVM = { id: string; nome: string; tipo: "DESPESA" | "RECEITA" };
+/** Categoria = tabela CentroCusto (natureza do gasto/receita). */
+export type CategoriaRateioVM = { id: string; nome: string; tipo: "DESPESA" | "RECEITA"; centroGeralPadraoId: string | null };
 export type ProjetoSeletorVM = { id: string; titulo: string; valorCentavos: number; contatoNome: string | null };
 export type RateioVM = {
   id: string;
@@ -19,40 +21,32 @@ export type RateioVM = {
   negocioTitulo: string | null;
   centroCustoId: string | null;
   centroCustoNome: string | null;
+  centroGeralId: string | null;
+  centroGeralNome: string | null;
 };
 
-type Linha = { destino: string; valorTexto: string };
-
-/** "1.234,56", "1234,56", "1234.56" ou "R$ 1.234,56" -> centavos (NaN se inválido). */
-function textoParaCentavos(texto: string): number {
-  let t = texto.replace(/R\$|\s/g, "");
-  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
-  const numero = Number(t);
-  return t === "" || !Number.isFinite(numero) ? NaN : Math.round(numero * 100);
-}
-
-function centavosParaTexto(centavos: number): string {
-  return (centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+type Linha = { destino: string; centroGeralId: string; valorTexto: string };
 
 /**
- * Divide um lançamento do extrato entre projetos (negócios) e centros de
- * custo, com valores parciais — o que sobrar fica "a classificar". Saída
- * pode ir pra custo de projeto ou centro de DESPESA; entrada, pra receita de
- * projeto ou centro de RECEITA.
+ * Divide um lançamento do extrato entre projetos (negócios) e categorias,
+ * com valores parciais — o que sobrar fica "a classificar". Saída pode ir
+ * pra custo de projeto ou categoria de DESPESA; entrada, pra receita de
+ * projeto ou categoria de RECEITA. Categoria pode levar um centro geral.
  */
 export function RateioDialog({
   open,
   onOpenChange,
   transacao,
   projetos,
-  centros,
+  categorias,
+  centrosGerais,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   transacao: { id: string; descricao: string; valorCentavos: number; tipo: "ENTRADA" | "SAIDA"; rateios: RateioVM[] };
   projetos: ProjetoSeletorVM[];
-  centros: CentroCustoVM[];
+  categorias: CategoriaRateioVM[];
+  centrosGerais: { id: string; nome: string }[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -61,12 +55,13 @@ export function RateioDialog({
     transacao.rateios.length > 0
       ? transacao.rateios.map((r) => ({
           destino: r.negocioId ? `n:${r.negocioId}` : `c:${r.centroCustoId}`,
+          centroGeralId: r.centroGeralId ?? "",
           valorTexto: centavosParaTexto(r.valorCentavos),
         }))
-      : [{ destino: "", valorTexto: centavosParaTexto(transacao.valorCentavos) }],
+      : [{ destino: "", centroGeralId: "", valorTexto: centavosParaTexto(transacao.valorCentavos) }],
   );
 
-  const centrosDoTipo = centros.filter((c) => c.tipo === (transacao.tipo === "SAIDA" ? "DESPESA" : "RECEITA"));
+  const categoriasDoTipo = categorias.filter((c) => c.tipo === (transacao.tipo === "SAIDA" ? "DESPESA" : "RECEITA"));
   const valores = linhas.map((l) => textoParaCentavos(l.valorTexto));
   const somaValida = valores.reduce((s, v) => s + (Number.isNaN(v) ? 0 : v), 0);
   const restante = transacao.valorCentavos - somaValida;
@@ -75,12 +70,18 @@ export function RateioDialog({
     setLinhas((atual) => atual.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   }
 
+  function escolherDestino(i: number, destino: string) {
+    const padrao = destino.startsWith("c:") ? categorias.find((c) => c.id === destino.slice(2))?.centroGeralPadraoId : null;
+    atualizar(i, { destino, centroGeralId: destino.startsWith("c:") ? (linhas[i].centroGeralId || padrao || "") : "" });
+  }
+
   function salvar() {
     setErro(null);
     const linhasValidas = linhas.filter((l) => l.destino);
     const payload = linhasValidas.map((l) => ({
       negocioId: l.destino.startsWith("n:") ? l.destino.slice(2) : null,
       centroCustoId: l.destino.startsWith("c:") ? l.destino.slice(2) : null,
+      centroGeralId: l.destino.startsWith("c:") ? l.centroGeralId || null : null,
       valorCentavos: textoParaCentavos(l.valorTexto),
     }));
     if (payload.some((p) => Number.isNaN(p.valorCentavos))) {
@@ -100,7 +101,7 @@ export function RateioDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Dividir lançamento</DialogTitle>
           <DialogDescription>
@@ -120,7 +121,7 @@ export function RateioDialog({
               <div key={i} className="flex flex-wrap items-center gap-2">
                 <select
                   value={linha.destino}
-                  onChange={(e) => atualizar(i, { destino: e.target.value })}
+                  onChange={(e) => escolherDestino(i, e.target.value)}
                   className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
                 >
                   <option value="">Escolha o destino...</option>
@@ -132,14 +133,29 @@ export function RateioDialog({
                       </option>
                     ))}
                   </optgroup>
-                  <optgroup label="Centro de custo">
-                    {centrosDoTipo.map((c) => (
+                  <optgroup label="Categoria">
+                    {categoriasDoTipo.map((c) => (
                       <option key={c.id} value={`c:${c.id}`}>
                         {c.nome}
                       </option>
                     ))}
                   </optgroup>
                 </select>
+                {linha.destino.startsWith("c:") && (
+                  <select
+                    value={linha.centroGeralId}
+                    onChange={(e) => atualizar(i, { centroGeralId: e.target.value })}
+                    title="Centro de custo geral (opcional)"
+                    className="h-9 w-36 rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="">Sem centro</option>
+                    {centrosGerais.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.nome}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <div className="flex items-center gap-1">
                   <span className="text-sm text-muted-foreground">R$</span>
                   <Input
@@ -182,7 +198,7 @@ export function RateioDialog({
             variant="outline"
             size="sm"
             disabled={restante <= 0}
-            onClick={() => setLinhas((atual) => [...atual, { destino: "", valorTexto: centavosParaTexto(Math.max(restante, 0)) }])}
+            onClick={() => setLinhas((atual) => [...atual, { destino: "", centroGeralId: "", valorTexto: centavosParaTexto(Math.max(restante, 0)) }])}
           >
             <Plus className="size-3.5" />
             Adicionar linha

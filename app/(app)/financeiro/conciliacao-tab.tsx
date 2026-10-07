@@ -1,46 +1,54 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useState, useTransition, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
-import { Upload, Check, X, Undo2, Split, Lightbulb, Tags } from "lucide-react";
+import { ROTULO_ORIGEM, centroDoSeletor, type OrigemDespesa } from "@/lib/utils/despesas";
+import { ArrowLeftRight, Check, Split, Undo2, Upload, X } from "lucide-react";
 import {
   importarExtratoAction,
-  conciliarTransacaoAction,
+  confirmarParAction,
+  rejeitarParAction,
+  classificarSaidaAction,
+  classificarEntradaAction,
   ignorarTransacaoAction,
   reabrirTransacaoAction,
-  classificarCentroCustoAction,
+  type AcaoConciliacaoState,
   type AcaoImportarExtratoState,
 } from "@/app/(app)/financeiro/actions";
-import { RateioDialog, type CentroCustoVM, type ProjetoSeletorVM, type RateioVM } from "@/app/(app)/financeiro/rateio-dialog";
+import { RateioDialog, type CategoriaRateioVM, type ProjetoSeletorVM, type RateioVM } from "@/app/(app)/financeiro/rateio-dialog";
+import { SeletorCentroDespesa, type CentroGeralVM } from "@/app/(app)/financeiro/despesa-dialog";
 
-type StatusTransacao = "NAO_CONCILIADA" | "CONCILIADA" | "IGNORADA";
-
-const FILTROS: { valor: StatusTransacao | "TODAS"; label: string }[] = [
-  { valor: "NAO_CONCILIADA", label: "A classificar" },
-  { valor: "CONCILIADA", label: "Classificadas" },
-  { valor: "IGNORADA", label: "Ignoradas" },
-  { valor: "TODAS", label: "Todas" },
-];
-
-export type TransacaoVM = {
+export type DespesaParVM = {
   id: string;
-  data: string;
-  descricao: string;
+  dia: string;
   valorCentavos: number;
-  tipo: "ENTRADA" | "SAIDA";
-  status: StatusTransacao;
-  negocioId: string | null;
-  negocioTitulo: string | null;
-  contatoNome: string | null;
-  rateios: RateioVM[];
-  /** Centro de custo sugerido pelas palavras-chave da descrição (só sugestão). */
-  sugestaoCentroCustoId: string | null;
+  fornecedor: string;
+  origem: OrigemDespesa;
+  categoriaNome: string | null;
+  centroNome: string | null;
+  ehProjeto: boolean;
 };
+
+export type CandidatoVM = { despesa: DespesaParVM; motivo: string };
+
+type LinhaBase = { id: string; dia: string; descricao: string; valorCentavos: number; tipo: "ENTRADA" | "SAIDA"; rateios: RateioVM[] };
+
+export type LinhaPendenteVM = LinhaBase & {
+  /** Despesas aguardando com o mesmo valor e data a até 3 dias, já ordenadas (ver pares-despesa.ts). */
+  candidatos: CandidatoVM[];
+  sugestaoCategoriaId: string | null;
+  sugestaoNegocioId: string | null;
+  fornecedorSugerido: string;
+};
+
+export type LinhaResolvidaVM = LinhaBase & { status: "CONCILIADA" | "IGNORADA"; despesa: DespesaParVM | null };
 
 export type ImportacaoVM = {
   id: string;
@@ -51,72 +59,81 @@ export type ImportacaoVM = {
   naoConciliadas: number;
 };
 
-export type NegocioSeletorVM = ProjetoSeletorVM;
-
 const initialState: AcaoImportarExtratoState = {};
 
-export function ConciliacaoTab({
-  transacoes,
-  importacoes,
-  negocios,
-  centros,
-  filtroAtual,
-}: {
-  transacoes: TransacaoVM[];
-  importacoes: ImportacaoVM[];
-  negocios: NegocioSeletorVM[];
-  centros: CentroCustoVM[];
-  filtroAtual: StatusTransacao | "TODAS";
-}) {
+function diaCurto(dia: string) {
+  const [, mes, d] = dia.split("-");
+  return `${d}/${mes}`;
+}
+
+function Valor({ centavos, tipo, className }: { centavos: number; tipo: "ENTRADA" | "SAIDA"; className?: string }) {
+  return (
+    <span className={cn("font-bold tabular-nums", tipo === "ENTRADA" ? "text-success" : "text-destructive", className)}>
+      {tipo === "ENTRADA" ? "+" : "-"}
+      {centavosParaReais(centavos)}
+    </span>
+  );
+}
+
+/** Roda uma ação da conciliação com toast de erro e atualiza a tela. */
+function useAcao() {
   const router = useRouter();
-  const [state, formAction, pending] = useActionState(importarExtratoAction, initialState);
-  const [, startTransition] = useTransition();
-  const [dividindo, setDividindo] = useState<TransacaoVM | null>(null);
-  const centroPorId = new Map(centros.map((c) => [c.id, c]));
-
-  function mudarFiltro(valor: string) {
-    const params = new URLSearchParams(window.location.search);
-    params.set("aba", "conciliacao");
-    params.set("filtroTransacao", valor);
-    router.push(`/financeiro?${params.toString()}`);
-  }
-
-  function conciliar(transacaoId: string, negocioId: string) {
-    if (!negocioId) return;
+  const [pending, startTransition] = useTransition();
+  function executar(acao: () => Promise<AcaoConciliacaoState>, sucesso?: string, depois?: () => void) {
     startTransition(async () => {
-      await conciliarTransacaoAction(transacaoId, negocioId);
+      const r = await acao();
+      if (r.error) {
+        toast.error(r.error);
+        return;
+      }
+      if (sucesso) toast.success(sucesso);
+      depois?.();
       router.refresh();
     });
   }
+  return { pending, executar };
+}
 
-  function classificarCentro(transacaoId: string, centroCustoId: string) {
-    if (!centroCustoId) return;
-    startTransition(async () => {
-      const resultado = await classificarCentroCustoAction(transacaoId, centroCustoId);
-      if (resultado.error) toast.error(resultado.error);
-      router.refresh();
-    });
-  }
+/**
+ * Conciliação do extrato. Pra cada saída, procura a despesa já registrada
+ * (mesmo valor, até 3 dias) e mostra o par lado a lado; saída sem despesa é
+ * classificada na hora; entrada vai pro negócio ou pra um centro geral.
+ * Nada é conciliado sem confirmação, e tudo pode ser desfeito.
+ */
+export function ConciliacaoTab({
+  pendentes,
+  resolvidos,
+  resolvidosTodos,
+  importacoes,
+  categorias,
+  centrosGerais,
+  projetos,
+}: {
+  pendentes: LinhaPendenteVM[];
+  resolvidos: LinhaResolvidaVM[];
+  resolvidosTodos: boolean;
+  importacoes: ImportacaoVM[];
+  categorias: CategoriaRateioVM[];
+  centrosGerais: CentroGeralVM[];
+  projetos: ProjetoSeletorVM[];
+}) {
+  const [state, formAction, pendingImportacao] = useActionState(importarExtratoAction, initialState);
+  const [dividindo, setDividindo] = useState<LinhaBase | null>(null);
 
-  function ignorar(transacaoId: string) {
-    startTransition(async () => {
-      await ignorarTransacaoAction(transacaoId);
-      router.refresh();
-    });
-  }
-
-  function reabrir(transacaoId: string) {
-    startTransition(async () => {
-      await reabrirTransacaoAction(transacaoId);
-      router.refresh();
-    });
-  }
+  const semRateio = (l: LinhaPendenteVM) => l.rateios.length === 0;
+  const pares = pendentes.filter((l) => l.tipo === "SAIDA" && semRateio(l) && l.candidatos.length > 0);
+  const semPar = pendentes.filter((l) => l.tipo === "SAIDA" && !(semRateio(l) && l.candidatos.length > 0));
+  const entradas = pendentes.filter((l) => l.tipo === "ENTRADA");
 
   return (
     <div className="flex-1 space-y-5 p-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-semibold">Importar extrato (OFX)</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Pra cada saída do extrato, o sistema procura uma despesa já registrada com o mesmo valor e data próxima. Nada é conciliado sem a sua
+            confirmação.
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           <form action={formAction} className="flex flex-wrap items-center gap-2">
@@ -127,150 +144,111 @@ export function ConciliacaoTab({
               required
               className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-accent"
             />
-            <Button type="submit" size="sm" disabled={pending}>
+            <Button type="submit" size="sm" disabled={pendingImportacao}>
               <Upload className="mr-1.5 size-3.5" />
               Importar
             </Button>
           </form>
           {state.success && (
-            <p className="text-xs text-success">
-              {state.success.novasImportadas} transação(ões) nova(s) importada(s)
-              {state.success.duplicadasIgnoradas > 0 && ` (${state.success.duplicadasIgnoradas} já existiam, ignoradas)`}
-              {state.success.conciliadasAutomaticamente > 0 && ` — ${state.success.conciliadasAutomaticamente} já conciliada(s) automaticamente (mesmo valor de um negócio)`}.
+            <p className="rounded-md bg-success/10 px-3 py-2 text-xs font-medium text-success">
+              {state.success.novasImportadas > 0
+                ? `${state.success.novasImportadas} lançamento(s) importado(s)`
+                : "Nenhum lançamento novo: esse extrato já tinha sido importado"}
+              {state.success.duplicadasIgnoradas > 0 && ` — ${state.success.duplicadasIgnoradas} já estava(m) no sistema e não foi(ram) duplicado(s)`}.
+              {state.success.paresProvaveis > 0 && ` ${state.success.paresProvaveis} saída(s) com despesa registrada pra confirmar.`}
+              {state.success.entradasComSugestao > 0 && ` ${state.success.entradasComSugestao} entrada(s) com negócio sugerido.`}
             </p>
           )}
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}
 
           {importacoes.length > 0 && (
-            <div className="space-y-1 border-t pt-3">
-              <p className="text-xs font-medium text-muted-foreground">Importações anteriores</p>
-              {importacoes.map((i) => (
-                <div key={i.id} className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    {i.nomeArquivo} — {new Date(i.importadoEm).toLocaleString("pt-BR")} por {i.importadoPorNome}
-                  </span>
-                  <span>
-                    {i.quantidadeTransacoes} transação(ões){i.naoConciliadas > 0 && `, ${i.naoConciliadas} pendente(s)`}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <details className="border-t pt-3 text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none font-medium">Importações anteriores ({importacoes.length})</summary>
+              <div className="mt-1 space-y-1">
+                {importacoes.map((i) => (
+                  <div key={i.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {i.nomeArquivo} — {new Date(i.importadoEm).toLocaleString("pt-BR")} por {i.importadoPorNome}
+                    </span>
+                    <span>
+                      {i.quantidadeTransacoes} transação(ões){i.naoConciliadas > 0 && `, ${i.naoConciliadas} pendente(s)`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-sm font-semibold">Transações</CardTitle>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Atribua cada lançamento, inteiro ou em partes, a um projeto (negócio) ou a um centro de custo.
-            </p>
-          </div>
-          <div className="flex gap-1">
-            {FILTROS.map((f) => (
-              <button
-                key={f.valor}
-                onClick={() => mudarFiltro(f.valor)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  filtroAtual === f.valor ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-                )}
-              >
-                {f.label}
-              </button>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Contador valor={pares.length} rotulo="prováveis pares para confirmar" className="text-warning" />
+        <Contador valor={semPar.length} rotulo="saídas sem despesa registrada" className="text-destructive" />
+        <Contador valor={entradas.length} rotulo="entradas para classificar" />
+        <Contador valor={resolvidos.length} rotulo={resolvidosTodos ? "lançamentos resolvidos" : "resolvidos nos últimos 90 dias"} className="text-success" />
+      </div>
+
+      {pendentes.length === 0 && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            Nenhum lançamento pendente. Importe o OFX do Sicredi aqui ou mande o arquivo no WhatsApp.
+          </CardContent>
+        </Card>
+      )}
+
+      {pares.length > 0 && (
+        <Secao titulo="Prováveis pares" texto="A despesa registrada e a linha do extrato viram um lançamento só quando você confirma. Nenhuma despesa nova é criada.">
+          {pares.map((l) => (
+            <CardPar key={l.id} linha={l} />
+          ))}
+        </Secao>
+      )}
+
+      {semPar.length > 0 && (
+        <Secao
+          titulo="Saídas sem despesa registrada"
+          texto="Gastos que não chegaram por áudio, comprovante nem lançamento manual. Classifique agora ou ignore, se for transferência entre contas."
+        >
+          {semPar.map((l) => (
+            <LinhaSaida
+              key={l.id}
+              linha={l}
+              categorias={categorias.filter((c) => c.tipo === "DESPESA")}
+              centrosGerais={centrosGerais}
+              projetos={projetos}
+              onDividir={() => setDividindo(l)}
+            />
+          ))}
+        </Secao>
+      )}
+
+      {entradas.length > 0 && (
+        <Secao titulo="Entradas" texto="Vincule cada recebimento ao negócio de origem ou a um centro geral. ★ = negócio com o mesmo valor.">
+          {entradas.map((l) => (
+            <LinhaEntrada key={l.id} linha={l} centrosGerais={centrosGerais} projetos={projetos} onDividir={() => setDividindo(l)} />
+          ))}
+        </Secao>
+      )}
+
+      <Secao
+        titulo="Resolvidos"
+        texto={resolvidosTodos ? "Todos os lançamentos já resolvidos." : "Lançamentos dos últimos 90 dias já resolvidos."}
+        acao={
+          <Link href={resolvidosTodos ? "/financeiro?aba=conciliacao" : "/financeiro?aba=conciliacao&resolvidos=todos"} className="text-xs text-primary hover:underline">
+            {resolvidosTodos ? "Só os últimos 90 dias" : "Ver todos"}
+          </Link>
+        }
+      >
+        {resolvidos.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nada resolvido nesse período.</p>
+        ) : (
+          <div className="divide-y rounded-lg border px-3">
+            {resolvidos.map((l) => (
+              <LinhaResolvida key={l.id} linha={l} onDividir={() => setDividindo(l)} />
             ))}
           </div>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {transacoes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhuma transação nesse filtro.</p>
-          ) : (
-            transacoes.map((t) => {
-              const classificado = t.rateios.reduce((s, r) => s + r.valorCentavos, 0);
-              const falta = t.valorCentavos - classificado;
-              const sugestao = t.sugestaoCentroCustoId ? centroPorId.get(t.sugestaoCentroCustoId) : undefined;
-              return (
-                <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">{t.descricao}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(t.data).toLocaleDateString("pt-BR")} ·{" "}
-                      <span className={t.tipo === "ENTRADA" ? "text-success" : "text-destructive"}>
-                        {t.tipo === "ENTRADA" ? "+" : "-"}
-                        {centavosParaReais(t.valorCentavos)}
-                      </span>
-                    </p>
-                    {t.rateios.length > 0 && (
-                      <div className="mt-1 flex flex-wrap items-center gap-1">
-                        {t.rateios.map((r) => (
-                          <span
-                            key={r.id}
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              r.negocioId ? "bg-primary/10 text-primary" : "bg-muted text-foreground",
-                            )}
-                          >
-                            {r.negocioId ? `Projeto: ${r.negocioTitulo}` : r.centroCustoNome}
-                            {t.rateios.length > 1 || falta > 0 ? ` · ${centavosParaReais(r.valorCentavos)}` : ""}
-                          </span>
-                        ))}
-                        {falta > 0 && (
-                          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning">
-                            Falta {centavosParaReais(falta)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    {t.status === "NAO_CONCILIADA" && (
-                      <>
-                        {sugestao && t.rateios.length === 0 && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            title="Aplicar o centro de custo sugerido pela descrição"
-                            onClick={() => classificarCentro(t.id, sugestao.id)}
-                          >
-                            <Lightbulb className="mr-1 size-3.5 text-warning" />
-                            {sugestao.nome}
-                          </Button>
-                        )}
-                        <SeletorNegocio negocios={negocios} valorCentavos={t.valorCentavos} onEscolher={(negocioId) => conciliar(t.id, negocioId)} />
-                        <SeletorCentroCusto
-                          centros={centros.filter((c) => c.tipo === (t.tipo === "SAIDA" ? "DESPESA" : "RECEITA"))}
-                          onEscolher={(centroId) => classificarCentro(t.id, centroId)}
-                        />
-                        <Button variant="outline" size="sm" title="Dividir entre projetos e centros de custo" onClick={() => setDividindo(t)}>
-                          <Split className="mr-1 size-3.5" />
-                          Dividir
-                        </Button>
-                        <Button variant="outline" size="icon-sm" title="Ignorar (não é lançamento do CRM)" onClick={() => ignorar(t.id)}>
-                          <X className="size-3.5" />
-                        </Button>
-                      </>
-                    )}
-                    {t.status === "CONCILIADA" && (
-                      <Button variant="outline" size="sm" title="Editar a divisão" onClick={() => setDividindo(t)}>
-                        <Split className="mr-1 size-3.5" />
-                        Editar divisão
-                      </Button>
-                    )}
-                    {(t.status === "CONCILIADA" || t.status === "IGNORADA") && (
-                      <Button variant="outline" size="sm" onClick={() => reabrir(t.id)}>
-                        <Undo2 className="mr-1 size-3.5" />
-                        Reabrir
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </Secao>
 
       {dividindo && (
         <RateioDialog
@@ -278,91 +256,345 @@ export function ConciliacaoTab({
           open
           onOpenChange={(aberto) => !aberto && setDividindo(null)}
           transacao={dividindo}
-          projetos={negocios}
-          centros={centros}
+          projetos={projetos}
+          categorias={categorias}
+          centrosGerais={centrosGerais}
         />
       )}
     </div>
   );
 }
 
-function SeletorNegocio({
-  negocios,
-  valorCentavos,
-  onEscolher,
-}: {
-  negocios: NegocioSeletorVM[];
-  valorCentavos: number;
-  onEscolher: (negocioId: string) => void;
-}) {
-  const [aberto, setAberto] = useState(false);
-  const ordenados = [...negocios].sort((a, b) => {
-    const aBate = a.valorCentavos === valorCentavos ? 0 : 1;
-    const bBate = b.valorCentavos === valorCentavos ? 0 : 1;
-    return aBate - bBate;
-  });
-
-  if (!aberto) {
-    return (
-      <Button size="sm" onClick={() => setAberto(true)} title="Atribuir o lançamento inteiro a um projeto (negócio)">
-        <Check className="mr-1 size-3.5" />
-        Projeto
-      </Button>
-    );
-  }
-
+function Contador({ valor, rotulo, className }: { valor: number; rotulo: string; className?: string }) {
   return (
-    <select
-      autoFocus
-      defaultValue=""
-      onChange={(e) => {
-        if (e.target.value) onEscolher(e.target.value);
-        setAberto(false);
-      }}
-      onBlur={() => setAberto(false)}
-      className="h-8 min-w-56 rounded-md border bg-background px-2 text-xs"
-    >
-      <option value="">Escolha o projeto...</option>
-      {ordenados.map((n) => (
-        <option key={n.id} value={n.id}>
-          {n.valorCentavos === valorCentavos ? "★ " : ""}
-          {n.titulo}
-          {n.contatoNome ? ` — ${n.contatoNome}` : ""} ({centavosParaReais(n.valorCentavos)})
-        </option>
-      ))}
-    </select>
+    <div className="rounded-xl border bg-card px-4 py-3">
+      <p className={cn("text-2xl font-bold tabular-nums", className)}>{valor}</p>
+      <p className="text-xs text-muted-foreground">{rotulo}</p>
+    </div>
   );
 }
 
-function SeletorCentroCusto({ centros, onEscolher }: { centros: CentroCustoVM[]; onEscolher: (centroId: string) => void }) {
-  const [aberto, setAberto] = useState(false);
+function Secao({ titulo, texto, acao, children }: { titulo: string; texto: string; acao?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold">{titulo}</h2>
+          <p className="text-xs text-muted-foreground">{texto}</p>
+        </div>
+        {acao}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
 
-  if (!aberto) {
-    return (
-      <Button variant="outline" size="sm" onClick={() => setAberto(true)} title="Atribuir o lançamento inteiro a um centro de custo">
-        <Tags className="mr-1 size-3.5" />
-        Centro de custo
-      </Button>
-    );
+function CardPar({ linha }: { linha: LinhaPendenteVM }) {
+  const { pending, executar } = useAcao();
+  const [escolhidaId, setEscolhidaId] = useState(linha.candidatos[0].despesa.id);
+  const candidato = linha.candidatos.find((c) => c.despesa.id === escolhidaId) ?? linha.candidatos[0];
+  const d = candidato.despesa;
+
+  return (
+    <div className="rounded-xl border bg-card">
+      <div className="grid gap-3 p-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">Extrato Sicredi, {diaCurto(linha.dia)}</p>
+          <p className="truncate font-medium">{linha.descricao}</p>
+          <Valor centavos={linha.valorCentavos} tipo={linha.tipo} />
+        </div>
+        <ArrowLeftRight className="mx-auto size-4 text-muted-foreground" aria-hidden />
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">
+            Despesa registrada, {diaCurto(d.dia)} ({ROTULO_ORIGEM[d.origem].toLowerCase()})
+          </p>
+          <p className="truncate font-medium">{d.fornecedor}</p>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{d.categoriaNome ?? "Sem categoria"}</span>
+            <span className={cn("rounded-md px-1.5 py-0.5", d.ehProjeto ? "bg-primary/10 font-medium text-primary" : "border bg-muted/50")}>
+              {d.centroNome ?? "Sem centro"}
+            </span>
+          </div>
+          <span className="font-bold tabular-nums">{centavosParaReais(d.valorCentavos)}</span>
+          {linha.candidatos.length > 1 && (
+            <select
+              value={escolhidaId}
+              onChange={(e) => setEscolhidaId(e.target.value)}
+              className="mt-1 block h-8 w-full rounded-md border bg-background px-2 text-xs"
+            >
+              {linha.candidatos.map((c) => (
+                <option key={c.despesa.id} value={c.despesa.id}>
+                  {c.despesa.fornecedor} ({diaCurto(c.despesa.dia)})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/30 px-3 py-2">
+        <span className="text-xs font-medium text-muted-foreground">{candidato.motivo}</span>
+        <div className="flex gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            onClick={() => executar(() => rejeitarParAction(linha.id, d.id), undefined, () => setEscolhidaId(linha.candidatos.find((c) => c.despesa.id !== d.id)?.despesa.id ?? d.id))}
+          >
+            Não é esse
+          </Button>
+          <Button size="sm" disabled={pending} onClick={() => executar(() => confirmarParAction(linha.id, d.id), "Par confirmado.")}>
+            <Check className="size-3.5" />
+            Confirmar par
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChipsRateio({ linha }: { linha: LinhaBase }) {
+  const classificado = linha.rateios.reduce((s, r) => s + r.valorCentavos, 0);
+  const falta = linha.valorCentavos - classificado;
+  if (linha.rateios.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {linha.rateios.map((r) => (
+        <span key={r.id} className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", r.negocioId ? "bg-primary/10 text-primary" : "bg-muted text-foreground")}>
+          {r.negocioId ? `Projeto: ${r.negocioTitulo}` : [r.centroCustoNome, r.centroGeralNome].filter(Boolean).join(" · ")}
+          {linha.rateios.length > 1 || falta > 0 ? ` · ${centavosParaReais(r.valorCentavos)}` : ""}
+        </span>
+      ))}
+      {falta > 0 && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning">Falta {centavosParaReais(falta)}</span>}
+    </div>
+  );
+}
+
+function LinhaSaida({
+  linha,
+  categorias,
+  centrosGerais,
+  projetos,
+  onDividir,
+}: {
+  linha: LinhaPendenteVM;
+  categorias: CategoriaRateioVM[];
+  centrosGerais: CentroGeralVM[];
+  projetos: ProjetoSeletorVM[];
+  onDividir: () => void;
+}) {
+  const { pending, executar } = useAcao();
+  const sugerida = categorias.find((c) => c.id === linha.sugestaoCategoriaId);
+  const [aberto, setAberto] = useState(false);
+  const [fornecedor, setFornecedor] = useState(linha.fornecedorSugerido);
+  const [categoriaId, setCategoriaId] = useState(sugerida?.id ?? "");
+  const [centro, setCentro] = useState(sugerida?.centroGeralPadraoId ? `g:${sugerida.centroGeralPadraoId}` : "");
+  const parcial = linha.rateios.length > 0;
+
+  function escolherCategoria(id: string) {
+    setCategoriaId(id);
+    const padrao = categorias.find((c) => c.id === id)?.centroGeralPadraoId;
+    if (!centro && padrao) setCentro(`g:${padrao}`);
   }
 
   return (
-    <select
-      autoFocus
-      defaultValue=""
-      onChange={(e) => {
-        if (e.target.value) onEscolher(e.target.value);
-        setAberto(false);
-      }}
-      onBlur={() => setAberto(false)}
-      className="h-8 min-w-48 rounded-md border bg-background px-2 text-xs"
-    >
-      <option value="">Escolha o centro de custo...</option>
-      {centros.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.nome}
-        </option>
-      ))}
-    </select>
+    <div className="rounded-xl border bg-card p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{linha.descricao}</p>
+          <p className="text-xs text-muted-foreground">{diaCurto(linha.dia)}</p>
+          <ChipsRateio linha={linha} />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Valor centavos={linha.valorCentavos} tipo={linha.tipo} />
+          {parcial ? (
+            <>
+              <Button variant="outline" size="sm" onClick={onDividir}>
+                <Split className="size-3.5" />
+                Editar divisão
+              </Button>
+              <Button variant="ghost" size="sm" disabled={pending} onClick={() => executar(() => reabrirTransacaoAction(linha.id))}>
+                <Undo2 className="size-3.5" />
+                Desfazer
+              </Button>
+            </>
+          ) : (
+            !aberto && (
+              <>
+                <Button variant="outline" size="sm" disabled={pending} onClick={() => executar(() => ignorarTransacaoAction(linha.id))}>
+                  Ignorar
+                </Button>
+                <Button variant="outline" size="sm" title="Dividir entre projetos e categorias" onClick={onDividir}>
+                  <Split className="size-3.5" />
+                </Button>
+                <Button size="sm" onClick={() => setAberto(true)}>
+                  Classificar
+                </Button>
+              </>
+            )
+          )}
+        </div>
+      </div>
+      {aberto && (
+        <div className="mt-3 grid gap-2 border-t pt-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Fornecedor
+            <Input value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} className="h-9 text-foreground" />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Categoria
+            <select value={categoriaId} onChange={(e) => escolherCategoria(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm text-foreground">
+              <option value="">Escolha...</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Centro de custo
+            <SeletorCentroDespesa valor={centro} onChange={setCentro} centrosGerais={centrosGerais} projetos={projetos} className="text-foreground" />
+          </label>
+          <div className="flex gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => setAberto(false)}>
+              <X className="size-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              disabled={pending}
+              onClick={() =>
+                executar(
+                  () => classificarSaidaAction(linha.id, { fornecedor, categoriaId: categoriaId || null, ...centroDoSeletor(centro) }),
+                  "Saída classificada.",
+                )
+              }
+            >
+              Salvar
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinhaEntrada({
+  linha,
+  centrosGerais,
+  projetos,
+  onDividir,
+}: {
+  linha: LinhaPendenteVM;
+  centrosGerais: CentroGeralVM[];
+  projetos: ProjetoSeletorVM[];
+  onDividir: () => void;
+}) {
+  const { pending, executar } = useAcao();
+  const [destino, setDestino] = useState(linha.sugestaoNegocioId ? `n:${linha.sugestaoNegocioId}` : "");
+  const ordenados = [...projetos].sort((a, b) => Number(b.valorCentavos === linha.valorCentavos) - Number(a.valorCentavos === linha.valorCentavos));
+  const parcial = linha.rateios.length > 0;
+
+  return (
+    <div className="rounded-xl border bg-card p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{linha.descricao}</p>
+          <p className="text-xs text-muted-foreground">{diaCurto(linha.dia)}</p>
+          <ChipsRateio linha={linha} />
+        </div>
+        <Valor centavos={linha.valorCentavos} tipo={linha.tipo} />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {parcial ? (
+          <>
+            <Button variant="outline" size="sm" onClick={onDividir}>
+              <Split className="size-3.5" />
+              Editar divisão
+            </Button>
+            <Button variant="ghost" size="sm" disabled={pending} onClick={() => executar(() => reabrirTransacaoAction(linha.id))}>
+              <Undo2 className="size-3.5" />
+              Desfazer
+            </Button>
+          </>
+        ) : (
+          <>
+            <select value={destino} onChange={(e) => setDestino(e.target.value)} className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm">
+              <option value="">Origem do recebimento...</option>
+              <optgroup label="Negócios">
+                {ordenados.map((n) => (
+                  <option key={n.id} value={`n:${n.id}`}>
+                    {n.valorCentavos === linha.valorCentavos ? "★ " : ""}
+                    {n.titulo}
+                    {n.contatoNome ? ` — ${n.contatoNome}` : ""} ({centavosParaReais(n.valorCentavos)})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Centros gerais">
+                {centrosGerais.map((c) => (
+                  <option key={c.id} value={`g:${c.id}`}>
+                    {c.nome}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <Button variant="outline" size="sm" disabled={pending} onClick={() => executar(() => ignorarTransacaoAction(linha.id))}>
+              Ignorar
+            </Button>
+            <Button variant="outline" size="sm" title="Dividir entre projetos e categorias" onClick={onDividir}>
+              <Split className="size-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              disabled={pending || !destino}
+              onClick={() => executar(() => classificarEntradaAction(linha.id, centroDoSeletor(destino)), "Entrada vinculada.")}
+            >
+              Salvar
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LinhaResolvida({ linha, onDividir }: { linha: LinhaResolvidaVM; onDividir: () => void }) {
+  const { pending, executar } = useAcao();
+  const d = linha.despesa;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+      <div className="min-w-0 flex-1">
+        <p className="truncate">
+          <span className="font-semibold">{diaCurto(linha.dia)}</span> {linha.descricao}
+        </p>
+        {linha.status === "IGNORADA" ? (
+          <p className="text-xs text-muted-foreground">Ignorado</p>
+        ) : d ? (
+          <p className="text-xs text-muted-foreground">
+            {d.fornecedor} · {d.categoriaNome ?? "Sem categoria"} · {d.centroNome ?? "Sem centro"}
+            {d.origem === "EXTRATO" ? " (classificado no extrato)" : ` (despesa por ${ROTULO_ORIGEM[d.origem].toLowerCase()})`}
+          </p>
+        ) : (
+          <ChipsRateio linha={linha} />
+        )}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Valor centavos={linha.valorCentavos} tipo={linha.tipo} className="text-sm" />
+        {linha.status === "CONCILIADA" && !d && (
+          <Button variant="ghost" size="icon-sm" title="Editar a divisão" onClick={onDividir}>
+            <Split className="size-3.5" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          title={d && d.origem !== "EXTRATO" ? "A despesa volta para aguardando conciliação" : "O lançamento volta a ficar pendente"}
+          onClick={() => executar(() => reabrirTransacaoAction(linha.id), d && d.origem !== "EXTRATO" ? "Desfeito — a despesa voltou a aguardar." : "Desfeito.")}
+        >
+          <Undo2 className="size-3.5" />
+          Desfazer
+        </Button>
+      </div>
+    </div>
   );
 }

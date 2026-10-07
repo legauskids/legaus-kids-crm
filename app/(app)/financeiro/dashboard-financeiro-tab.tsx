@@ -86,8 +86,8 @@ export function DashboardFinanceiroTab({ periodo, dados }: { periodo: PeriodoFin
 
       <Kpis
         itens={[
-          { label: "Entradas", valor: atual.entradasCentavos, anterior: anterior.entradasCentavos, icon: ArrowUpCircle, corIndice: 1, href: "/financeiro?aba=conciliacao&filtroTransacao=TODAS" },
-          { label: "Saídas", valor: atual.saidasCentavos, anterior: anterior.saidasCentavos, icon: ArrowDownCircle, corIndice: 5, href: "/financeiro?aba=conciliacao&filtroTransacao=TODAS", inverterCor: true },
+          { label: "Entradas", valor: atual.entradasCentavos, anterior: anterior.entradasCentavos, icon: ArrowUpCircle, corIndice: 1, href: "/financeiro?aba=conciliacao" },
+          { label: "Saídas", valor: atual.saidasCentavos, anterior: anterior.saidasCentavos, icon: ArrowDownCircle, corIndice: 5, href: "/financeiro?aba=conciliacao", inverterCor: true },
           { label: "Resultado", valor: atual.resultadoCentavos, anterior: anterior.resultadoCentavos, icon: Scale, corIndice: 0, destaque: true },
           {
             label: "Margem",
@@ -99,11 +99,11 @@ export function DashboardFinanceiroTab({ periodo, dados }: { periodo: PeriodoFin
           {
             label: "A classificar",
             valor: aClassificarTotal,
-            sub: `${atual.aClassificar.lancamentos} lançamento(s) sem projeto/centro de custo`,
+            sub: `${atual.aClassificar.lancamentos} lançamento(s) sem projeto/categoria`,
             icon: Tags,
             corIndice: 4,
             alerta: aClassificarTotal > 0,
-            href: "/financeiro?aba=conciliacao&filtroTransacao=NAO_CONCILIADA",
+            href: "/financeiro?aba=conciliacao",
           },
         ]}
         rotuloAnterior={periodo.anterior.rotulo}
@@ -115,8 +115,8 @@ export function DashboardFinanceiroTab({ periodo, dados }: { periodo: PeriodoFin
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Centros titulo="Despesas por centro de custo" linhas={atual.despesasPorCentro} total={atual.saidasCentavos} vazio="Nenhuma saída classificada em centro de custo nesse período." cor="bg-destructive/70" />
-        <Centros titulo="Outras receitas por centro de custo" linhas={atual.receitasPorCentro} total={atual.entradasCentavos} vazio="Nenhuma entrada classificada em centro de custo nesse período." cor="bg-success/70" />
+        <Centros titulo="Despesas por categoria" linhas={atual.despesasPorCentro} total={atual.saidasCentavos} vazio="Nenhuma saída classificada em categoria nesse período." cor="bg-destructive/70" />
+        <Centros titulo="Outras receitas por categoria" linhas={atual.receitasPorCentro} total={atual.entradasCentavos} vazio="Nenhuma entrada classificada em categoria nesse período." cor="bg-success/70" />
       </div>
 
       <Projetos projetos={dados.projetos} />
@@ -256,7 +256,7 @@ function Dre({ dados, className }: { dados: Dados["atual"]; className?: string }
     { rotulo: "(-) Custos diretos de projetos", valor: d.custosProjetosCentavos, nivel: "item", sinal: "-" },
     { rotulo: "= Margem de contribuição dos projetos", valor: d.margemContribuicaoCentavos, nivel: "subtotal" },
     { rotulo: "(+) Outras receitas", valor: d.outrasReceitasCentavos, nivel: "item", sinal: "+" },
-    { rotulo: "(-) Despesas (centros de custo)", valor: d.despesasCentrosCentavos, nivel: "item", sinal: "-" },
+    { rotulo: "(-) Despesas (categorias)", valor: d.despesasCentrosCentavos, nivel: "item", sinal: "-" },
     { rotulo: "(+) Entradas a classificar", valor: d.receitasAClassificarCentavos, nivel: "item", sinal: "+", aviso: d.receitasAClassificarCentavos > 0 },
     { rotulo: "(-) Saídas a classificar", valor: d.despesasAClassificarCentavos, nivel: "item", sinal: "-", aviso: d.despesasAClassificarCentavos > 0 },
     { rotulo: "= Resultado do período", valor: dados.resultadoCentavos, nivel: "total" },
@@ -290,7 +290,7 @@ function Dre({ dados, className }: { dados: Dados["atual"]; className?: string }
           </div>
         ))}
         {(d.receitasAClassificarCentavos > 0 || d.despesasAClassificarCentavos > 0) && (
-          <Link href="/financeiro?aba=conciliacao&filtroTransacao=NAO_CONCILIADA" className="block px-2 pt-1 text-xs font-medium text-primary hover:underline">
+          <Link href="/financeiro?aba=conciliacao" className="block px-2 pt-1 text-xs font-medium text-primary hover:underline">
             Classificar lançamentos pendentes →
           </Link>
         )}

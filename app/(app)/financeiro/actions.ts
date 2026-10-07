@@ -5,10 +5,12 @@ import { requireModulo } from "@/lib/auth/guards";
 import { salvarModeloContrato, gerarContrato, atualizarStatusContrato } from "@/lib/server/contratos";
 import {
   importarExtratoOfx,
-  conciliarTransacao,
+  confirmarPar,
+  rejeitarPar,
+  classificarSaida,
+  classificarEntrada,
   ignorarTransacao,
   reabrirTransacao,
-  classificarEmCentroCusto,
   salvarRateio,
   type LinhaRateio,
 } from "@/lib/server/conciliacao-bancaria";
@@ -28,9 +30,9 @@ function revalidateFinanceiro() {
   revalidatePath("/financeiro");
 }
 
-/** Mensagem legível pro toast — nome repetido (unique) vira frase, o resto passa direto. */
-function mensagemDeErro(erro: unknown, padrao: string): string {
-  if (typeof erro === "object" && erro !== null && "code" in erro && erro.code === "P2002") return "Já existe um cadastro com esse nome.";
+/** Mensagem legível pro toast — violação de unique vira frase, o resto passa direto. */
+function mensagemDeErro(erro: unknown, padrao: string, seRepetido = "Já existe um cadastro com esse nome."): string {
+  if (typeof erro === "object" && erro !== null && "code" in erro && erro.code === "P2002") return seRepetido;
   return erro instanceof Error ? erro.message : padrao;
 }
 
@@ -74,7 +76,7 @@ export async function atualizarStatusContratoAction(contratoId: string, status: 
 
 export type AcaoImportarExtratoState = {
   error?: string;
-  success?: { totalNoArquivo: number; novasImportadas: number; duplicadasIgnoradas: number; conciliadasAutomaticamente: number };
+  success?: { totalNoArquivo: number; novasImportadas: number; duplicadasIgnoradas: number; paresProvaveis: number; entradasComSugestao: number };
 };
 
 export async function importarExtratoAction(
@@ -96,39 +98,55 @@ export async function importarExtratoAction(
   }
 }
 
-export async function conciliarTransacaoAction(transacaoId: string, negocioId: string): Promise<void> {
-  const user = await requireModulo("financeiro");
-  await conciliarTransacao(transacaoId, negocioId, user.id);
-  revalidateFinanceiro();
-}
+export type AcaoConciliacaoState = { error?: string; success?: boolean };
 
-export async function ignorarTransacaoAction(transacaoId: string): Promise<void> {
-  const user = await requireModulo("financeiro");
-  await ignorarTransacao(transacaoId, user.id);
-  revalidateFinanceiro();
-}
-
-export async function reabrirTransacaoAction(transacaoId: string): Promise<void> {
-  await requireModulo("financeiro");
-  await reabrirTransacao(transacaoId);
-  revalidateFinanceiro();
-}
-
-export type AcaoRateioState = { error?: string; success?: boolean };
-
-/** Classifica o lançamento inteiro num centro de custo (atalho do "100%"). */
-export async function classificarCentroCustoAction(transacaoId: string, centroCustoId: string): Promise<AcaoRateioState> {
+async function acaoConciliacao(executar: (usuarioId: string) => Promise<unknown>, padrao: string): Promise<AcaoConciliacaoState> {
   const user = await requireModulo("financeiro");
   try {
-    await classificarEmCentroCusto(transacaoId, centroCustoId, user.id);
+    await executar(user.id);
   } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui classificar o lançamento." };
+    return { error: mensagemDeErro(erro, padrao, "Esse lançamento já tem uma despesa vinculada — atualize a tela.") };
   }
   revalidateFinanceiro();
   return { success: true };
 }
 
-/** Divide o lançamento entre projetos e centros de custo (valores parciais). */
+/** "Confirmar par": vincula a despesa já registrada à saída do extrato. */
+export async function confirmarParAction(transacaoId: string, despesaId: string): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao((usuarioId) => confirmarPar(transacaoId, despesaId, usuarioId), "Não consegui confirmar o par.");
+}
+
+/** "Não é esse": descarta a despesa como par dessa linha. */
+export async function rejeitarParAction(transacaoId: string, despesaId: string): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao((usuarioId) => rejeitarPar(transacaoId, despesaId, usuarioId), "Não consegui descartar o par.");
+}
+
+export async function classificarSaidaAction(
+  transacaoId: string,
+  dados: { fornecedor: string; categoriaId: string | null; centroGeralId: string | null; negocioId: string | null },
+): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao((usuarioId) => classificarSaida(transacaoId, dados, usuarioId), "Não consegui classificar o lançamento.");
+}
+
+export async function classificarEntradaAction(
+  transacaoId: string,
+  destino: { negocioId: string | null; centroGeralId: string | null },
+): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao((usuarioId) => classificarEntrada(transacaoId, destino, usuarioId), "Não consegui vincular a entrada.");
+}
+
+export async function ignorarTransacaoAction(transacaoId: string): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao((usuarioId) => ignorarTransacao(transacaoId, usuarioId), "Não consegui ignorar o lançamento.");
+}
+
+/** "Desfazer": a linha volta a pendente e a despesa vinculada volta a aguardar. */
+export async function reabrirTransacaoAction(transacaoId: string): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao(() => reabrirTransacao(transacaoId), "Não consegui desfazer.");
+}
+
+export type AcaoRateioState = { error?: string; success?: boolean };
+
+/** Divide o lançamento entre projetos e categorias (valores parciais). */
 export async function salvarRateioAction(transacaoId: string, linhas: LinhaRateio[]): Promise<AcaoRateioState> {
   const user = await requireModulo("financeiro");
   try {

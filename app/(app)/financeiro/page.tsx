@@ -3,7 +3,8 @@ import { cn } from "@/lib/utils";
 import { requireModulo } from "@/lib/auth/guards";
 import { getPainelFinanceiro } from "@/lib/server/financeiro";
 import { getModeloContratoAtivo, listarContratos, listarNegociosParaSeletor, CAMPOS_MODELO_CONTRATO } from "@/lib/server/contratos";
-import { listImportacoes, listTransacoes, listNegociosParaConciliacao, type FiltroTransacoes } from "@/lib/server/conciliacao-bancaria";
+import { listImportacoes, listNegociosParaConciliacao, getPainelConciliacao } from "@/lib/server/conciliacao-bancaria";
+import { candidatosDaLinha, fornecedorDaDescricao, motivoDoPar, negocioSugeridoParaEntrada } from "@/lib/utils/pares-despesa";
 import {
   listContatosParaNotaFiscal,
   listNegociosParaNotaFiscal,
@@ -24,7 +25,7 @@ import { listSimulacoes } from "@/lib/server/simulacao-financeira";
 import { listCentrosCusto, listCentrosGerais } from "@/lib/server/centros-custo";
 import { listDespesas, listNegociosParaDespesa, resumoDespesas } from "@/lib/server/despesas";
 import { filtroDaUrl, type FiltroDespesas } from "@/lib/utils/despesas";
-import { diaBrasilia } from "@/lib/utils/brasilia";
+import { diaBrasilia, inicioDoDiaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { DespesasTab } from "@/app/(app)/financeiro/despesas-tab";
 import { getDashboardFinanceiro, resolverPeriodoFinanceiro } from "@/lib/server/resultado-financeiro";
 import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
@@ -46,15 +47,11 @@ const ABAS = [
 export default async function FinanceiroPage({
   searchParams,
 }: {
-  searchParams: Promise<{ aba?: string; filtroTransacao?: string; filtroDespesa?: string; mes?: string; ano?: string }>;
+  searchParams: Promise<{ aba?: string; resolvidos?: string; filtroDespesa?: string; mes?: string; ano?: string }>;
 }) {
   await requireModulo("financeiro");
-  const { aba, filtroTransacao, filtroDespesa, mes, ano } = await searchParams;
+  const { aba, resolvidos, filtroDespesa, mes, ano } = await searchParams;
   const abaAtual = ABAS.find((a) => a.id === aba)?.id ?? "visao-geral";
-  const filtroAtual: FiltroTransacoes =
-    filtroTransacao === "CONCILIADA" || filtroTransacao === "IGNORADA" || filtroTransacao === "TODAS"
-      ? filtroTransacao
-      : "NAO_CONCILIADA";
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -81,7 +78,7 @@ export default async function FinanceiroPage({
 
       {abaAtual === "dashboard" && <DashboardFinanceiroTabData mes={mes} ano={ano} />}
       {abaAtual === "despesas" && <DespesasTabData filtro={filtroDaUrl(filtroDespesa)} />}
-      {abaAtual === "conciliacao" && <ConciliacaoTabData filtroAtual={filtroAtual} />}
+      {abaAtual === "conciliacao" && <ConciliacaoTabData resolvidosTodos={resolvidos === "todos"} />}
       {abaAtual === "centros-custo" && <CentrosCustoTabData />}
       {abaAtual === "contratos" && <ContratosTabData />}
       {abaAtual === "notas-fiscais" && <NotasFiscaisTabData />}
@@ -215,37 +212,69 @@ async function ContratosTabData() {
   );
 }
 
-async function ConciliacaoTabData({ filtroAtual }: { filtroAtual: FiltroTransacoes }) {
-  const [transacoes, importacoes, negocios, centros] = await Promise.all([
-    listTransacoes(filtroAtual),
+async function ConciliacaoTabData({ resolvidosTodos }: { resolvidosTodos: boolean }) {
+  const resolvidosDesde = resolvidosTodos ? null : inicioDoDiaBrasilia(somarDias(diaBrasilia(new Date()), -90));
+  const [painel, importacoes, negocios, categorias, centrosGerais] = await Promise.all([
+    getPainelConciliacao(resolvidosDesde),
     listImportacoes(),
     listNegociosParaConciliacao(),
     listCentrosCusto(),
+    listCentrosGerais(),
   ]);
+  const projetos = negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }));
+
+  type DespesaDoPainel = (typeof painel.despesas)[number];
+  const despesaVM = (d: Omit<DespesaDoPainel, "dia">) => ({
+    id: d.id,
+    dia: diaBrasilia(d.data),
+    valorCentavos: d.valorCentavos,
+    fornecedor: d.fornecedor,
+    origem: d.origem,
+    categoriaNome: d.categoria?.nome ?? null,
+    centroNome: d.negocio?.titulo ?? d.centroGeral?.nome ?? null,
+    ehProjeto: Boolean(d.negocioId),
+  });
+  type LinhaDoPainel = (typeof painel.pendentes)[number];
+  const linhaVM = (t: LinhaDoPainel) => ({
+    id: t.id,
+    dia: diaBrasilia(t.data),
+    descricao: t.descricao,
+    valorCentavos: t.valorCentavos,
+    tipo: t.tipo,
+    rateios: t.rateios.map((r) => ({
+      id: r.id,
+      valorCentavos: r.valorCentavos,
+      negocioId: r.negocioId,
+      negocioTitulo: r.negocio?.titulo ?? null,
+      centroCustoId: r.centroCustoId,
+      centroCustoNome: r.centroCusto?.nome ?? null,
+      centroGeralId: r.centroGeralId,
+      centroGeralNome: r.centroGeral?.nome ?? null,
+    })),
+  });
 
   return (
     <ConciliacaoTab
-      filtroAtual={filtroAtual}
-      centros={centros.map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo }))}
-      transacoes={transacoes.map((t) => ({
-        id: t.id,
-        data: t.data.toISOString(),
-        descricao: t.descricao,
-        valorCentavos: t.valorCentavos,
-        tipo: t.tipo,
-        status: t.status,
-        negocioId: t.negocioId,
-        negocioTitulo: t.negocio?.titulo ?? null,
-        contatoNome: t.negocio?.contato?.nome ?? null,
-        rateios: t.rateios.map((r) => ({
-          id: r.id,
-          valorCentavos: r.valorCentavos,
-          negocioId: r.negocioId,
-          negocioTitulo: r.negocio?.titulo ?? null,
-          centroCustoId: r.centroCustoId,
-          centroCustoNome: r.centroCusto?.nome ?? null,
-        })),
-        sugestaoCentroCustoId: t.status === "NAO_CONCILIADA" ? (sugerirCentroCusto(t.descricao, t.tipo, centros)?.id ?? null) : null,
+      resolvidosTodos={resolvidosTodos}
+      categorias={categorias.map((c) => ({ id: c.id, nome: c.nome, tipo: c.tipo, centroGeralPadraoId: c.centroGeralPadraoId }))}
+      centrosGerais={centrosGerais.map((g) => ({ id: g.id, nome: g.nome }))}
+      projetos={projetos}
+      pendentes={painel.pendentes.map((t) => {
+        const linha = linhaVM(t);
+        const rejeitadas = new Set(t.paresRejeitados.map((p) => p.despesaId));
+        const candidatos = candidatosDaLinha(linha, painel.despesas, rejeitadas);
+        return {
+          ...linha,
+          candidatos: candidatos.map((c) => ({ despesa: despesaVM(c.despesa), motivo: motivoDoPar(c, candidatos.length) })),
+          sugestaoCategoriaId: sugerirCentroCusto(t.descricao, t.tipo, categorias)?.id ?? null,
+          sugestaoNegocioId: negocioSugeridoParaEntrada(linha, projetos)?.id ?? null,
+          fornecedorSugerido: fornecedorDaDescricao(t.descricao),
+        };
+      })}
+      resolvidos={painel.resolvidos.map((t) => ({
+        ...linhaVM(t),
+        status: t.status === "IGNORADA" ? ("IGNORADA" as const) : ("CONCILIADA" as const),
+        despesa: t.despesa ? despesaVM(t.despesa) : null,
       }))}
       importacoes={importacoes.map((i) => ({
         id: i.id,
@@ -255,7 +284,6 @@ async function ConciliacaoTabData({ filtroAtual }: { filtroAtual: FiltroTransaco
         quantidadeTransacoes: i.quantidadeTransacoes,
         naoConciliadas: i._count.transacoes,
       }))}
-      negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }))}
     />
   );
 }

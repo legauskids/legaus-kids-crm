@@ -238,7 +238,7 @@ export function PainelNumeros({ resumo, fotoDoEncerramento }: { resumo: ResumoRe
             tom={financeiro.aClassificarQtd > 0 ? "alerta" : undefined}
             sub={
               financeiro.aClassificarQtd > 0
-                ? `${centavosParaReais(financeiro.aClassificarCentavos)} sem projeto ou centro de custo no período`
+                ? `${centavosParaReais(financeiro.aClassificarCentavos)} sem projeto ou categoria no período`
                 : "tudo classificado no período"
             }
             href={links.conciliacao}

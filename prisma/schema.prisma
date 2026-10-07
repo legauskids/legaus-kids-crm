@@ -112,6 +112,7 @@ model User {
   opinioesPauta         OpiniaoPauta[]
   compromissos          CompromissoUsuario[]
   despesasRegistradas   Despesa[]                   @relation("RegistradorDespesa")
+  paresRejeitados       ParRejeitado[]              @relation("RejeitadorPar")
 }
 
 enum OrigemComando {
@@ -817,6 +818,7 @@ model TransacaoBancaria {
   conciliadaEm    DateTime?
   rateios         RateioTransacao[]
   despesa         Despesa?
+  paresRejeitados ParRejeitado[]
 
   @@index([importacaoId])
   @@index([negocioId])
@@ -862,6 +864,7 @@ model CentroGeral {
 
   despesas         Despesa[]
   categoriasPadrao CentroCusto[]
+  rateios          RateioTransacao[]
 }
 
 enum StatusDespesa {
@@ -918,6 +921,7 @@ model Despesa {
   conciliadaEm    DateTime?
   criadoEm        DateTime           @default(now())
   atualizadoEm    DateTime           @updatedAt
+  paresRejeitados ParRejeitado[]
 
   @@index([status, data])
   @@index([valorCentavos])
@@ -925,10 +929,12 @@ model Despesa {
 }
 
 // Pedaço (total ou parcial) de um lançamento do extrato atribuído a UM
-// destino: um projeto (negocioId) OU um centro de custo (centroCustoId) —
+// destino: um projeto (negocioId) OU uma categoria (centroCustoId) —
 // exatamente um dos dois (validado em lib/server/conciliacao-bancaria.ts).
-// A soma dos rateios de uma transação nunca passa do valor dela; o que falta
-// aparece como "a classificar" no dashboard financeiro. Pedido de 2026-09-25.
+// centroGeralId é opcional e só acompanha a categoria (Combustível em
+// Veículos). A soma dos rateios de uma transação nunca passa do valor dela;
+// o que falta aparece como "a classificar" no dashboard financeiro. Pedido
+// de 2026-09-25; centro geral de 2026-10-07.
 model RateioTransacao {
   id            String            @id @default(cuid())
   transacaoId   String
@@ -938,12 +944,29 @@ model RateioTransacao {
   negocio       Negocio?          @relation(fields: [negocioId], references: [id])
   centroCustoId String?
   centroCusto   CentroCusto?      @relation(fields: [centroCustoId], references: [id])
+  centroGeralId String?
+  centroGeral   CentroGeral?      @relation(fields: [centroGeralId], references: [id])
   observacao    String?
   criadoEm      DateTime          @default(now())
 
   @@index([transacaoId])
   @@index([negocioId])
   @@index([centroCustoId])
+  @@index([centroGeralId])
+}
+
+// "Não é esse": a despesa descartada como par de uma linha do extrato não
+// volta a ser sugerida pra ela (continua podendo casar com outra linha).
+model ParRejeitado {
+  transacaoId    String
+  transacao      TransacaoBancaria @relation(fields: [transacaoId], references: [id], onDelete: Cascade)
+  despesaId      String
+  despesa        Despesa           @relation(fields: [despesaId], references: [id], onDelete: Cascade)
+  rejeitadoPorId String
+  rejeitadoPor   User              @relation("RejeitadorPar", fields: [rejeitadoPorId], references: [id])
+  criadoEm       DateTime          @default(now())
+
+  @@id([transacaoId, despesaId])
 }
 
 // Lançamento hipotético de fluxo de caixa ("e se eu recebesse X e pagasse
