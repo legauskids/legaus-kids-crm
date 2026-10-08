@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
 import { ROTULO_ORIGEM, ROTULO_STATUS, type FiltroDespesas, type OrigemDespesa, type StatusDespesa } from "@/lib/utils/despesas";
-import { Check, Landmark, MessageSquare, Mic, Paperclip, PenLine, Pencil, Plus, Receipt, X } from "lucide-react";
+import { BellRing, Check, Landmark, MessageSquare, Mic, Paperclip, PenLine, Pencil, Plus, Receipt, X } from "lucide-react";
 import { confirmarDespesaAction, excluirDespesaAction } from "@/app/(app)/financeiro/actions";
 import {
   DespesaDialog,
@@ -46,6 +46,7 @@ const ICONE_ORIGEM: Record<OrigemDespesa, typeof Mic> = {
   TEXTO: MessageSquare,
   MANUAL: PenLine,
   EXTRATO: Landmark,
+  PUSH: BellRing,
 };
 
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];

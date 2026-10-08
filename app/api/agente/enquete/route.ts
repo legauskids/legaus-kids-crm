@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireApiUser } from "@/lib/auth/api-token";
+import { agenteLigado } from "@/lib/utils/agente-canal";
 import { responderEnquete } from "@/lib/server/despesa-agente";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
 
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
   }
 
   const telefone = parsed.data.telefone.replace(/\D/g, "");
+  if (!agenteLigado(usuario.canaisAgente, "whatsapp")) return NextResponse.json({ ignorado: true });
   const r = await responderEnquete({ identificador: telefone, ref: parsed.data.ref, opcao: parsed.data.opcao });
   if (!r) return NextResponse.json({ ignorado: true });
 

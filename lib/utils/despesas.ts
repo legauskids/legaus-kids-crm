@@ -3,7 +3,7 @@
 
 import { diaBrasilia } from "./brasilia";
 
-export type OrigemDespesa = "AUDIO" | "COMPROVANTE" | "TEXTO" | "MANUAL" | "EXTRATO";
+export type OrigemDespesa = "AUDIO" | "COMPROVANTE" | "TEXTO" | "MANUAL" | "EXTRATO" | "PUSH";
 export type StatusDespesa = "A_CONFIRMAR" | "AGUARDANDO_CONCILIACAO" | "CONCILIADA";
 export type FiltroDespesas = "TODAS" | "AGUARDANDO" | "CONCILIADAS";
 
@@ -13,6 +13,7 @@ export const ROTULO_ORIGEM: Record<OrigemDespesa, string> = {
   TEXTO: "Texto",
   MANUAL: "Manual",
   EXTRATO: "Extrato",
+  PUSH: "Push do banco",
 };
 
 export const ROTULO_STATUS: Record<StatusDespesa, string> = {

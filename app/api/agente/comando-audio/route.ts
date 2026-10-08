@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiUser } from "@/lib/auth/api-token";
+import { agenteLigado } from "@/lib/utils/agente-canal";
 import { transcreverAudio } from "@/lib/server/transcricao";
 import { processarComandoAgente } from "@/lib/server/agente";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
   }
 
   const telefone = parsed.data.telefone.replace(/\D/g, "");
+  if (!agenteLigado(usuario.canaisAgente, "whatsapp")) return NextResponse.json({ ignorado: true });
   const audio = Buffer.from(parsed.data.audioBase64, "base64");
 
   try {

@@ -14,24 +14,30 @@ export function idsAutorizados(lista: string | undefined | null): Set<string> {
 
 type UsuarioTelegram = { id: number; username?: string; first_name?: string };
 type ChatTelegram = { id: number; type: string };
+type ArquivoBruto = { file_id: string; file_size?: number; mime_type?: string; file_name?: string };
+type TecladoTelegram = { inline_keyboard?: { text: string; callback_data?: string }[][] };
 type MensagemTelegram = {
   message_id: number;
   from?: UsuarioTelegram;
   chat: ChatTelegram;
   text?: string;
   caption?: string;
-  voice?: unknown;
-  audio?: unknown;
-  photo?: unknown[];
-  document?: { mime_type?: string; file_name?: string };
+  voice?: ArquivoBruto;
+  audio?: ArquivoBruto;
+  photo?: ArquivoBruto[];
+  document?: ArquivoBruto;
+  reply_markup?: TecladoTelegram;
 };
 export type UpdateTelegram = {
   update_id: number;
   message?: MensagemTelegram;
-  callback_query?: { id: string; from: UsuarioTelegram; message?: { chat: ChatTelegram }; data?: string };
+  callback_query?: { id: string; from: UsuarioTelegram; message?: { message_id: number; chat: ChatTelegram; reply_markup?: TecladoTelegram }; data?: string };
 };
 
 export type TipoMensagemTelegram = "texto" | "audio" | "foto" | "documento" | "botao" | "outro";
+
+/** Arquivo que veio junto (áudio, a maior versão da foto, documento) — baixado pelo file_id. */
+export type ArquivoTelegram = { fileId: string; mime: string | null; nome: string | null; tamanho: number | null };
 
 /** O que importa de um update: quem mandou, de onde e o quê. */
 export type UpdateLido = {
@@ -44,7 +50,17 @@ export type UpdateLido = {
   tipo: TipoMensagemTelegram;
   texto: string | null;
   callbackId: string | null;
+  /** Mensagem do bot onde o botão foi tocado (pra tirar o teclado dela) ou a mensagem recebida. */
+  mensagemId: number | null;
+  /** Texto do botão tocado, pro registro da conversa. */
+  botaoTexto: string | null;
+  arquivo: ArquivoTelegram | null;
 };
+
+function arquivo(a: ArquivoBruto | undefined, mimePadrao: string | null = null): ArquivoTelegram | null {
+  if (!a?.file_id) return null;
+  return { fileId: a.file_id, mime: a.mime_type ?? mimePadrao, nome: a.file_name ?? null, tamanho: a.file_size ?? null };
+}
 
 export function lerUpdate(bruto: unknown): UpdateLido | null {
   const update = bruto as UpdateTelegram | null;
@@ -53,6 +69,7 @@ export function lerUpdate(bruto: unknown): UpdateLido | null {
   if (update.callback_query) {
     const cb = update.callback_query;
     const chat = cb.message?.chat;
+    const botao = cb.message?.reply_markup?.inline_keyboard?.flat().find((b) => b.callback_data === cb.data);
     return {
       updateId: update.update_id,
       fromId: String(cb.from.id),
@@ -63,6 +80,9 @@ export function lerUpdate(bruto: unknown): UpdateLido | null {
       tipo: "botao",
       texto: cb.data ?? null,
       callbackId: cb.id,
+      mensagemId: cb.message?.message_id ?? null,
+      botaoTexto: botao?.text ?? null,
+      arquivo: null,
     };
   }
 
@@ -79,5 +99,9 @@ export function lerUpdate(bruto: unknown): UpdateLido | null {
     tipo,
     texto: m.text ?? m.caption ?? null,
     callbackId: null,
+    mensagemId: m.message_id,
+    botaoTexto: null,
+    // Foto vem em vários tamanhos, do menor pro maior: a última é a original.
+    arquivo: arquivo(m.voice, "audio/ogg") ?? arquivo(m.audio, "audio/mpeg") ?? arquivo(m.photo?.at(-1), "image/jpeg") ?? arquivo(m.document),
   };
 }

@@ -22,6 +22,27 @@ type Tx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction
  * sobrepor um já importado) e grava o resto como pendente de conciliação.
  * Devolve quantas linhas novas já têm sugestão esperando confirmação.
  */
+/**
+ * Extrato .ofx mandado pelo WhatsApp ou pelo Telegram: importa e devolve o
+ * resumo pra mensagem. Não passa pela IA de propósito — importar é
+ * determinístico (parse + pares por valor exato), e nada é conciliado aqui:
+ * os pares e sugestões esperam confirmação na tela.
+ */
+export async function importarExtratoDaMensagem(input: { nomeArquivo: string; bytes: Buffer; usuarioId: string }): Promise<string> {
+  try {
+    const resultado = await importarExtratoOfx({ nomeArquivo: input.nomeArquivo, bytes: input.bytes, importadoPorId: input.usuarioId });
+    return (
+      `📄 Extrato *${input.nomeArquivo}* importado: *${resultado.novasImportadas}* transação(ões) nova(s)` +
+      (resultado.duplicadasIgnoradas > 0 ? ` (${resultado.duplicadasIgnoradas} já existiam, ignoradas)` : "") +
+      `.\n\n🔗 *${resultado.paresProvaveis}* saída(s) com despesa registrada pra confirmar o par` +
+      `\n💰 *${resultado.entradasComSugestao}* entrada(s) com negócio sugerido` +
+      `\n\nConfirme em Financeiro → Conciliação bancária — nada é conciliado sem confirmação.`
+    );
+  } catch (erro) {
+    return erro instanceof Error ? erro.message : "Falha ao importar o extrato.";
+  }
+}
+
 export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Buffer; importadoPorId: string }) {
   const conteudo = decodificarOfx(input.bytes);
   const extrato = parseOfx(conteudo);

@@ -92,6 +92,10 @@ model User {
   // lib/server/telegram.ts). Só responde se também estiver em
   // TELEGRAM_ALLOWED_IDS.
   telegramId   String?  @unique
+  // Agente por canal: { "whatsapp": { "comandos": false } } desliga os
+  // comandos internos daquele canal pra esse usuário sem mexer no
+  // atendimento. Chave ausente = ligado.
+  canaisAgente Json     @default("{}")
   createdAt    DateTime @default(now())
 
   conversasAtendidas    Conversa[]                  @relation("AtendenteConversa")
@@ -151,6 +155,9 @@ model ComandoAgente {
   // ID da mensagem no canal ("tg:<update_id>") — o mesmo update nunca é
   // processado duas vezes, mesmo que o Telegram reenvie.
   externalId          String?       @unique
+  // O que o agente executou (ferramenta, entrada resumida, ok/erro) — o
+  // registro de auditoria, que só administrador vê.
+  acoes               Json?
   // Soma de todos os turnos dessa chamada (um comando pode levar até 8
   // turnos de tool-calling — cada turno reenvia o histórico inteiro pra
   // Anthropic, então input cresce a cada turno). Existe pra dar visibilidade
@@ -894,6 +901,8 @@ enum OrigemDespesa {
   TEXTO
   MANUAL
   EXTRATO
+  // Notificação do app do Sicredi encaminhada pelo MacroDroid.
+  PUSH
 }
 
 // Despesa registrada na hora do gasto (áudio, comprovante, texto no WhatsApp

@@ -9,6 +9,11 @@ import {
   OPCAO_CONFIRMAR,
   OPCAO_DESCARTAR,
   OPCAO_NEGOCIO,
+  botoesDaDespesa,
+  botoesDeCategorias,
+  botoesDeCentros,
+  botoesDeParecida,
+  botoesDeRegistro,
   canalDoIdentificador,
   enqueteDaDespesa,
   mensagemDeConfirmacao,
@@ -22,6 +27,7 @@ import {
   type Enquete,
   type ExtracaoDespesa,
 } from "@/lib/utils/despesa-agente";
+import type { Botoes, PedidoBotao } from "@/lib/utils/agente-canal";
 
 // Agente financeiro do WhatsApp (pedido de 2026-10-07): a parte que mexe no
 // banco. As regras (o que é "dito", data falada, registrar direto ou pedir
@@ -30,8 +36,11 @@ import {
 /** Rascunho esperando confirmação vale por 30 minutos; depois disso só pela tela. */
 const JANELA_RASCUNHO_MS = 30 * 60 * 1000;
 
-/** Texto pro usuário + a enquete que vai logo abaixo dele no WhatsApp (só quando há rascunho esperando). */
-export type RespostaDespesa = { mensagem: string; enquete?: Enquete };
+/**
+ * Texto pro usuário + as escolhas que vão com ele: enquete no WhatsApp,
+ * botões no Telegram (o adaptador de cada canal só desenha).
+ */
+export type RespostaDespesa = { mensagem: string; enquete?: Enquete; botoes?: Botoes };
 
 export async function carregarCadastrosDespesa() {
   const [categorias, centrosGerais, negocios] = await Promise.all([
@@ -117,14 +126,40 @@ export async function registrarDespesaDaMensagem(input: {
 
   const canal = canalDoIdentificador(input.identificador);
   if (registrarDireto) {
-    return { mensagem: mensagemDeRegistro(montada, hoje), despesaId: despesa.id, registradaDireto: true };
+    return {
+      mensagem: mensagemDeRegistro(montada, hoje),
+      botoes: canal === "telegram" ? botoesDeRegistro(despesa.id) : undefined,
+      despesaId: despesa.id,
+      registradaDireto: true,
+    };
+  }
+  const diaParecida = parecida ? diaBrasilia(parecida.data).split("-").reverse().slice(0, 2).join("/") : "";
+  if (parecida && canal === "telegram") {
+    // No Telegram a pergunta vem na frente, com "é a mesma, juntar" / "é outra".
+    return {
+      mensagem: `⚠️ Parece a mesma despesa já registrada: *${reais(parecida.valorCentavos)}* — ${parecida.fornecedor} (${diaParecida}). É o mesmo gasto?\n\n${mensagemDeConfirmacao(montada, hoje, "A nova:", "crm").split("\n\n")[0]}`,
+      botoes: botoesDeParecida(despesa.id, parecida.id),
+      despesaId: despesa.id,
+      registradaDireto: false,
+    };
   }
   const aviso = parecida
-    ? `⚠️ Parece a mesma despesa já registrada: *${reais(parecida.valorCentavos)}* — ${parecida.fornecedor} (${diaBrasilia(parecida.data).split("-").reverse().slice(0, 2).join("/")}). Se for, ${canal === "whatsapp" ? "toque em *Descartar*" : "responda *descartar*"}.\n\n`
+    ? `⚠️ Parece a mesma despesa já registrada: *${reais(parecida.valorCentavos)}* — ${parecida.fornecedor} (${diaParecida}). Se for, ${canal === "whatsapp" ? "toque em *Descartar*" : "responda *descartar*"}.\n\n`
     : "";
   return {
     mensagem: aviso + mensagemDeConfirmacao(montada, hoje, undefined, canal),
     enquete: canal === "whatsapp" ? enqueteDaDespesa({ ...despesa, ehProjeto: montada.nomes.centroEhProjeto }) : undefined,
+    botoes:
+      canal === "telegram"
+        ? botoesDaDespesa({
+            id: despesa.id,
+            ehProjeto: montada.nomes.centroEhProjeto,
+            categoria: montada.nomes.categoria,
+            categoriaDeduzida: !montada.categoriaDeclarada,
+            centro: montada.nomes.centro,
+            centroDeduzido: !montada.centroDeclarado,
+          })
+        : undefined,
     despesaId: despesa.id,
     registradaDireto: false,
   };
@@ -204,11 +239,14 @@ async function juntarNoRascunho(
 }
 
 function jaEstaAssim(identificador: string): RespostaDespesa {
+  const canal = canalDoIdentificador(identificador);
   return {
     mensagem:
-      canalDoIdentificador(identificador) === "whatsapp"
+      canal === "whatsapp"
         ? "Já está assim 👍 Confirme na enquete acima ou responda *sim*."
-        : "Já está assim 👍 Responda *sim* pra confirmar.",
+        : canal === "telegram"
+          ? "Já está assim 👍 Toque em *Confirmar* acima ou responda *sim*."
+          : "Já está assim 👍 Responda *sim* pra confirmar.",
   };
 }
 
@@ -233,13 +271,35 @@ async function resumoParaMensagem(id: string) {
   };
 }
 
-/** Resumo de um rascunho + a enquete (no WhatsApp). */
-async function pedirConfirmacao(id: string, identificador: string, intro?: string): Promise<RespostaDespesa> {
+/** O que a pessoa disse (ou escolheu no botão) e o que foi deduzido, pelo log da despesa. */
+function declarados(extracao: Prisma.JsonValue | null) {
+  const log = (extracao ?? {}) as Prisma.JsonObject;
+  const decisao = (log.decisao ?? {}) as Prisma.JsonObject;
+  return {
+    categoriaDeclarada: Boolean(log.categoriaEscolhida ?? decisao.categoriaDeclarada),
+    centroDeclarado: Boolean(log.centroDeclarado ?? decisao.centroDeclarado),
+  };
+}
+
+/** Resumo de um rascunho + a enquete (WhatsApp) ou os botões (Telegram). */
+export async function pedirConfirmacao(id: string, identificador: string, intro?: string): Promise<RespostaDespesa> {
   const r = await resumoParaMensagem(id);
   const canal = canalDoIdentificador(identificador);
+  const ditos = declarados(r.despesa.extracao);
   return {
     mensagem: mensagemDeConfirmacao(r, diaBrasilia(new Date()), intro, canal),
     enquete: canal === "whatsapp" ? enqueteDaDespesa({ ...r.despesa, ehProjeto: r.nomes.centroEhProjeto }) : undefined,
+    botoes:
+      canal === "telegram"
+        ? botoesDaDespesa({
+            id,
+            ehProjeto: r.nomes.centroEhProjeto,
+            categoria: r.nomes.categoria,
+            categoriaDeduzida: !ditos.categoriaDeclarada,
+            centro: r.nomes.centro,
+            centroDeduzido: !ditos.centroDeclarado,
+          })
+        : undefined,
   };
 }
 
@@ -259,9 +319,11 @@ export async function confirmarRascunho(id: string, identificador: string): Prom
   await confirmarDespesa(id);
   const registrado = mensagemDeRegistro(resumo, hoje);
   const proximo = await buscarRascunhoAtivo(identificador);
-  if (!proximo) return { mensagem: registrado };
+  if (!proximo) {
+    return { mensagem: registrado, botoes: canalDoIdentificador(identificador) === "telegram" ? botoesDeRegistro(id) : undefined };
+  }
   const pedido = await pedirConfirmacao(proximo.id, identificador, "Tem mais uma esperando:");
-  return { mensagem: `${registrado}\n\n${pedido.mensagem}`, enquete: pedido.enquete };
+  return { mensagem: `${registrado}\n\n${pedido.mensagem}`, enquete: pedido.enquete, botoes: pedido.botoes };
 }
 
 export async function descartarRascunho(id: string): Promise<RespostaDespesa> {
@@ -395,5 +457,168 @@ export async function corrigirDespesaDaConversa(input: { identificador: string; 
     const pedido = await pedirConfirmacao(alvo.id, input.identificador, "Corrigi, confere?");
     return { mensagem: aviso + pedido.mensagem, enquete: pedido.enquete };
   }
-  return { mensagem: aviso + mensagemDeRegistro(await resumoParaMensagem(alvo.id), hoje, "✏️ Corrigido") };
+  return {
+    mensagem: aviso + mensagemDeRegistro(await resumoParaMensagem(alvo.id), hoje, "✏️ Corrigido"),
+    botoes: canalDoIdentificador(input.identificador) === "telegram" ? botoesDeRegistro(alvo.id) : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Botões (Telegram, pedido de 2026-10-07). Cada toque chega aqui já lido
+// (lib/utils/agente-canal.ts, lerBotao) e só vale pra despesa da mesma
+// conversa. A mesma regra do texto: rascunho mostra o resumo de novo depois
+// de mudar; despesa registrada mostra "Corrigido" com o Desfazer.
+// ---------------------------------------------------------------------------
+
+function jaConciliada(): RespostaDespesa {
+  return { mensagem: "Essa despesa já foi conciliada com o extrato — pra mudar, desfaça a conciliação em Financeiro → Conciliação bancária." };
+}
+
+/** Renova a janela de 30 min do rascunho, pra resposta por texto/áudio cair nele. */
+function renovarRascunho(id: string) {
+  return prisma.despesa.update({ where: { id }, data: { atualizadoEm: new Date() } });
+}
+
+async function respostaDepoisDeMudar(id: string, identificador: string, intro: string): Promise<RespostaDespesa> {
+  const { status } = await prisma.despesa.findUniqueOrThrow({ where: { id }, select: { status: true } });
+  if (status === "A_CONFIRMAR") return pedirConfirmacao(id, identificador, intro);
+  return {
+    mensagem: mensagemDeRegistro(await resumoParaMensagem(id), diaBrasilia(new Date()), "✏️ Corrigido"),
+    botoes: canalDoIdentificador(identificador) === "telegram" ? botoesDeRegistro(id) : undefined,
+  };
+}
+
+/** Desfazer: a despesa registrada volta a ser rascunho (corrigir, confirmar de novo ou descartar). */
+async function desfazerRegistro(d: { id: string; status: string }, identificador: string): Promise<RespostaDespesa> {
+  if (d.status === "CONCILIADA") return jaConciliada();
+  if (d.status === "A_CONFIRMAR") return pedirConfirmacao(d.id, identificador, "Ela ainda está esperando confirmação:");
+  await prisma.despesa.update({ where: { id: d.id }, data: { status: "A_CONFIRMAR", confirmadaEm: null } });
+  return pedirConfirmacao(d.id, identificador, "↩️ Desfeito — a despesa voltou a esperar confirmação. Corrija, confirme de novo ou descarte:");
+}
+
+/**
+ * "É a mesma, juntar": a despesa nova (rascunho) entra na já registrada — o
+ * arquivo (comprovante vale mais que áudio), o texto e o que a registrada não
+ * tinha — e a nova some. Conciliada só recebe arquivo e texto.
+ */
+export async function juntarComRegistrada(novaId: string, existenteId: string, identificador: string): Promise<RespostaDespesa> {
+  const [nova, existente] = await Promise.all([
+    prisma.despesa.findUnique({ where: { id: novaId } }),
+    prisma.despesa.findUnique({ where: { id: existenteId } }),
+  ]);
+  if (!nova || nova.telefoneOrigem !== identificador) return { mensagem: "Essa despesa não existe mais." };
+  if (nova.status !== "A_CONFIRMAR") return { mensagem: "Essa despesa já foi registrada separada — se for repetida, ajuste em Financeiro → Despesas." };
+  if (!existente || existente.id === nova.id) return { mensagem: "Não achei mais a despesa registrada pra juntar." };
+
+  const mudancas: Prisma.DespesaUncheckedUpdateInput = {};
+  const trocaArquivo = Boolean(nova.anexoMime) && (!existente.anexoMime || (nova.origem === "COMPROVANTE" && existente.origem !== "COMPROVANTE"));
+  if (trocaArquivo) {
+    mudancas.anexoBytes = nova.anexoBytes;
+    mudancas.anexoMime = nova.anexoMime;
+    mudancas.anexoNome = nova.anexoNome;
+  }
+  let fornecedor = existente.fornecedor;
+  if (existente.status !== "CONCILIADA") {
+    if (!existente.fornecedor.trim() && nova.fornecedor.trim()) mudancas.fornecedor = fornecedor = nova.fornecedor;
+    if (!existente.categoriaId && nova.categoriaId) mudancas.categoriaId = nova.categoriaId;
+    if (!existente.centroGeralId && !existente.negocioId && (nova.centroGeralId || nova.negocioId)) {
+      mudancas.centroGeralId = nova.centroGeralId;
+      mudancas.negocioId = nova.negocioId;
+    }
+  }
+  const log = (existente.extracao ?? {}) as Prisma.JsonObject;
+  const juntadas = Array.isArray(log.juntadas) ? log.juntadas : [];
+  await prisma.$transaction([
+    prisma.despesa.update({
+      where: { id: existente.id },
+      data: {
+        ...mudancas,
+        textoOriginal: [existente.textoOriginal, nova.textoOriginal].filter(Boolean).join("\n\n") || null,
+        extracao: {
+          ...log,
+          juntadas: [...juntadas, { despesaId: nova.id, origem: nova.origem, fornecedor: nova.fornecedor, extracao: nova.extracao, em: new Date().toISOString() }],
+        } as Prisma.InputJsonValue,
+      },
+    }),
+    prisma.despesa.delete({ where: { id: nova.id } }),
+  ]);
+  const dia = diaBrasilia(existente.data).split("-").reverse().slice(0, 2).join("/");
+  return {
+    mensagem: `🔗 Juntei na despesa já registrada: *${reais(existente.valorCentavos)}* — ${fornecedor} (${dia}).${trocaArquivo ? " O arquivo ficou guardado nela." : ""}`,
+  };
+}
+
+/** Um toque em botão de despesa (ver PedidoBotao). null = não é de despesa ou não é dessa conversa. */
+export async function responderBotaoDespesa(pedido: PedidoBotao, identificador: string): Promise<RespostaDespesa | null> {
+  if (pedido.tipo !== "despesa" && pedido.tipo !== "categoria" && pedido.tipo !== "centro" && pedido.tipo !== "juntar") return null;
+  const d = await prisma.despesa.findUnique({ where: { id: pedido.despesaId } });
+  if (!d) return { mensagem: "Essa despesa não existe mais (já tinha sido descartada)." };
+  if (d.telefoneOrigem !== identificador) return null;
+  const rascunho = d.status === "A_CONFIRMAR";
+  const conciliada = d.status === "CONCILIADA";
+
+  if (pedido.tipo === "juntar") return juntarComRegistrada(d.id, pedido.existenteId, identificador);
+
+  if (pedido.tipo === "categoria") {
+    if (conciliada) return jaConciliada();
+    const { categorias } = await carregarCadastrosDespesa();
+    const achadas = categorias.filter((c) => c.id.startsWith(pedido.prefixo));
+    if (achadas.length !== 1) return { mensagem: "Não achei essa categoria — toque em trocar de novo." };
+    const categoria = achadas[0];
+    const log = (d.extracao ?? {}) as Prisma.JsonObject;
+    const mudancas: Prisma.DespesaUncheckedUpdateInput = { categoriaId: categoria.id };
+    // Mesma regra da correção por texto: centro deduzido acompanha a categoria.
+    if (!declarados(d.extracao).centroDeclarado && !d.negocioId && categoria.centroGeralPadraoId) mudancas.centroGeralId = categoria.centroGeralPadraoId;
+    await prisma.despesa.update({ where: { id: d.id }, data: { ...mudancas, extracao: { ...log, categoriaEscolhida: true } as Prisma.InputJsonValue } });
+    return respostaDepoisDeMudar(d.id, identificador, "Categoria trocada, confere?");
+  }
+
+  if (pedido.tipo === "centro") {
+    if (conciliada) return jaConciliada();
+    const centro = await prisma.centroGeral.findFirst({ where: { id: pedido.centroGeralId, ativo: true } });
+    if (!centro) return { mensagem: "Não achei esse centro — toque em trocar de novo." };
+    const log = (d.extracao ?? {}) as Prisma.JsonObject;
+    await prisma.despesa.update({
+      where: { id: d.id },
+      data: { centroGeralId: centro.id, negocioId: null, extracao: { ...log, centroDeclarado: true } as Prisma.InputJsonValue },
+    });
+    return respostaDepoisDeMudar(d.id, identificador, "Centro trocado, confere?");
+  }
+
+  switch (pedido.acao) {
+    case "ok":
+      return rascunho ? confirmarRascunho(d.id, identificador) : { mensagem: "Essa despesa já estava registrada 👍" };
+    case "x":
+      return rascunho
+        ? descartarRascunho(d.id)
+        : { mensagem: "Essa despesa já foi registrada — pra apagar, toque em *Desfazer* e depois em *Descartar*, ou ajuste em Financeiro → Despesas." };
+    case "co":
+      if (conciliada) return jaConciliada();
+      if (rascunho) await renovarRascunho(d.id);
+      return perguntarOQueCorrigir();
+    case "ng":
+      if (conciliada) return jaConciliada();
+      if (rascunho) await renovarRascunho(d.id);
+      return { mensagem: "Qual negócio? Me diga o nome do cliente ou da obra (texto ou áudio) que eu vinculo." };
+    case "re":
+      return rascunho ? pedirConfirmacao(d.id, identificador) : respostaDepoisDeMudar(d.id, identificador, "");
+    case "vc": {
+      if (conciliada) return jaConciliada();
+      const { categorias } = await carregarCadastrosDespesa();
+      return { mensagem: "Escolha a categoria:", botoes: botoesDeCategorias(d.id, categorias, d.categoriaId) };
+    }
+    case "vg": {
+      if (conciliada) return jaConciliada();
+      const { centrosGerais } = await carregarCadastrosDespesa();
+      return { mensagem: "Escolha o centro de custo:", botoes: botoesDeCentros(d.id, centrosGerais, d.negocioId ? null : d.centroGeralId) };
+    }
+    case "u":
+      return desfazerRegistro(d, identificador);
+    case "ou": {
+      if (!rascunho) return { mensagem: "Essa despesa já estava registrada 👍" };
+      const log = (d.extracao ?? {}) as Prisma.JsonObject;
+      await prisma.despesa.update({ where: { id: d.id }, data: { extracao: { ...log, naoEhParecida: true } as Prisma.InputJsonValue } });
+      return pedirConfirmacao(d.id, identificador, "Certo, é outra despesa. Confere:");
+    }
+  }
 }

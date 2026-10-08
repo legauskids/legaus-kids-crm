@@ -31,7 +31,6 @@ import { encontrarOuCriarConversaPorTelefone, registrarMensagem, criarMensagemAg
 import { gerarSugestaoResposta } from "@/lib/server/agente-atendimento";
 import { enviarEmail, emailConfigurado } from "@/lib/server/email";
 import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/lib/server/orcamento-email";
-import { gerarPdfOrcamento } from "@/lib/server/pdf/orcamento-pdf";
 import {
   buscarClientesSimilar,
   buscarClientesPorTelefone,
@@ -61,10 +60,21 @@ import {
   descreverRascunho,
   carregarCadastrosDespesa,
   perguntarOQueCorrigir,
+  responderBotaoDespesa,
   type RespostaDespesa,
 } from "@/lib/server/despesa-agente";
 import { interpretarRespostaRascunho, pareceRespostaDeDespesa, type Enquete, type ExtracaoDespesa } from "@/lib/utils/despesa-agente";
-import type { OrigemComando, OrigemDespesa, StatusOrcamento } from "@prisma/client";
+import { canalDoIdentificador, lerBotao, type Botoes, type CanalAgente } from "@/lib/utils/agente-canal";
+import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
+import type { ComandoAgente, OrigemComando, OrigemDespesa, Prisma, StatusOrcamento } from "@prisma/client";
+
+// O PDF do orçamento (@react-pdf) só é carregado quando um orçamento vira
+// arquivo: pesa na partida de toda chamada do agente e não roda fora do
+// Next (os roteiros de teste com tsx importam este arquivo).
+async function gerarPdfOrcamento(orcamentoId: string) {
+  const { gerarPdfOrcamento: gerar } = await import("@/lib/server/pdf/orcamento-pdf");
+  return gerar(orcamentoId);
+}
 
 const MODELO = "claude-sonnet-5";
 const JANELA_PENDENTE_MS = 10 * 60 * 1000; // 10 minutos pra confirmar antes de expirar
@@ -2041,8 +2051,8 @@ function montarSystemPromptFixo(): string {
 A data e a hora atuais (Brasília) vêm no fim destas instruções. Use pra calcular datas relativas ("amanhã", "em 3 dias") e pra entender datas sem ano ("dia 01/09" = 2026-09-01 se ainda não passou esse ano, senão o ano seguinte).
 
 Regras:
-- Responda sempre em português do Brasil, direto e objetivo — poucas frases, sem enrolação, como se estivesse falando com o Marcos por WhatsApp.
-- A resposta pode ir pro WhatsApp de verdade — formate como WhatsApp, não como Markdown: *asterisco simples* pra negrito (nunca **duplo**), _underline_ pra itálico, sem títulos com #, sem tabelas.
+- Responda sempre em português do Brasil, direto e objetivo — poucas frases, sem enrolação, como numa conversa por mensagem com o Marcos (WhatsApp ou Telegram — o canal vem no fim destas instruções).
+- A resposta vai por mensagem de verdade (WhatsApp ou Telegram) — formate no estilo do WhatsApp, não como Markdown: *asterisco simples* pra negrito (nunca **duplo**), _underline_ pra itálico, sem títulos com #, sem tabelas.
 - Os comandos costumam vir de um áudio transcrito, não de texto digitado com cuidado — então venha sem pontuação, com repetições, "é... tipo...", correções no meio ("não, deixa isso pra depois, na verdade quero..."), ou mais de um pedido emendado na mesma frase. Interprete a intenção real por trás da fala solta, ignore as hesitações, e priorize a versão final quando o Marcos se corrigir no meio da frase.
 - Se o áudio/comando pedir várias coisas (ex: "cria uma tarefa pra ligar pro João amanhã e já muda o negócio da Apromes pra etapa de fechamento"), execute todas em sequência, uma ferramenta por vez, sem parar no meio pra perguntar "posso continuar?" — só pare de verdade nas ferramentas sensíveis, que já pedem confirmação sozinhas.
 - Sempre que o comando envolver um cliente, produto, negócio, tarefa, cotação ou contrato por nome, use a ferramenta de busca correspondente primeiro (busca aproximada, tolera erro de digitação) pra achar o ID certo antes de criar ou editar algo. Antes de responder qualquer pergunta que dependa de dado do CRM (preço, orçamento, cotação, contato, contrato, negócio...), busque de verdade com a ferramenta certa em vez de responder de memória ou chutar — o Marcos pode te pedir pra cruzar informação de vários lugares (ex: "qual o preço desse produto na lista e o que tem cotado pra esse cliente") numa mesma pergunta.
@@ -2069,11 +2079,14 @@ Regras:
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 
-async function montarSystemPromptDinamico(rascunhoId: string | null): Promise<string> {
+const NOME_DO_CANAL: Record<CanalAgente, string> = { whatsapp: "WhatsApp", telegram: "Telegram (privado do Marcos)", crm: "chat do agente dentro do CRM" };
+
+async function montarSystemPromptDinamico(rascunhoId: string | null, canal: CanalAgente): Promise<string> {
   const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "full", timeStyle: "short" });
   const { categorias, centrosGerais } = await carregarCadastrosDespesa();
   const linhas = [
     `Agora é: ${agora} (horário de Brasília).`,
+    `Canal desta conversa: ${NOME_DO_CANAL[canal]}.`,
     `Categorias de despesa: ${categorias.map((c) => c.nome).join("; ")}.`,
     `Centros de custo gerais: ${centrosGerais.map((g) => g.nome).join("; ")} — ou uma obra/negócio pelo nome.`,
   ];
@@ -2111,6 +2124,76 @@ const MEDIA_TYPES_IMAGEM = new Set(["image/jpeg", "image/png", "image/gif", "ima
 const TIPOS_TEXTO_LEGIVEL = new Set(["text/plain", "text/csv", "text/markdown", "text/html", "application/json", "application/xml", "text/xml"]);
 const LIMITE_TEXTO_ARQUIVO = 20_000; // chars — evita estourar contexto com um CSV/JSON gigante
 
+/** Quem está falando com o agente — pra oferecer só as ferramentas dos módulos liberados pra ele. */
+type UsuarioAgente = { id: string; isAdmin: boolean; permissoes: unknown };
+
+/** Uma ação do agente, pro registro de auditoria (ComandoAgente.acoes — só administrador vê). */
+type AcaoAgente = { ferramenta: string; entrada?: string; ok: boolean; erro?: string; pendente?: boolean };
+
+// Módulo de cada ferramenta (pedido de 2026-10-07: o agente age como o
+// usuário, respeitando as permissões dele). Sem módulo = liberada pra todos.
+const MODULO_DA_FERRAMENTA: Partial<Record<string, ModuloKey>> = {
+  buscar_clientes: "contatos",
+  criar_cliente: "contatos",
+  atualizar_cliente: "contatos",
+  excluir_cliente: "contatos",
+  mesclar_clientes: "contatos",
+  buscar_cotacoes: "contatos",
+  buscar_produtos: "produtos",
+  criar_produto: "produtos",
+  atualizar_produto: "produtos",
+  anexar_foto_produto: "produtos",
+  atualizar_preco_produto: "produtos",
+  gerar_cards_produtos: "produtos",
+  enviar_cards_produtos_whatsapp: "atendimento",
+  buscar_orcamentos: "orcamentos",
+  criar_orcamento: "orcamentos",
+  atualizar_orcamento: "orcamentos",
+  atualizar_status_orcamento: "orcamentos",
+  excluir_orcamento: "orcamentos",
+  enviar_orcamento_whatsapp: "orcamentos",
+  enviar_orcamento_email: "orcamentos",
+  obter_link_pdf_orcamento: "orcamentos",
+  enviar_mensagem_whatsapp: "atendimento",
+  enviar_arquivo_whatsapp: "atendimento",
+  agendar_mensagem_whatsapp: "atendimento",
+  sugerir_resposta_cliente: "atendimento",
+  resumo_leads: "atendimento",
+  buscar_funis_etapas: "negocios",
+  buscar_negocios: "negocios",
+  criar_negocio: "negocios",
+  mover_negocio_etapa: "negocios",
+  atualizar_negocio: "negocios",
+  adicionar_nota_negocio: "negocios",
+  marcar_negocio_perdido: "negocios",
+  buscar_contratos: "negocios",
+  gerar_contrato_de_orcamento_antigo: "negocios",
+  buscar_tarefas: "tarefas",
+  criar_tarefa: "tarefas",
+  atualizar_tarefa: "tarefas",
+  resumo_compromissos: "tarefas",
+  preparar_pauta_reuniao: "reunioes",
+  opinar_pauta_reuniao: "reunioes",
+  registrar_despesa: "financeiro",
+  corrigir_despesa: "financeiro",
+};
+
+function ferramentasPermitidas(usuario: UsuarioAgente | null): Ferramenta[] {
+  if (!usuario) return [];
+  return FERRAMENTAS.filter((f) => {
+    const modulo = MODULO_DA_FERRAMENTA[f.name];
+    return !modulo || moduloPermitido(usuario, modulo);
+  });
+}
+
+/** Entrada da ferramenta pro registro: sem anexo, curta. */
+function resumoEntrada(entrada: ArgsFerramenta): string {
+  const { __anexoPendente, ...resto } = entrada as ArgsFerramenta & { __anexoPendente?: unknown };
+  void __anexoPendente;
+  const texto = JSON.stringify(resto);
+  return texto.length > 400 ? `${texto.slice(0, 400)}…` : texto;
+}
+
 async function rodarAgenteClaude(
   textoComando: string,
   usuarioId: string,
@@ -2118,7 +2201,7 @@ async function rodarAgenteClaude(
   anexoPdf?: { base64: string; nomeArquivo: string },
   anexoImagem?: { base64: string; mimetype: string },
   anexoArquivo?: { base64: string; nomeArquivo: string; mimetype: string },
-  extras: { anexoAudio?: { base64: string; mimetype: string }; rascunhoDespesaId?: string | null } = {},
+  extras: { anexoAudio?: { base64: string; mimetype: string }; rascunhoDespesaId?: string | null; usuario?: UsuarioAgente | null; canal?: CanalAgente } = {},
 ): Promise<{
   texto: string;
   ferramentaPendente: { nome: string; args: unknown; descricao: string } | null;
@@ -2127,6 +2210,10 @@ async function rodarAgenteClaude(
   tokensSaida: number;
   /** Enquete (WhatsApp) pra ir logo abaixo da resposta — rascunho de despesa esperando confirmação. */
   enquete?: Enquete;
+  /** Botões (Telegram) que vão com a resposta. */
+  botoes?: Botoes;
+  /** O que foi executado, pra auditoria (ComandoAgente.acoes). */
+  acoes: AcaoAgente[];
 }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -2136,6 +2223,7 @@ async function rodarAgenteClaude(
       ferramentasChamadas: [],
       tokensEntrada: 0,
       tokensSaida: 0,
+      acoes: [],
     };
   }
 
@@ -2192,9 +2280,13 @@ async function rodarAgenteClaude(
   };
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: montarSystemPromptFixo(), cache_control: { type: "ephemeral" } },
-    { type: "text", text: await montarSystemPromptDinamico(extras.rascunhoDespesaId ?? null) },
+    { type: "text", text: await montarSystemPromptDinamico(extras.rascunhoDespesaId ?? null, extras.canal ?? canalDoIdentificador(identificador)) },
   ];
-  const tools = FERRAMENTAS.map(paraToolAnthropic);
+  // Só as ferramentas que o usuário pode usar (módulos liberados pra ele): a
+  // IA nem fica sabendo das outras.
+  const permitidas = ferramentasPermitidas(extras.usuario ?? null);
+  const tools = permitidas.map(paraToolAnthropic);
+  const acoes: AcaoAgente[] = [];
   // Cada turno de tool-calling é uma chamada HTTP própria pra Anthropic, com
   // o histórico reenviado inteiro — soma os dois campos por turno pra saber
   // o custo real do comando inteiro, não só do último turno. Entrada inclui
@@ -2230,7 +2322,7 @@ async function rodarAgenteClaude(
       // não responde"). Devolver uma resposta de verdade aqui garante que
       // sempre chega alguma coisa pro usuário, mesmo quando é só pra avisar
       // do problema.
-      return { texto: mensagemErroAnthropic(erro), ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
+      return { texto: mensagemErroAnthropic(erro), ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida, acoes };
     }
 
     tokensEntrada +=
@@ -2261,13 +2353,13 @@ async function rodarAgenteClaude(
         });
         continue;
       }
-      return { texto: textoFinal || "Feito.", ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida };
+      return { texto: textoFinal || "Feito.", ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida, acoes };
     }
 
     const resultadosFerramenta: Anthropic.ToolResultBlockParam[] = [];
     const respostasDiretas: RespostaDespesa[] = [];
     for (const uso of usosDeFerramenta) {
-      const ferramenta = FERRAMENTAS.find((f) => f.name === uso.name);
+      const ferramenta = permitidas.find((f) => f.name === uso.name);
       ferramentasChamadas.push(uso.name);
       if (!ferramenta) {
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: "ferramenta desconhecida", is_error: true });
@@ -2294,6 +2386,7 @@ async function rodarAgenteClaude(
             }
           : entrada;
         ferramentaPendente = { nome: uso.name, args: entradaFinal, descricao };
+        acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(entrada), ok: true, pendente: true });
         resultadosFerramenta.push({
           type: "tool_result",
           tool_use_id: uso.id,
@@ -2303,11 +2396,13 @@ async function rodarAgenteClaude(
       }
       try {
         const resultado = await ferramenta.executar(entrada, ctx);
+        acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(entrada), ok: true });
         if (ferramenta.respostaDireta && typeof (resultado as { mensagem?: unknown })?.mensagem === "string") {
           respostasDiretas.push(resultado as RespostaDespesa);
         }
         resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: JSON.stringify(resultado) });
       } catch (erro) {
+        acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(entrada), ok: false, erro: erro instanceof Error ? erro.message : "desconhecido" });
         resultadosFerramenta.push({
           type: "tool_result",
           tool_use_id: uso.id,
@@ -2324,6 +2419,8 @@ async function rodarAgenteClaude(
         // Várias despesas no mesmo áudio: a enquete é da última (as outras
         // confirmam em sequência — ver confirmarRascunho).
         enquete: respostasDiretas.findLast((r) => r.enquete)?.enquete,
+        botoes: respostasDiretas.findLast((r) => r.botoes)?.botoes,
+        acoes,
         ferramentaPendente,
         ferramentasChamadas,
         tokensEntrada,
@@ -2335,6 +2432,7 @@ async function rodarAgenteClaude(
 
   return {
     texto: "Não consegui concluir — o comando ficou grande demais pra resolver em uma rodada. Tenta dividir em partes.",
+    acoes,
     ferramentaPendente,
     ferramentasChamadas,
     tokensEntrada,
@@ -2393,7 +2491,10 @@ async function comandoRepetidoDemais(identificador: string, textoComando: string
   return contagem >= LIMITE_REPETICOES_JANELA;
 }
 
-export async function processarComandoAgente(input: {
+/** Resposta neutra do núcleo: texto + enquete (WhatsApp) ou botões (Telegram). */
+export type ResultadoAgente = { resposta: string; enquete?: Enquete; botoes?: Botoes };
+
+type EntradaComando = {
   texto: string;
   origem: OrigemComando;
   identificador: string;
@@ -2404,7 +2505,81 @@ export async function processarComandoAgente(input: {
   // Nota de voz original (já transcrita em `texto`) — fica guardada com a
   // despesa, se o áudio for de uma.
   anexoAudio?: { base64: string; mimetype: string };
-}): Promise<{ resposta: string; enquete?: Enquete }> {
+  // Registro que o canal já criou ao receber a mensagem (Telegram: com o ID
+  // do update, pra o mesmo update nunca ser processado duas vezes) — o
+  // resultado é gravado nele em vez de num registro novo.
+  comandoId?: string;
+};
+
+type DadosComando = Omit<Prisma.ComandoAgenteUncheckedCreateInput, "origem" | "identificador" | "usuarioId">;
+
+async function salvarComando(input: EntradaComando, dados: DadosComando): Promise<string> {
+  const base = { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId };
+  if (input.comandoId) {
+    await prisma.comandoAgente.update({ where: { id: input.comandoId }, data: { ...base, ...dados } });
+    return input.comandoId;
+  }
+  return (await prisma.comandoAgente.create({ data: { ...base, ...dados } })).id;
+}
+
+/** [Confirmar] [Cancelar] da ação sensível pendente (Telegram). */
+function botoesDePendente(comandoId: string): Botoes {
+  return [
+    [
+      { texto: "✅ Confirmar", dados: `ca:${comandoId}` },
+      { texto: "❌ Cancelar", dados: `cx:${comandoId}` },
+    ],
+  ];
+}
+
+/**
+ * Executa a ação sensível que estava esperando confirmação ("sim" ou o
+ * botão Confirmar) e marca o pedido original como concluído.
+ */
+async function executarPendente(pendente: ComandoAgente, input: { usuarioId: string; identificador: string }): Promise<string> {
+  const ferramenta = FERRAMENTAS.find((f) => f.name === pendente.ferramentaPendente);
+  let resposta: string;
+  let acao: AcaoAgente = { ferramenta: pendente.ferramentaPendente ?? "?", ok: true };
+  try {
+    if (ferramenta) {
+      // Reidrata o anexo (imagem/arquivo) que veio junto do comando
+      // ORIGINAL, guardado em base64 dentro de argumentosPendentes na hora
+      // de criar a pendência (ver rodarAgenteClaude/usaAnexoAtual) — sem
+      // isso, ferramentas como enviar_arquivo_whatsapp não têm mais os bytes
+      // na hora de confirmar, um turno depois.
+      const { __anexoPendente, ...argsSemAnexo } = (pendente.argumentosPendentes ?? {}) as ArgsFerramenta & {
+        __anexoPendente?: { tipo: "imagem" | "arquivo"; base64: string; mimetype: string; nomeArquivo?: string };
+      };
+      const anexoImagemReidratado =
+        __anexoPendente?.tipo === "imagem" ? { bytes: Buffer.from(__anexoPendente.base64, "base64"), mimetype: __anexoPendente.mimetype } : undefined;
+      const anexoArquivoReidratado =
+        __anexoPendente?.tipo === "arquivo"
+          ? { bytes: Buffer.from(__anexoPendente.base64, "base64"), nomeArquivo: __anexoPendente.nomeArquivo ?? "arquivo", mimetype: __anexoPendente.mimetype }
+          : undefined;
+      await ferramenta.executar(argsSemAnexo, {
+        usuarioId: input.usuarioId,
+        telefoneOrigem: telefoneDeIdentificador(input.identificador),
+        anexoImagem: anexoImagemReidratado,
+        anexoArquivo: anexoArquivoReidratado,
+        identificador: input.identificador,
+      });
+    }
+    resposta = `Feito — ${pendente.descricaoPendente}.`;
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : "desconhecido";
+    acao = { ...acao, ok: false, erro: mensagem };
+    resposta = `Tentei executar mas deu erro: ${mensagem}`;
+  }
+  const anteriores = Array.isArray(pendente.acoes) ? (pendente.acoes as AcaoAgente[]) : [];
+  await prisma.comandoAgente.update({
+    where: { id: pendente.id },
+    data: { status: "CONCLUIDO", acoes: [...anteriores, { ...acao, confirmada: true }] as Prisma.InputJsonValue },
+  });
+  return resposta;
+}
+
+export async function processarComandoAgente(input: EntradaComando): Promise<ResultadoAgente> {
+  const canal = canalDoIdentificador(input.identificador);
   const pendente = await buscarPendenteAtivo(input.identificador);
 
   // Despesa esperando confirmação (agente financeiro): "sim"/"1"/"pode
@@ -2419,6 +2594,7 @@ export async function processarComandoAgente(input: {
     const decisao = interpretarRespostaRascunho(input.texto);
     if (decisao !== "outro") {
       let r: RespostaDespesa;
+      let ok = true;
       try {
         r =
           decisao === "confirmar"
@@ -2427,59 +2603,30 @@ export async function processarComandoAgente(input: {
               ? await descartarRascunho(rascunho.id)
               : perguntarOQueCorrigir();
       } catch (erro) {
+        ok = false;
         r = { mensagem: `Não consegui ${decisao === "confirmar" ? "confirmar" : "descartar"} a despesa: ${erro instanceof Error ? erro.message : "erro desconhecido"}` };
       }
-      await prisma.comandoAgente.create({
-        data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta: r.mensagem, status: "CONCLUIDO" },
+      await salvarComando(input, {
+        textoComando: input.texto,
+        resposta: r.mensagem,
+        status: "CONCLUIDO",
+        acoes: [{ ferramenta: `despesa:${decisao}`, entrada: rascunho.id, ok }] as Prisma.InputJsonValue,
       });
-      return { resposta: r.mensagem, enquete: r.enquete };
+      return { resposta: r.mensagem, enquete: r.enquete, botoes: r.botoes };
     }
   }
 
   if (pendente && pendente.ferramentaPendente && !(rascunho && rascunho.atualizadoEm > pendente.criadoEm)) {
     const decisao = interpretarConfirmacao(input.texto);
     if (decisao === "sim") {
-      const ferramenta = FERRAMENTAS.find((f) => f.name === pendente.ferramentaPendente);
-      let resposta: string;
-      try {
-        if (ferramenta) {
-          // Reidrata o anexo (imagem/arquivo) que veio junto do comando
-          // ORIGINAL, guardado em base64 dentro de argumentosPendentes na
-          // hora de criar a pendência (ver rodarAgenteClaude/usaAnexoAtual)
-          // — sem isso, ferramentas como enviar_arquivo_whatsapp não têm
-          // mais os bytes na hora de confirmar, um turno depois.
-          const { __anexoPendente, ...argsSemAnexo } = (pendente.argumentosPendentes ?? {}) as ArgsFerramenta & {
-            __anexoPendente?: { tipo: "imagem" | "arquivo"; base64: string; mimetype: string; nomeArquivo?: string };
-          };
-          const anexoImagemReidratado =
-            __anexoPendente?.tipo === "imagem" ? { bytes: Buffer.from(__anexoPendente.base64, "base64"), mimetype: __anexoPendente.mimetype } : undefined;
-          const anexoArquivoReidratado =
-            __anexoPendente?.tipo === "arquivo"
-              ? { bytes: Buffer.from(__anexoPendente.base64, "base64"), nomeArquivo: __anexoPendente.nomeArquivo ?? "arquivo", mimetype: __anexoPendente.mimetype }
-              : undefined;
-          await ferramenta.executar(argsSemAnexo, {
-            usuarioId: input.usuarioId,
-            telefoneOrigem: telefoneDeIdentificador(input.identificador),
-            anexoImagem: anexoImagemReidratado,
-            anexoArquivo: anexoArquivoReidratado,
-          });
-        }
-        resposta = `Feito — ${pendente.descricaoPendente}.`;
-      } catch (erro) {
-        resposta = `Tentei executar mas deu erro: ${erro instanceof Error ? erro.message : "desconhecido"}`;
-      }
-      await prisma.comandoAgente.update({ where: { id: pendente.id }, data: { status: "CONCLUIDO" } });
-      await prisma.comandoAgente.create({
-        data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta, status: "CONCLUIDO" },
-      });
+      const resposta = await executarPendente(pendente, input);
+      await salvarComando(input, { textoComando: input.texto, resposta, status: "CONCLUIDO" });
       return { resposta };
     }
     if (decisao === "nao") {
       const resposta = "Combinado, não fiz nada.";
       await prisma.comandoAgente.update({ where: { id: pendente.id }, data: { status: "CANCELADO" } });
-      await prisma.comandoAgente.create({
-        data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta, status: "CONCLUIDO" },
-      });
+      await salvarComando(input, { textoComando: input.texto, resposta, status: "CONCLUIDO" });
       return { resposta };
     }
     // ambíguo: não mexe no pendente — pode ser uma pergunta ao lado ("me manda em pdf?")
@@ -2490,45 +2637,75 @@ export async function processarComandoAgente(input: {
   if (await comandoRepetidoDemais(input.identificador, input.texto)) {
     const resposta =
       "Notei esse mesmo comando chegando repetido rápido demais (parece loop) — não chamei a IA de novo agora pra não gastar API à toa. Se não for loop de verdade, é só mandar de um jeito um pouco diferente ou esperar um minuto.";
-    await prisma.comandoAgente.create({
-      data: { origem: input.origem, identificador: input.identificador, usuarioId: input.usuarioId, textoComando: input.texto, resposta, status: "CONCLUIDO" },
-    });
+    await salvarComando(input, { textoComando: input.texto, resposta, status: "CONCLUIDO" });
     return { resposta };
   }
 
+  const usuario = await prisma.user.findUnique({ where: { id: input.usuarioId }, select: { id: true, isAdmin: true, permissoes: true } });
   const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo, {
     anexoAudio: input.anexoAudio,
     rascunhoDespesaId: rascunho?.id ?? null,
+    usuario,
+    canal,
   });
 
-  await prisma.comandoAgente.create({
-    data: {
-      origem: input.origem,
-      identificador: input.identificador,
-      usuarioId: input.usuarioId,
-      // Não guarda os bytes do PDF/imagem/arquivo (só uma marca textual) —
-      // o anexo só importa pro turno em que foi mandado (ou fica guardado
-      // à parte, em argumentosPendentes, se a ferramenta pendente precisar
-      // dele pra confirmar depois — ver usaAnexoAtual), não precisa
-      // persistir no histórico de conversa.
-      textoComando: input.anexoPdf
-        ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]`
-        : input.anexoImagem
-          ? `${input.texto}\n[Imagem anexada]`
-          : input.anexoArquivo
-            ? `${input.texto}\n[Arquivo anexado: ${input.anexoArquivo.nomeArquivo}]`
-            : input.texto,
-      resposta: resultado.texto,
-      status: resultado.ferramentaPendente ? "AGUARDANDO_CONFIRMACAO" : "CONCLUIDO",
-      ferramentaPendente: resultado.ferramentaPendente?.nome,
-      argumentosPendentes: resultado.ferramentaPendente ? (resultado.ferramentaPendente.args as object) : undefined,
-      descricaoPendente: resultado.ferramentaPendente?.descricao,
-      tokensEntrada: resultado.tokensEntrada,
-      tokensSaida: resultado.tokensSaida,
-    },
+  const comandoId = await salvarComando(input, {
+    // Não guarda os bytes do PDF/imagem/arquivo (só uma marca textual) — o
+    // anexo só importa pro turno em que foi mandado (ou fica guardado à
+    // parte, em argumentosPendentes, se a ferramenta pendente precisar dele
+    // pra confirmar depois — ver usaAnexoAtual), não precisa persistir no
+    // histórico de conversa.
+    textoComando: input.anexoPdf
+      ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]`
+      : input.anexoImagem
+        ? `${input.texto}\n[Imagem anexada]`
+        : input.anexoArquivo
+          ? `${input.texto}\n[Arquivo anexado: ${input.anexoArquivo.nomeArquivo}]`
+          : input.texto,
+    resposta: resultado.texto,
+    status: resultado.ferramentaPendente ? "AGUARDANDO_CONFIRMACAO" : "CONCLUIDO",
+    ferramentaPendente: resultado.ferramentaPendente?.nome,
+    argumentosPendentes: resultado.ferramentaPendente ? (resultado.ferramentaPendente.args as object) : undefined,
+    descricaoPendente: resultado.ferramentaPendente?.descricao,
+    tokensEntrada: resultado.tokensEntrada,
+    tokensSaida: resultado.tokensSaida,
+    acoes: resultado.acoes as Prisma.InputJsonValue,
   });
 
-  return { resposta: resultado.texto, enquete: resultado.enquete };
+  const botoes = resultado.botoes ?? (resultado.ferramentaPendente && canal === "telegram" ? botoesDePendente(comandoId) : undefined);
+  return { resposta: resultado.texto, enquete: resultado.enquete, botoes };
+}
+
+/**
+ * Um toque em botão (Telegram). Quem decide o que o botão faz é o núcleo:
+ * o adaptador só repassa os dados do botão (ver lerBotao). null = botão
+ * desconhecido ou de outra conversa (não responde nada).
+ */
+export async function processarBotaoAgente(input: { identificador: string; usuarioId: string; dados: string }): Promise<ResultadoAgente | null> {
+  const pedido = lerBotao(input.dados);
+  if (!pedido) return null;
+
+  if (pedido.tipo === "pendente") {
+    const pendente = await prisma.comandoAgente.findUnique({ where: { id: pedido.comandoId } });
+    if (!pendente || pendente.identificador !== input.identificador) return null;
+    if (pendente.status !== "AGUARDANDO_CONFIRMACAO") {
+      return { resposta: pendente.status === "CONCLUIDO" ? "Isso já foi feito 👍" : "Isso já tinha sido cancelado." };
+    }
+    if (Date.now() - pendente.criadoEm.getTime() > JANELA_PENDENTE_MS) {
+      await prisma.comandoAgente.update({ where: { id: pendente.id }, data: { status: "CANCELADO" } });
+      return { resposta: "Esse pedido expirou (passou de 10 minutos sem confirmação). Me peça de novo." };
+    }
+    if (!pedido.confirmar) {
+      await prisma.comandoAgente.update({ where: { id: pendente.id }, data: { status: "CANCELADO" } });
+      return { resposta: "Combinado, não fiz nada." };
+    }
+    return { resposta: await executarPendente(pendente, input) };
+  }
+
+  if (pedido.tipo === "aviso-negocio" || pedido.tipo === "aviso-ignorar") return null;
+
+  const r = await responderBotaoDespesa(pedido, input.identificador);
+  return r ? { resposta: r.mensagem, enquete: r.enquete, botoes: r.botoes } : null;
 }
 
 export function listarHistoricoComandos(identificador: string, limite = 30) {

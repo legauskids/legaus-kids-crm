@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requireApiUser } from "@/lib/auth/api-token";
 import { processarComandoAgente } from "@/lib/server/agente";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
-import { importarExtratoOfx } from "@/lib/server/conciliacao-bancaria";
+import { importarExtratoDaMensagem } from "@/lib/server/conciliacao-bancaria";
+import { agenteLigado } from "@/lib/utils/agente-canal";
 
 const bodySchema = z
   .object({
@@ -41,6 +42,8 @@ export async function POST(request: Request) {
   }
 
   const telefone = parsed.data.telefone.replace(/\D/g, "");
+  // Comandos internos desligados no WhatsApp pra esse usuário (User.canaisAgente).
+  if (!agenteLigado(usuario.canaisAgente, "whatsapp")) return NextResponse.json({ ignorado: true });
 
   // Extrato bancário (.ofx) não passa pelo agente de IA de propósito —
   // importar é uma operação determinística (parse do arquivo + busca de
@@ -50,19 +53,11 @@ export async function POST(request: Request) {
   // esperam confirmação na tela. Resposta é montada aqui mesmo, em texto.
   if (parsed.data.anexoOfx) {
     const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
-    let texto: string;
-    try {
-      const bytes = Buffer.from(parsed.data.anexoOfx.base64, "base64");
-      const resultado = await importarExtratoOfx({ nomeArquivo: parsed.data.anexoOfx.nomeArquivo, bytes, importadoPorId: usuario.id });
-      texto =
-        `📄 Extrato *${parsed.data.anexoOfx.nomeArquivo}* importado: *${resultado.novasImportadas}* transação(ões) nova(s)` +
-        (resultado.duplicadasIgnoradas > 0 ? ` (${resultado.duplicadasIgnoradas} já existiam, ignoradas)` : "") +
-        `.\n\n🔗 *${resultado.paresProvaveis}* saída(s) com despesa registrada pra confirmar o par` +
-        `\n💰 *${resultado.entradasComSugestao}* entrada(s) com negócio sugerido` +
-        `\n\nConfirme em Financeiro → Conciliação bancária — nada é conciliado sem confirmação.`;
-    } catch (erro) {
-      texto = erro instanceof Error ? erro.message : "Falha ao importar o extrato.";
-    }
+    const texto = await importarExtratoDaMensagem({
+      nomeArquivo: parsed.data.anexoOfx.nomeArquivo,
+      bytes: Buffer.from(parsed.data.anexoOfx.base64, "base64"),
+      usuarioId: usuario.id,
+    });
     await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
     return NextResponse.json({ resposta: texto });
   }

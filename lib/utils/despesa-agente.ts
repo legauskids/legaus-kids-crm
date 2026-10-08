@@ -11,6 +11,9 @@
 import { pendenciasDaDespesa, textoParaCentavos, type OrigemDespesa } from "./despesas";
 import { diaDaSemana, somarDias } from "./brasilia";
 import { sugerirCentroCusto } from "./centro-custo";
+import { canalDoIdentificador, emLinhas, type Botao, type Botoes, type CanalAgente } from "./agente-canal";
+
+export { canalDoIdentificador };
 
 export type ExtracaoDespesa = {
   /** Em reais, como o modelo entendeu. */
@@ -406,12 +409,8 @@ function reais(centavos: number): string {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\s/g, " ");
 }
 
-/** Onde a conversa acontece: no WhatsApp o resumo vai seguido de uma enquete pra tocar. */
-export type CanalDespesa = "whatsapp" | "crm";
-
-export function canalDoIdentificador(identificador: string): CanalDespesa {
-  return identificador.startsWith("crm:") ? "crm" : "whatsapp";
-}
+/** Onde a conversa acontece: no WhatsApp o resumo vai seguido de uma enquete, no Telegram de botões. */
+export type CanalDespesa = CanalAgente;
 
 /**
  * Resumo do rascunho pedindo confirmação. Pedido do Marcos (2026-10-07,
@@ -439,7 +438,9 @@ export function mensagemDeConfirmacao(
     "",
     canal === "whatsapp"
       ? "Confirme na enquete abaixo ou responda *sim* (texto ou áudio). Se algo estiver errado, me diga o que corrigir."
-      : "Responda *sim* para confirmar ou me diga o que corrigir.",
+      : canal === "telegram"
+        ? "Toque num botão abaixo ou responda *sim* (texto ou áudio). Se algo estiver errado, me diga o que corrigir."
+        : "Responda *sim* para confirmar ou me diga o que corrigir.",
   );
   return linhas.join("\n");
 }
@@ -458,6 +459,65 @@ export function enqueteDaDespesa(d: { id: string; valorCentavos: number; fornece
     opcoes: d.ehProjeto ? [OPCAO_CONFIRMAR, OPCAO_DESCARTAR] : [OPCAO_CONFIRMAR, OPCAO_NEGOCIO, OPCAO_DESCARTAR],
     ref: `despesa:${d.id}`,
   };
+}
+
+/**
+ * Botões do resumo no Telegram (pedido de 2026-10-07): Confirmar / Corrigir
+ * / Descartar e, quando a categoria ou o centro foram deduzidos (dúvida), a
+ * sugestão em destaque no próprio botão, que abre a lista de todos.
+ */
+export function botoesDaDespesa(d: {
+  id: string;
+  ehProjeto: boolean;
+  categoria: string | null;
+  categoriaDeduzida: boolean;
+  centro: string | null;
+  centroDeduzido: boolean;
+}): Botoes {
+  const linhas: Botoes = [
+    [
+      { texto: "✅ Confirmar", dados: `d:ok:${d.id}` },
+      { texto: "✏️ Corrigir", dados: `d:co:${d.id}` },
+      { texto: "❌ Descartar", dados: `d:x:${d.id}` },
+    ],
+  ];
+  if (!d.categoria || d.categoriaDeduzida) {
+    linhas.push([{ texto: d.categoria ? `🏷️ ${d.categoria} · trocar` : "🏷️ Escolher categoria", dados: `d:vc:${d.id}` }]);
+  }
+  const centro: Botao[] = [];
+  if (!d.ehProjeto && (!d.centro || d.centroDeduzido)) {
+    centro.push({ texto: d.centro ? `🎯 ${d.centro} · trocar` : "🎯 Escolher centro", dados: `d:vg:${d.id}` });
+  }
+  if (!d.ehProjeto) centro.push({ texto: OPCAO_NEGOCIO, dados: `d:ng:${d.id}` });
+  if (centro.length) linhas.push(centro);
+  return linhas;
+}
+
+/** Depois de registrada (direto ou confirmada): só o Desfazer. */
+export function botoesDeRegistro(id: string): Botoes {
+  return [[{ texto: "↩️ Desfazer", dados: `d:u:${id}` }]];
+}
+
+/** Lista de todas as categorias (a atual marcada) + voltar ao resumo. */
+export function botoesDeCategorias(despesaId: string, categorias: { id: string; nome: string }[], atualId: string | null): Botoes {
+  const lista = categorias.map((c) => ({ texto: `${c.id === atualId ? "• " : ""}${c.nome}`, dados: `dc:${despesaId}:${c.id.slice(0, 8)}` }));
+  return [...emLinhas(lista, 2), [{ texto: "↩️ Voltar", dados: `d:re:${despesaId}` }]];
+}
+
+/** Centros gerais (o atual marcado) + "é de um negócio" + voltar. */
+export function botoesDeCentros(despesaId: string, centros: { id: string; nome: string }[], atualId: string | null): Botoes {
+  const lista = centros.map((g) => ({ texto: `${g.id === atualId ? "• " : ""}${g.nome}`, dados: `dg:${despesaId}:${g.id}` }));
+  return [...emLinhas(lista, 2), [{ texto: OPCAO_NEGOCIO, dados: `d:ng:${despesaId}` }, { texto: "↩️ Voltar", dados: `d:re:${despesaId}` }]];
+}
+
+/** Despesa nova que parece uma já registrada (push, áudio e comprovante do mesmo gasto). */
+export function botoesDeParecida(novaId: string, existenteId: string): Botoes {
+  return [
+    [
+      { texto: "🔗 É a mesma, juntar", dados: `dj:${novaId}:${existenteId}` },
+      { texto: "➕ É outra", dados: `d:ou:${novaId}` },
+    ],
+  ];
 }
 
 export function mensagemDeRegistro(d: Pick<DespesaMontada, "dados" | "nomes">, hoje: string, prefixo = "✅ Registrado"): string {

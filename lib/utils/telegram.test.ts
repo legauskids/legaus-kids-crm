@@ -34,6 +34,25 @@ describe("lerUpdate", () => {
     expect(u).toMatchObject({ tipo: "botao", texto: "ok:abc", callbackId: "cb1", fromId: "7366553763" });
   });
 
+  it("arquivo: voz, maior foto, documento; e o texto do botão tocado", () => {
+    const chat = { id: 1, type: "private" };
+    expect(lerUpdate({ update_id: 8, message: { message_id: 8, from: de, chat, voice: { file_id: "v1", file_size: 9 } } })?.arquivo).toEqual({ fileId: "v1", mime: "audio/ogg", nome: null, tamanho: 9 });
+    const foto = lerUpdate({ update_id: 9, message: { message_id: 9, from: de, chat, photo: [{ file_id: "p-pequena" }, { file_id: "p-grande" }] } });
+    expect(foto?.arquivo).toMatchObject({ fileId: "p-grande", mime: "image/jpeg" });
+    const pdf = lerUpdate({ update_id: 10, message: { message_id: 10, from: de, chat, document: { file_id: "d1", mime_type: "application/pdf", file_name: "nota.pdf" } } });
+    expect(pdf?.arquivo).toMatchObject({ fileId: "d1", mime: "application/pdf", nome: "nota.pdf" });
+    const toque = lerUpdate({
+      update_id: 11,
+      callback_query: {
+        id: "cb2",
+        from: de,
+        data: "d:ok:abc",
+        message: { message_id: 77, chat: { id: 7366553763, type: "private" }, reply_markup: { inline_keyboard: [[{ text: "✅ Confirmar", callback_data: "d:ok:abc" }, { text: "❌ Descartar", callback_data: "d:x:abc" }]] } },
+      },
+    });
+    expect(toque).toMatchObject({ mensagemId: 77, botaoTexto: "✅ Confirmar", arquivo: null });
+  });
+
   it("update sem remetente ou inválido", () => {
     expect(lerUpdate(null)).toBeNull();
     expect(lerUpdate({ update_id: 6 })).toBeNull();
