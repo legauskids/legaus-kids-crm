@@ -324,6 +324,17 @@ export async function confirmarRascunho(id: string, identificador: string): Prom
   const hoje = diaBrasilia(new Date());
   const resumo = await resumoParaMensagem(id);
   if (resumo.faltando.length) {
+    // No Telegram, o que falta de categoria/centro vem como botões (visto no
+    // 1º push real, 08/10: "Confirmar" sem categoria pedia pra digitar).
+    if (canalDoIdentificador(identificador) === "telegram") {
+      const { categorias, centrosGerais } = await carregarCadastrosDespesa();
+      if (resumo.faltando.includes("categoria")) {
+        return { mensagem: "Antes de confirmar, escolha a categoria:", botoes: botoesDeCategorias(id, categorias, null) };
+      }
+      if (resumo.faltando.includes("centro de custo")) {
+        return { mensagem: "Antes de confirmar, escolha o centro de custo:", botoes: botoesDeCentros(id, centrosGerais, null) };
+      }
+    }
     return { mensagem: `Ainda falta: ${resumo.faltando.join(", ")}. Me diga pra eu completar (ex.: "o centro é Produção").` };
   }
   await confirmarDespesa(id);

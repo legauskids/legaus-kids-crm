@@ -116,7 +116,7 @@ async function avisoDeSaida(avisoId: string, lido: PushLido, dataHora: Date, usu
     texto: lido.contraparte ?? "",
     origem: "PUSH",
     hoje: diaBrasilia(new Date()),
-    extracao: { valor: lido.valorCentavos / 100, fornecedor: lido.contraparte ?? "", data: dia },
+    extracao: { valor: lido.valorCentavos / 100, fornecedor: lido.contraparte ?? "", data: dia, descricao: lido.mensagem },
     ...cadastros,
   });
 
@@ -137,7 +137,7 @@ async function avisoDeSaida(avisoId: string, lido: PushLido, dataHora: Date, usu
     origem: "PUSH",
     registradaPorId: usuarioId,
     rascunho: true,
-    textoOriginal: [lido.contraparte, lido.documento, lido.banco].filter(Boolean).join(" · ") || null,
+    textoOriginal: [lido.contraparte, lido.documento, lido.banco, lido.mensagem].filter(Boolean).join(" · ") || null,
     extracao: {
       push: lido,
       avisoId,
@@ -175,14 +175,16 @@ async function avisoDeEntrada(avisoId: string, lido: PushLido, dataHora: Date): 
   // e completa com os mais recentes.
   const escolhidos = new Map<string, { id: string; titulo: string }>();
   for (const n of abertos.filter((n) => n.valorCentavos === lido.valorCentavos)) escolhidos.set(n.id, n);
-  if (lido.contraparte) for (const n of negociosParecidos(lido.contraparte, abertos, 4)) escolhidos.set(n.id, n);
+  // A mensagem do Pix costuma dizer do que é ("2ª parcela playground escola X").
+  const pista = [lido.contraparte, lido.mensagem].filter(Boolean).join(" ");
+  if (pista) for (const n of negociosParecidos(pista, abertos, 4)) escolhidos.set(n.id, n);
   for (const n of abertos) {
     if (escolhidos.size >= 6) break;
     escolhidos.set(n.id, n);
   }
 
   return {
-    mensagem: `💰 Pix recebido: *${reais(lido.valorCentavos)}* de ${lido.contraparte ?? "?"} (${quando(dataHora)}).\nDe qual negócio é? Fica anotado pra conciliação sugerir quando o extrato chegar.`,
+    mensagem: `💰 Pix recebido: *${reais(lido.valorCentavos)}* de ${lido.contraparte ?? "?"} (${quando(dataHora)}).${lido.mensagem ? `\n💬 "${lido.mensagem}"` : ""}\nDe qual negócio é? Fica anotado pra conciliação sugerir quando o extrato chegar.`,
     botoes: botoesDeEntrada(avisoId, [...escolhidos.values()].slice(0, 6)),
   };
 }

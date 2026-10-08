@@ -16,6 +16,7 @@ describe("lerPushSicredi", () => {
       contraparte: "Marcos Zancan",
       documento: "###.598.010-##",
       banco: "Banco Cooperativo Sicredi S.a.",
+      mensagem: null,
       dataHora: "2026-10-07T10:27:48",
       meio: "PIX",
     });
@@ -38,7 +39,39 @@ describe("lerPushSicredi", () => {
       contraparte: null,
       documento: null,
       banco: null,
+      mensagem: null,
       dataHora: null,
+      meio: "PIX",
+    });
+  });
+
+  it("pushes reais de 08/10/2026, como o MacroDroid mandou (título na primeira linha)", () => {
+    const enviado = [
+      "Sicredi Pix",
+      "Você pagou um Pix no valor de R$ 0,03",
+      "Marcos Zancan CPF ###.598.010-##",
+      "Banco Cooperativo Sicredi S.a.",
+      "08/10/2026 - 09:33:48",
+      "Aproveite todas vantagens do Pix no Sicredi.",
+    ].join("\n");
+    expect(lerPushSicredi(null, enviado)).toMatchObject({ direcao: "SAIDA", valorCentavos: 3, contraparte: "Marcos Zancan", banco: "Banco Cooperativo Sicredi S.a.", mensagem: null, dataHora: "2026-10-08T09:33:48" });
+    const recebido = [
+      "Sicredi Pix",
+      "Você recebeu um Pix no valor de R$ 0,02",
+      "Marcos Zancan",
+      "Banco Cooperativo Sicredi S.a.",
+      "teste recebimento",
+      "08/10/2026 - 10:11:26",
+      "Aproveite todas vantagens do Pix no Sicredi.",
+    ].join("\n");
+    expect(lerPushSicredi(null, recebido)).toEqual({
+      direcao: "ENTRADA",
+      valorCentavos: 2,
+      contraparte: "Marcos Zancan",
+      documento: null,
+      banco: "Banco Cooperativo Sicredi S.a.",
+      mensagem: "teste recebimento",
+      dataHora: "2026-10-08T10:11:26",
       meio: "PIX",
     });
   });
