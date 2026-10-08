@@ -5,6 +5,7 @@ import { parseOfx, decodificarOfx } from "@/lib/utils/ofx-parser";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
 import { candidatosDaLinha, negocioSugeridoParaEntrada } from "@/lib/utils/pares-despesa";
+import { negociosDosAvisos } from "@/lib/server/push-bancario";
 import { pendenciasDaDespesa, validarCentro } from "@/lib/utils/despesas";
 
 // Conciliação do extrato (OFX do Sicredi) com despesas registradas antes e
@@ -79,12 +80,15 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
 
   const [despesas, negocios] = await Promise.all([listDespesasParaPar(), listNegociosParaConciliacao()]);
   const negociosVM = negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }));
+  const negocioDoPush = await negociosDosAvisos(
+    importacao.transacoes.map((t) => ({ id: t.id, dia: diaBrasilia(t.data), valorCentavos: t.valorCentavos, tipo: t.tipo })),
+  );
   let paresProvaveis = 0;
   let entradasComSugestao = 0;
   for (const t of importacao.transacoes) {
     const linha = { id: t.id, dia: diaBrasilia(t.data), descricao: t.descricao, valorCentavos: t.valorCentavos, tipo: t.tipo };
     if (t.tipo === "SAIDA" && candidatosDaLinha(linha, despesas).length > 0) paresProvaveis++;
-    if (t.tipo === "ENTRADA" && negocioSugeridoParaEntrada(linha, negociosVM)) entradasComSugestao++;
+    if (t.tipo === "ENTRADA" && (negocioDoPush.has(t.id) || negocioSugeridoParaEntrada(linha, negociosVM))) entradasComSugestao++;
   }
 
   return {

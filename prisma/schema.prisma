@@ -359,6 +359,7 @@ model Negocio {
   // projeto (centro de custo por projeto) — ver RateioTransacao.
   rateiosTransacao    RateioTransacao[]
   despesas            Despesa[]
+  avisosBancarios     AvisoBancario[]
 
   @@index([contatoId])
 }
@@ -947,6 +948,7 @@ model Despesa {
   criadoEm        DateTime           @default(now())
   atualizadoEm    DateTime           @updatedAt
   paresRejeitados ParRejeitado[]
+  avisosBancarios AvisoBancario[]
 
   @@index([status, data])
   @@index([valorCentavos])
@@ -1191,4 +1193,43 @@ model CompromissoVersao {
   criadoEm      DateTime    @default(now())
 
   @@index([compromissoId, vigenteDesde])
+}
+
+// Notificação (push) do app do Sicredi encaminhada pelo MacroDroid do
+// celular do Marcos (pedido de 2026-10-07). Saída vira despesa esperando
+// confirmação (origem PUSH, ver lib/server/push-bancario.ts); entrada
+// pergunta de qual negócio é, e a resposta fica aqui até o extrato chegar —
+// a conciliação sugere esse negócio (sempre esperando o clique).
+enum StatusAvisoBancario {
+  // Esperando a resposta no Telegram.
+  PENDENTE
+  // Respondido: negócio escolhido (entrada) ou despesa ligada (saída).
+  RESPONDIDO
+  // "Não é de negócio" / descartado.
+  IGNORADO
+}
+
+model AvisoBancario {
+  id            String                @id @default(cuid())
+  // sha256 do título + texto: o mesmo push mandado duas vezes não duplica.
+  hash          String                @unique
+  direcao       TipoTransacaoBancaria
+  valorCentavos Int
+  // Quem recebeu (saída) ou quem mandou (entrada), como veio no push.
+  contraparte   String?
+  documento     String?
+  banco         String?
+  // Data e hora do push (ou de quando chegou, se a notificação não trouxe).
+  dataHora      DateTime
+  titulo        String?
+  texto         String
+  status        StatusAvisoBancario   @default(PENDENTE)
+  despesaId     String?
+  despesa       Despesa?              @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+  negocioId     String?
+  negocio       Negocio?              @relation(fields: [negocioId], references: [id], onDelete: SetNull)
+  criadoEm      DateTime              @default(now())
+  atualizadoEm  DateTime              @updatedAt
+
+  @@index([direcao, valorCentavos, dataHora])
 }

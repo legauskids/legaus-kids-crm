@@ -4,6 +4,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { processarBotaoAgente, processarComandoAgente } from "@/lib/server/agente";
 import { importarExtratoDaMensagem } from "@/lib/server/conciliacao-bancaria";
+import { tokenPush } from "@/lib/server/push-bancario";
+import { URL_BASE } from "@/lib/constants/app";
 import { transcreverAudio } from "@/lib/server/transcricao";
 import { agenteLigado, dividirMensagem, paraHtmlTelegram, type Botoes } from "@/lib/utils/agente-canal";
 import { idsAutorizados, lerUpdate, type UpdateLido } from "@/lib/utils/telegram";
@@ -148,7 +150,25 @@ function textoDeAjuda(nome: string): string {
   ].join("\n");
 }
 
-type Usuario = { id: string; nome: string };
+type Usuario = { id: string; nome: string; isAdmin: boolean };
+
+/** /push: como configurar o MacroDroid pra encaminhar as notificações do Sicredi (só administrador). */
+function instrucoesDoPush(): string {
+  return [
+    "📲 *MacroDroid — notificações do Sicredi* (no celular onde chega o app do Sicredi):",
+    "",
+    "1. Nova macro → *Gatilho*: Notificação recebida → app *Sicredi*.",
+    "2. *Ação*: Requisição HTTP (HTTP Request):",
+    "• Método: POST",
+    `• URL: ${URL_BASE}/api/push/sicredi`,
+    "• Cabeçalho: Authorization, com o valor lá embaixo",
+    "• Corpo: tipo *text/plain*, com o *título* da notificação, uma quebra de linha e o *texto* da notificação (pelo botão de texto mágico).",
+    "3. Salve e faça um Pix de teste de R$ 0,01: a pergunta chega aqui.",
+    "",
+    "Valor do cabeçalho Authorization (só abre essa rota, nada mais do CRM):",
+    `Bearer ${tokenPush()}`,
+  ].join("\n");
+}
 type Resposta = { mensagem: string; botoes?: Botoes };
 
 /**
@@ -168,6 +188,9 @@ async function responderUpdate(u: UpdateLido, usuario: Usuario, identificador: s
 
   const texto = u.texto?.trim() ?? "";
   if (/^\/(start|ajuda|help)\b/i.test(texto)) return { resposta: { mensagem: textoDeAjuda(usuario.nome) }, gravado: false };
+  if (/^\/push\b/i.test(texto)) {
+    return { resposta: { mensagem: usuario.isAdmin ? instrucoesDoPush() : "Só administrador configura o push do banco." }, gravado: false };
+  }
 
   if (u.tipo === "outro" || (u.tipo === "texto" && !texto)) {
     return { resposta: { mensagem: "Por enquanto eu entendo texto, áudio, foto e documento (PDF ou extrato .ofx)." }, gravado: false };
@@ -226,7 +249,7 @@ export async function processarUpdateTelegram(bruto: unknown): Promise<void> {
   if (!u.chatPrivado) return registrarIgnorado(u, "fora de conversa privada");
   if (!idsAutorizadosTelegram().has(u.fromId)) return registrarIgnorado(u, "ID não autorizado");
 
-  const usuario = await prisma.user.findUnique({ where: { telegramId: u.fromId }, select: { id: true, nome: true, canaisAgente: true } });
+  const usuario = await prisma.user.findUnique({ where: { telegramId: u.fromId }, select: { id: true, nome: true, isAdmin: true, canaisAgente: true } });
   const identificador = `tg:${u.fromId}`;
   const recebido = u.tipo === "botao" ? `[botão: ${u.botaoTexto ?? u.texto}]` : (u.texto ?? `[${u.tipo}]`);
 

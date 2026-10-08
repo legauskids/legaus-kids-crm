@@ -65,6 +65,7 @@ import {
 } from "@/lib/server/despesa-agente";
 import { interpretarRespostaRascunho, pareceRespostaDeDespesa, type Enquete, type ExtracaoDespesa } from "@/lib/utils/despesa-agente";
 import { canalDoIdentificador, lerBotao, type Botoes, type CanalAgente } from "@/lib/utils/agente-canal";
+import { responderBotaoAviso } from "@/lib/server/push-bancario";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
 import type { ComandoAgente, OrigemComando, OrigemDespesa, Prisma, StatusOrcamento } from "@prisma/client";
 
@@ -2702,9 +2703,10 @@ export async function processarBotaoAgente(input: { identificador: string; usuar
     return { resposta: await executarPendente(pendente, input) };
   }
 
-  if (pedido.tipo === "aviso-negocio" || pedido.tipo === "aviso-ignorar") return null;
-
-  const r = await responderBotaoDespesa(pedido, input.identificador);
+  const r =
+    pedido.tipo === "aviso-negocio" || pedido.tipo === "aviso-ignorar"
+      ? await responderBotaoAviso(pedido, input.identificador)
+      : await responderBotaoDespesa(pedido, input.identificador);
   return r ? { resposta: r.mensagem, enquete: r.enquete, botoes: r.botoes } : null;
 }
 

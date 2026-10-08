@@ -29,6 +29,7 @@ import { diaBrasilia, inicioDoDiaBrasilia, somarDias } from "@/lib/utils/brasili
 import { DespesasTab } from "@/app/(app)/financeiro/despesas-tab";
 import { getDashboardFinanceiro, resolverPeriodoFinanceiro } from "@/lib/server/resultado-financeiro";
 import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
+import { negociosDosAvisos } from "@/lib/server/push-bancario";
 import { prisma } from "@/lib/db";
 import { DashboardFinanceiroTab } from "@/app/(app)/financeiro/dashboard-financeiro-tab";
 import { CentrosCustoTab } from "@/app/(app)/financeiro/centros-custo-tab";
@@ -222,6 +223,10 @@ async function ConciliacaoTabData({ resolvidosTodos }: { resolvidosTodos: boolea
     listCentrosGerais(),
   ]);
   const projetos = negocios.map((n) => ({ id: n.id, titulo: n.titulo, valorCentavos: n.valorCentavos, contatoNome: n.contato?.nome ?? null }));
+  // Entrada que o Marcos já disse no push do banco de qual negócio é.
+  const negocioDoPush = await negociosDosAvisos(
+    painel.pendentes.map((t) => ({ id: t.id, dia: diaBrasilia(t.data), valorCentavos: t.valorCentavos, tipo: t.tipo })),
+  );
 
   type DespesaDoPainel = (typeof painel.despesas)[number];
   const despesaVM = (d: Omit<DespesaDoPainel, "dia">) => ({
@@ -267,7 +272,7 @@ async function ConciliacaoTabData({ resolvidosTodos }: { resolvidosTodos: boolea
           ...linha,
           candidatos: candidatos.map((c) => ({ despesa: despesaVM(c.despesa), motivo: motivoDoPar(c, candidatos.length) })),
           sugestaoCategoriaId: sugerirCentroCusto(t.descricao, t.tipo, categorias)?.id ?? null,
-          sugestaoNegocioId: negocioSugeridoParaEntrada(linha, projetos)?.id ?? null,
+          sugestaoNegocioId: negocioDoPush.get(t.id) ?? negocioSugeridoParaEntrada(linha, projetos)?.id ?? null,
           fornecedorSugerido: fornecedorDaDescricao(t.descricao),
         };
       })}

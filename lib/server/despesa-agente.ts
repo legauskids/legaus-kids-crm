@@ -25,6 +25,7 @@ import {
   resolverCentro,
   resolverDataFalada,
   type Enquete,
+  type CanalDespesa,
   type ExtracaoDespesa,
 } from "@/lib/utils/despesa-agente";
 import type { Botoes, PedidoBotao } from "@/lib/utils/agente-canal";
@@ -110,7 +111,7 @@ export async function registrarDespesaDaMensagem(input: {
   // Igual a uma despesa já registrada (o mesmo comprovante mandado de novo,
   // ou o comprovante de um gasto que já veio por áudio): nunca registra
   // direto, e avisa no resumo.
-  const parecida = await buscarDespesaParecida(montada.dados);
+  const parecida = await buscarDespesaParecida(montada.dados, canalDoIdentificador(input.identificador));
   const registrarDireto = montada.registrarDireto && !parecida;
 
   const despesa = await criarDespesa({
@@ -169,19 +170,28 @@ function reais(centavos: number): string {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }).replace(/\s/g, " ");
 }
 
-/** Despesa já registrada (não rascunho) que parece ser o mesmo gasto — ver pareceMesmaDespesa. */
-async function buscarDespesaParecida(d: { valorCentavos: number; dia: string; fornecedor: string }) {
+/**
+ * Despesa já registrada (não rascunho) que parece ser o mesmo gasto — ver
+ * pareceMesmaDespesa. No Telegram entram também as do push do banco (mesmo
+ * rascunho): o Pix traz a razão social e o áudio o apelido, então ali basta
+ * o mesmo valor perto da data — vira pergunta "é a mesma?", nunca junta
+ * sozinho. O WhatsApp (que a Dani vê) nunca mostra despesa vinda do push.
+ */
+async function buscarDespesaParecida(d: { valorCentavos: number; dia: string; fornecedor: string }, canal: CanalDespesa = "whatsapp") {
   if (d.valorCentavos <= 0) return null;
   const candidatas = await prisma.despesa.findMany({
     where: {
       valorCentavos: d.valorCentavos,
-      status: { in: ["AGUARDANDO_CONCILIACAO", "CONCILIADA"] },
       data: { gte: dataDaDespesa(somarDias(d.dia, -3)), lte: dataDaDespesa(somarDias(d.dia, 3)) },
+      OR: [
+        { status: { in: ["AGUARDANDO_CONCILIACAO", "CONCILIADA"] }, ...(canal === "telegram" ? {} : { origem: { not: "PUSH" } }) },
+        ...(canal === "telegram" ? [{ origem: "PUSH" as const }] : []),
+      ],
     },
-    select: { id: true, valorCentavos: true, fornecedor: true, data: true },
+    select: { id: true, valorCentavos: true, fornecedor: true, data: true, origem: true },
     orderBy: { criadoEm: "desc" },
   });
-  return candidatas.find((c) => pareceMesmaDespesa(d, { ...c, dia: diaBrasilia(c.data) })) ?? null;
+  return candidatas.find((c) => c.origem === "PUSH" || pareceMesmaDespesa(d, { ...c, dia: diaBrasilia(c.data) })) ?? null;
 }
 
 /**
@@ -540,12 +550,18 @@ export async function juntarComRegistrada(novaId: string, existenteId: string, i
         } as Prisma.InputJsonValue,
       },
     }),
+    // O push do banco que tinha virado a despesa nova passa pra que fica.
+    prisma.avisoBancario.updateMany({ where: { despesaId: nova.id }, data: { despesaId: existente.id } }),
     prisma.despesa.delete({ where: { id: nova.id } }),
   ]);
   const dia = diaBrasilia(existente.data).split("-").reverse().slice(0, 2).join("/");
-  return {
-    mensagem: `🔗 Juntei na despesa já registrada: *${reais(existente.valorCentavos)}* — ${fornecedor} (${dia}).${trocaArquivo ? " O arquivo ficou guardado nela." : ""}`,
-  };
+  const guardado = trocaArquivo ? " O arquivo ficou guardado nela." : "";
+  // Juntou num rascunho desta conversa (ex.: áudio no push que ainda espera
+  // confirmação): mostra o resumo dele com os botões.
+  if (existente.status === "A_CONFIRMAR" && existente.telefoneOrigem === identificador) {
+    return pedirConfirmacao(existente.id, identificador, `🔗 Juntei as duas.${guardado} Confere:`);
+  }
+  return { mensagem: `🔗 Juntei na despesa já registrada: *${reais(existente.valorCentavos)}* — ${fornecedor} (${dia}).${guardado}` };
 }
 
 /** Um toque em botão de despesa (ver PedidoBotao). null = não é de despesa ou não é dessa conversa. */
