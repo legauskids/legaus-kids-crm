@@ -31,6 +31,8 @@ const SELECT_LISTA = {
   anexoNome: true,
   textoOriginal: true,
   registradaPor: { select: { nome: true } },
+  // Etiqueta da conta (Sicredi/InfinitePay) quando veio de um push do banco.
+  avisosBancarios: { select: { conta: true }, take: 1 },
   criadoEm: true,
 } satisfies Prisma.DespesaSelect;
 

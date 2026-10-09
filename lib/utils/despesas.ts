@@ -16,6 +16,10 @@ export const ROTULO_ORIGEM: Record<OrigemDespesa, string> = {
   PUSH: "Push do banco",
 };
 
+/** Etiqueta da conta de origem do push (decisão do Marcos, 2026-10-08). */
+export type ContaBancaria = "SICREDI" | "INFINITEPAY";
+export const ROTULO_CONTA: Record<ContaBancaria, string> = { SICREDI: "Sicredi", INFINITEPAY: "InfinitePay" };
+
 export const ROTULO_STATUS: Record<StatusDespesa, string> = {
   A_CONFIRMAR: "A confirmar",
   AGUARDANDO_CONCILIACAO: "Aguardando conciliação",

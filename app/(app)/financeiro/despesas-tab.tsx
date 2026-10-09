@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
-import { ROTULO_ORIGEM, ROTULO_STATUS, type FiltroDespesas, type OrigemDespesa, type StatusDespesa } from "@/lib/utils/despesas";
+import { ROTULO_CONTA, ROTULO_ORIGEM, ROTULO_STATUS, type ContaBancaria, type FiltroDespesas, type OrigemDespesa, type StatusDespesa } from "@/lib/utils/despesas";
 import { BellRing, Check, Landmark, MessageSquare, Mic, Paperclip, PenLine, Pencil, Plus, Receipt, X } from "lucide-react";
 import { confirmarDespesaAction, excluirDespesaAction } from "@/app/(app)/financeiro/actions";
 import {
@@ -30,6 +30,8 @@ export type DespesaVM = DespesaEdicaoVM & {
   temAnexo: boolean;
   anexoMime: string | null;
   registradaPorNome: string;
+  /** Conta de origem quando veio de um push do banco (Sicredi/InfinitePay). */
+  contaBancaria: ContaBancaria | null;
 };
 
 type Resumo = Record<"aConfirmar" | "aguardando" | "conciliadas", { quantidade: number; totalCentavos: number }>;
@@ -234,6 +236,7 @@ function LinhaDespesa({
             <Icone className="size-3" />
             {ROTULO_ORIGEM[d.origem]}
           </span>
+          {d.contaBancaria && <span className="rounded-md border bg-muted/50 px-1.5 py-0.5">{ROTULO_CONTA[d.contaBancaria]}</span>}
           {d.temAnexo && (
             <a href={`/api/despesas/${d.id}/anexo`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
               <Paperclip className="size-3" />

@@ -155,15 +155,17 @@ type Usuario = { id: string; nome: string; isAdmin: boolean };
 /** /push: como configurar o MacroDroid pra encaminhar as notificações do Sicredi (só administrador). */
 function instrucoesDoPush(): string {
   return [
-    "📲 *MacroDroid — notificações do Sicredi* (no celular onde chega o app do Sicredi):",
+    "📲 *MacroDroid — notificações dos bancos* (uma macro por app, no celular onde chegam as notificações):",
     "",
-    "1. Nova macro → *Gatilho*: Notificação recebida → app *Sicredi*.",
+    "1. Nova macro → *Gatilho*: Notificação recebida → o app do banco.",
     "2. *Ação*: Requisição HTTP (HTTP Request):",
     "• Método: POST",
-    `• URL: ${URL_BASE}/api/push/sicredi`,
-    "• Cabeçalho: Authorization, com o valor lá embaixo",
-    "• Corpo: tipo *text/plain*, com o *título* da notificação, uma quebra de linha e o *texto* da notificação (pelo botão de texto mágico).",
-    "3. Salve e faça um Pix de teste de R$ 0,01: a pergunta chega aqui.",
+    `• URL do *Sicredi*: ${URL_BASE}/api/push/sicredi`,
+    `• URL da *InfinitePay*: ${URL_BASE}/api/push/infinitepay`,
+    "• Cabeçalho: Authorization, com o valor lá embaixo (o mesmo nas duas)",
+    "• Corpo: tipo *text/plain*, com o *título da notificação*, uma quebra de linha e o *texto grande da notificação* (pelo botão de texto mágico).",
+    "3. Dá pra duplicar a macro do Sicredi e trocar só o app e a URL.",
+    "4. Salve e faça um Pix de teste de R$ 0,01: a pergunta chega aqui.",
     "",
     "Valor do cabeçalho Authorization (só abre essa rota, nada mais do CRM):",
     `Bearer ${tokenPush()}`,

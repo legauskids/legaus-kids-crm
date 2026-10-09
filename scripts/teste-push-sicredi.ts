@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { processarPushBancario, negociosDosAvisos, tokenPush, tokenPushConfere, destinatarioDosAvisos } from "@/lib/server/push-bancario";
 import { processarBotaoAgente } from "@/lib/server/agente";
 import { registrarDespesaDaMensagem } from "@/lib/server/despesa-agente";
-import { criarDespesa } from "@/lib/server/despesas";
+import { criarDespesa, listDespesas } from "@/lib/server/despesas";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 
 globalThis.fetch = (async () => new Response(JSON.stringify({ ok: true, result: {} }))) as typeof fetch;
@@ -123,6 +123,24 @@ async function main() {
 
   // 7. Notificação que não é movimentação
   checar((await processarPushBancario({ titulo: "Sicredi", texto: "Aproveite todas vantagens do Pix no Sicredi." })).status === "ignorado", "propaganda do app é ignorada");
+
+  // 8. InfinitePay (print do Marcos, 08/10): sem data/hora, etiqueta da conta
+  const textoIp = "Pix recebido de R$ 4,56! 💰✅\nVocê recebeu um Pix de CLIENTE TESTE PUSH na sua conta InfinitePay! Clique para conferir seu saldo. 👆";
+  const r8 = await processarPushBancario({ conta: "INFINITEPAY", titulo: null, texto: textoIp });
+  if (r8.status !== "registrado") throw new Error(`push 8: ${r8.status}`);
+  avisos.push(r8.avisoId);
+  const aviso8 = await prisma.avisoBancario.findUniqueOrThrow({ where: { id: r8.avisoId } });
+  checar(
+    aviso8.conta === "INFINITEPAY" && aviso8.contraparte === "Cliente Teste Push" && r8.resposta.mensagem.includes("InfinitePay") && dados(r8.resposta.botoes).includes(`ax:${r8.avisoId}`),
+    "InfinitePay: Pix recebido com a etiqueta, quem mandou e a pergunta do negócio",
+  );
+  checar((await processarPushBancario({ conta: "INFINITEPAY", titulo: null, texto: textoIp })).status === "duplicado", "InfinitePay: a mesma notificação em até 3 min é repetida");
+  const r9 = await processarPushBancario({ conta: "INFINITEPAY", titulo: "Pix enviado de R$ 5,55", texto: "Você enviou um Pix para Loja Teste Push." });
+  if (r9.status !== "registrado") throw new Error(`push 9: ${r9.status}`);
+  avisos.push(r9.avisoId);
+  const aviso9 = await prisma.avisoBancario.findUniqueOrThrow({ where: { id: r9.avisoId } });
+  const naLista = (await listDespesas("TODAS")).find((d) => d.id === aviso9.despesaId);
+  checar(naLista?.avisosBancarios[0]?.conta === "INFINITEPAY" && r9.resposta.mensagem.includes("InfinitePay"), "InfinitePay: Pix enviado vira despesa e aparece com a etiqueta na lista");
 }
 
 main()

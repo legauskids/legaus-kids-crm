@@ -1200,6 +1200,15 @@ model CompromissoVersao {
 // confirmação (origem PUSH, ver lib/server/push-bancario.ts); entrada
 // pergunta de qual negócio é, e a resposta fica aqui até o extrato chegar —
 // a conciliação sugere esse negócio (sempre esperando o clique).
+// De qual app veio o push — a "etiqueta" do aviso (decisão do Marcos,
+// 2026-10-08): as duas contas da InfinitePay (Legaus e Idezza) ficam no
+// mesmo app e a notificação não diz de qual é, então tudo entra no mesmo
+// Financeiro e só a origem é marcada.
+enum ContaBancaria {
+  SICREDI
+  INFINITEPAY
+}
+
 enum StatusAvisoBancario {
   // Esperando a resposta no Telegram.
   PENDENTE
@@ -1213,6 +1222,7 @@ model AvisoBancario {
   id            String                @id @default(cuid())
   // sha256 do título + texto: o mesmo push mandado duas vezes não duplica.
   hash          String                @unique
+  conta         ContaBancaria         @default(SICREDI)
   direcao       TipoTransacaoBancaria
   valorCentavos Int
   // Quem recebeu (saída) ou quem mandou (entrada), como veio no push.

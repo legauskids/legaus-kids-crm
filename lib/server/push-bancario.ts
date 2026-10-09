@@ -1,26 +1,28 @@
 import "server-only";
 import crypto from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ContaBancaria } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { criarDespesa } from "@/lib/server/despesas";
 import { carregarCadastrosDespesa, pedirConfirmacao, type RespostaDespesa } from "@/lib/server/despesa-agente";
 import { diaBrasilia, somarDias } from "@/lib/utils/brasilia";
-import { dataDaDespesa } from "@/lib/utils/despesas";
+import { dataDaDespesa, ROTULO_CONTA } from "@/lib/utils/despesas";
 import { botoesDeParecida, montarDespesaDaMensagem, negociosParecidos } from "@/lib/utils/despesa-agente";
 import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
 import { botoesDeEntrada, lerPushSicredi, negocioDoAviso, type PushLido } from "@/lib/utils/push-sicredi";
+import { lerPushInfinitePay } from "@/lib/utils/push-infinitepay";
 import type { PedidoBotao } from "@/lib/utils/agente-canal";
 
-// Push do app do Sicredi encaminhado pelo MacroDroid do celular do Marcos
-// (pedido de 2026-10-07). Toda pergunta vai pro Telegram dele, nunca pro
-// WhatsApp (que a Dani também vê):
+// Push dos apps do Sicredi e da InfinitePay encaminhado pelo MacroDroid do
+// celular do Marcos (pedido de 2026-10-07; InfinitePay em 2026-10-08, com a
+// etiqueta da conta de origem). Toda pergunta vai pro Telegram dele, nunca
+// pro WhatsApp (que a Dani também vê):
 // - SAÍDA: vira despesa esperando confirmação (origem PUSH) com os botões
 //   de sempre; se já existe uma despesa do mesmo valor perto dessa data
 //   (áudio, comprovante ou outro push), pergunta se é a mesma e junta.
 // - ENTRADA: pergunta de qual negócio é; a resposta fica no AvisoBancario e
 //   a conciliação pré-seleciona esse negócio quando o extrato chegar.
 // Este arquivo não fala com o Telegram: devolve a mensagem e quem envia é
-// a rota (app/api/push/sicredi).
+// a rota (app/api/push/*, via lib/server/push-http.ts).
 
 /**
  * Chave que o MacroDroid manda no header Authorization. Derivada do
@@ -64,10 +66,16 @@ export type ResultadoPush =
   | { status: "ignorado" | "duplicado" | "sem-destino" }
   | { status: "registrado"; avisoId: string; chatId: string; resposta: RespostaDespesa };
 
-export async function processarPushBancario(input: { titulo: string | null; texto: string }): Promise<ResultadoPush> {
-  const lido = lerPushSicredi(input.titulo, input.texto);
+/** Janela em que a mesma notificação sem data/hora (InfinitePay) é tratada como repetida. */
+const JANELA_REPETIDO_SEM_HORA_MS = 3 * 60 * 1000;
+
+const LEITURA: Record<ContaBancaria, typeof lerPushSicredi> = { SICREDI: lerPushSicredi, INFINITEPAY: lerPushInfinitePay };
+
+export async function processarPushBancario(input: { conta?: ContaBancaria; titulo: string | null; texto: string }): Promise<ResultadoPush> {
+  const conta = input.conta ?? "SICREDI";
+  const lido = LEITURA[conta](input.titulo, input.texto);
   if (!lido) {
-    console.log("[push] ignorado: não é movimentação.");
+    console.log(`[push] ${conta} ignorado: não é movimentação.`);
     return { status: "ignorado" };
   }
   const destino = await destinatarioDosAvisos();
@@ -76,13 +84,28 @@ export async function processarPushBancario(input: { titulo: string | null; text
     return { status: "sem-destino" };
   }
 
-  const hash = crypto.createHash("sha256").update(`${input.titulo ?? ""}\n${input.texto}`).digest("hex");
+  // O MacroDroid manda de novo quando a notificação é atualizada. Com
+  // data/hora no texto (Sicredi), o texto igual já é o mesmo push. Sem
+  // (InfinitePay), dois Pix iguais da mesma pessoa têm o mesmo texto: só é
+  // repetido se chegar em até 3 minutos.
+  if (!lido.dataHora) {
+    const repetido = await prisma.avisoBancario.findFirst({
+      where: { conta, texto: input.texto, criadoEm: { gte: new Date(Date.now() - JANELA_REPETIDO_SEM_HORA_MS) } },
+      select: { id: true },
+    });
+    if (repetido) return { status: "duplicado" };
+  }
+  const hash = crypto
+    .createHash("sha256")
+    .update(lido.dataHora ? `${input.titulo ?? ""}\n${input.texto}` : `${conta}\n${input.texto}\n${new Date().toISOString()}`)
+    .digest("hex");
   const dataHora = lido.dataHora ? new Date(`${lido.dataHora}-03:00`) : new Date();
   let aviso;
   try {
     aviso = await prisma.avisoBancario.create({
       data: {
         hash,
+        conta,
         direcao: lido.direcao,
         valorCentavos: lido.valorCentavos,
         contraparte: lido.contraparte,
@@ -102,12 +125,19 @@ export async function processarPushBancario(input: { titulo: string | null; text
   const identificador = `tg:${destino.telegramId}`;
   const resposta =
     lido.direcao === "SAIDA"
-      ? await avisoDeSaida(aviso.id, lido, dataHora, destino.id, identificador)
-      : await avisoDeEntrada(aviso.id, lido, dataHora);
+      ? await avisoDeSaida(aviso.id, conta, lido, dataHora, destino.id, identificador)
+      : await avisoDeEntrada(aviso.id, conta, lido, dataHora);
   return { status: "registrado", avisoId: aviso.id, chatId: destino.telegramId, resposta };
 }
 
-async function avisoDeSaida(avisoId: string, lido: PushLido, dataHora: Date, usuarioId: string, identificador: string): Promise<RespostaDespesa> {
+async function avisoDeSaida(
+  avisoId: string,
+  conta: ContaBancaria,
+  lido: PushLido,
+  dataHora: Date,
+  usuarioId: string,
+  identificador: string,
+): Promise<RespostaDespesa> {
   const dia = diaBrasilia(dataHora);
   const cadastros = await carregarCadastrosDespesa();
   // Só o nome de quem recebeu entra na dedução da categoria: o resto do
@@ -149,7 +179,7 @@ async function avisoDeSaida(avisoId: string, lido: PushLido, dataHora: Date, usu
   await prisma.avisoBancario.update({ where: { id: avisoId }, data: { despesaId: despesa.id } });
 
   const meio = lido.meio === "PIX" ? "Pix" : "Pagamento";
-  const intro = `🔔 ${meio} de *${reais(lido.valorCentavos)}* para ${lido.contraparte ?? "?"} (${quando(dataHora)}).`;
+  const intro = `🔔 *${ROTULO_CONTA[conta]}* · ${meio} de *${reais(lido.valorCentavos)}* para ${lido.contraparte ?? "?"} (${quando(dataHora)}).`;
   if (parecida) {
     const diaParecida = diaBrasilia(parecida.data).split("-").reverse().slice(0, 2).join("/");
     return {
@@ -160,7 +190,7 @@ async function avisoDeSaida(avisoId: string, lido: PushLido, dataHora: Date, usu
   return pedirConfirmacao(despesa.id, identificador, `${intro} O que foi? Confira:`);
 }
 
-async function avisoDeEntrada(avisoId: string, lido: PushLido, dataHora: Date): Promise<RespostaDespesa> {
+async function avisoDeEntrada(avisoId: string, conta: ContaBancaria, lido: PushLido, dataHora: Date): Promise<RespostaDespesa> {
   const negocios = await prisma.negocio.findMany({
     select: { id: true, titulo: true, valorCentavos: true, contato: { select: { nome: true } }, etapa: { select: { tipo: true } } },
     orderBy: { updatedAt: "desc" },
@@ -184,7 +214,7 @@ async function avisoDeEntrada(avisoId: string, lido: PushLido, dataHora: Date): 
   }
 
   return {
-    mensagem: `💰 Pix recebido: *${reais(lido.valorCentavos)}* de ${lido.contraparte ?? "?"} (${quando(dataHora)}).${lido.mensagem ? `\n💬 "${lido.mensagem}"` : ""}\nDe qual negócio é? Fica anotado pra conciliação sugerir quando o extrato chegar.`,
+    mensagem: `💰 *${ROTULO_CONTA[conta]}* · ${lido.meio === "PIX" ? "Pix recebido" : "Recebimento"}: *${reais(lido.valorCentavos)}*${lido.contraparte ? ` de ${lido.contraparte}` : ""} (${quando(dataHora)}).${lido.mensagem ? `\n💬 "${lido.mensagem}"` : ""}\nDe qual negócio é? Fica anotado pra conciliação sugerir quando o extrato chegar.`,
     botoes: botoesDeEntrada(avisoId, [...escolhidos.values()].slice(0, 6)),
   };
 }

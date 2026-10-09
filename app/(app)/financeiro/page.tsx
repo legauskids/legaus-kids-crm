@@ -157,6 +157,7 @@ async function DespesasTabData({ filtro }: { filtro: FiltroDespesas }) {
         anexoMime: d.anexoMime,
         textoOriginal: d.textoOriginal,
         registradaPorNome: d.registradaPor.nome,
+        contaBancaria: d.avisosBancarios[0]?.conta ?? null,
       }))}
     />
   );
