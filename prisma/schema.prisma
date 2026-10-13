@@ -158,6 +158,11 @@ model ComandoAgente {
   // O que o agente executou (ferramenta, entrada resumida, ok/erro) — o
   // registro de auditoria, que só administrador vê.
   acoes               Json?
+  // Foto que veio nessa mensagem e ainda não foi usada (já reduzida): fica
+  // disponível pra conversa por 30 min — foto antes do texto, ou antes de um
+  // "sim" (pedido de 2026-10-13). Apagada depois de usada ou em 24 h.
+  anexoImagem         Bytes?
+  anexoImagemMime     String?
   // Soma de todos os turnos dessa chamada (um comando pode levar até 8
   // turnos de tool-calling — cada turno reenvia o histórico inteiro pra
   // Anthropic, então input cresce a cada turno). Existe pra dar visibilidade
@@ -546,6 +551,11 @@ model Produto {
   imagemUrl     String?
   imagemBytes   Bytes?
   imagemMime    String?
+  // A foto de antes da última troca (pedido do Marcos, 2026-10-13: trocar
+  // foto sem querer não tinha volta). "Desfazer" troca uma pela outra.
+  imagemAnteriorBytes Bytes?
+  imagemAnteriorMime  String?
+  imagemAnteriorUrl   String?
   valorCentavos Int?
   ativo         Boolean  @default(true)
   createdAt     DateTime @default(now())

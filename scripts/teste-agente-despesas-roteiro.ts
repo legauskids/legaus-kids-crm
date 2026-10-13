@@ -4,6 +4,11 @@
 import { prisma } from "@/lib/db";
 import { registrarDespesaDaMensagem, corrigirDespesaDaConversa, responderEnquete } from "@/lib/server/despesa-agente";
 import { OPCAO_CONFIRMAR, OPCAO_NEGOCIO } from "@/lib/utils/despesa-agente";
+import { diaBrasilia, somarDias } from "@/lib/utils/brasilia";
+
+// O comprovante do teste era de "ontem" (06/10, teste feito em 07/10): a data
+// fixa vira "ontem" de quem roda, senão o roteiro quebra com o passar dos dias.
+const ONTEM = somarDias(diaBrasilia(new Date()), -1).split("-").reverse().join("/");
 
 let falhas = 0;
 const checar = (c: unknown, m: string) => {
@@ -22,7 +27,7 @@ async function main() {
 
   // 1. PDF do posto
   const r1 = await registrarDespesaDaMensagem({
-    extracao: { valor: 66, fornecedor: "Posto de Combustíveis Vaccari Ltda", dataTexto: "06/10/2026", categoria: "Veículos e combustível", centro: "Veículos" },
+    extracao: { valor: 66, fornecedor: "Posto de Combustíveis Vaccari Ltda", dataTexto: ONTEM, categoria: "Veículos e combustível", centro: "Veículos" },
     texto: "Segue o PDF anexado.",
     origem: "COMPROVANTE",
     identificador: TEL,
@@ -64,7 +69,7 @@ async function main() {
 
   // 7. O mesmo comprovante mandado de novo: avisa que parece a mesma
   const r7 = await registrarDespesaDaMensagem({
-    extracao: { valor: 66, fornecedor: "Posto de Combustíveis Vaccari Ltda", dataTexto: "06/10/2026", categoria: "Veículos e combustível", centro: "Veículos" },
+    extracao: { valor: 66, fornecedor: "Posto de Combustíveis Vaccari Ltda", dataTexto: ONTEM, categoria: "Veículos e combustível", centro: "Veículos" },
     texto: "Segue o PDF anexado.",
     origem: "COMPROVANTE",
     identificador: TEL,

@@ -17,8 +17,11 @@ import {
   atualizarProduto,
   atualizarFotoProduto,
   atualizarPrecoProduto,
+  desfazerFotoProduto,
+  produtoAtivoComMesmoNome,
   type CampoPrecoProduto,
 } from "@/lib/server/produtos";
+import { esquecerFotoDaConversa, fotosRecentesDaConversa, guardarFotoDaConversa } from "@/lib/server/agente-fotos";
 import {
   listFunisComEtapas,
   criarNegocio,
@@ -107,6 +110,11 @@ type Ferramenta = {
   description: string;
   input_schema: EsquemaEntrada;
   sensivel?: boolean;
+  // Sensível só em certos casos (ex.: trocar a foto de um produto que JÁ tem
+  // foto — anexar a primeira foto executa direto). Pedido do Marcos de
+  // 2026-10-13: "não altere as imagens sem pedir confirmação" — regra do
+  // código, não promessa da IA (que só lembra 30 min de conversa).
+  sensivelSe?: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<boolean>;
   // Ferramenta sensível que precisa do anexo (imagem ou arquivo genérico)
   // do comando ATUAL pra funcionar (ex: enviar_arquivo_whatsapp) — sem essa
   // marca, os bytes do anexo não sobreviveriam até o turno de confirmação
@@ -134,12 +142,14 @@ type CtxFerramenta = {
   usuarioId: string;
   telefoneOrigem?: string;
   // Bytes da imagem anexada a ESSE comando (foto mandada junto no WhatsApp,
-  // com ou sem legenda) — só existe no turno em que a imagem chegou, não
-  // sobrevive pro turno de confirmação de uma ferramenta sensível a menos
-  // que a ferramenta declare usaAnexoAtual:true (ver esse campo acima). Por
-  // isso anexar_foto_produto não é sensível: precisa executar direto,
-  // enquanto os bytes ainda estão disponíveis.
+  // com ou sem legenda). Se nenhuma ferramenta usar, ela fica guardada na
+  // conversa por 30 min (lib/server/agente-fotos.ts) — anexar_foto_produto
+  // acha a foto recente sozinha numa mensagem seguinte ("sim", ou o texto
+  // que veio depois da foto).
   anexoImagem?: { bytes: Buffer; mimetype: string };
+  // Marcado quando uma ferramenta usou a imagem desta mensagem (ou a guardou
+  // numa ação pendente): aí ela não vai pra memória da conversa.
+  imagemConsumida?: boolean;
   // Bytes de um arquivo genérico (não-imagem, não-PDF, não-OFX — ex: .docx,
   // .xlsx, .zip, qualquer documento) anexado a ESSE comando. Mesma regra de
   // vida curta que anexoImagem.
@@ -227,6 +237,22 @@ async function resolverIdsDeProdutos(args: { termo?: string; produtoIds?: string
   if (args.termo) return (await buscarProdutosSimilar(args.termo, 10)).map((p) => p.id);
   return [];
 }
+
+/**
+ * Produto por ID ou pelo nome. O nome exato (sem diferença de maiúsculas e
+ * acentos) ganha da busca aproximada — antes, com vários "Playground ..."
+ * parecidos no catálogo, o nome certo dava "ambíguo" (visto em 2026-10-13).
+ */
+async function resolverProduto(produtoId: string | undefined, nomeBusca: string | undefined) {
+  if (!produtoId && nomeBusca) {
+    const exato = await produtoAtivoComMesmoNome(nomeBusca);
+    if (exato) return { id: exato.id };
+  }
+  return resolverPorBusca(produtoId, nomeBusca, (t) => buscarProdutosSimilar(t, 5).then((p) => p.map((x) => x.id)));
+}
+
+/** Fotos recebidas com menos que isso de diferença, sem dizer qual: pergunta qual usar. */
+const FOTOS_SEGUIDAS_MS = 2 * 60 * 1000;
 
 /**
  * O identificador de uma conversa é o telefone puro (só dígitos) quando o
@@ -563,7 +589,8 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "criar_produto",
-    description: "Cadastra um produto novo no catálogo.",
+    description:
+      "Cadastra um produto novo no catálogo. Use o nome EXATAMENTE como a pessoa escreveu (não invente nem 'melhore'). Se já existir produto ativo com esse nome, não cria outro e devolve jaExiste — aí pergunte se é pra atualizar o existente.",
     input_schema: {
       type: "object",
       properties: {
@@ -587,6 +614,16 @@ const FERRAMENTAS: Ferramenta[] = [
         descricao?: string;
         valorReais?: number;
       };
+      // "sim" depois de já ter cadastrado fazia o modelo cadastrar de novo
+      // (duplicou o "Playground 1 Torre com Tubo" em 2026-10-13).
+      const existente = await produtoAtivoComMesmoNome(nome);
+      if (existente) {
+        return {
+          jaExiste: true,
+          produto: { id: existente.id, nome: existente.nome, valorReais: existente.valorCentavos != null ? centavosParaReais(existente.valorCentavos) : null },
+          aviso: "Já existe produto ativo com esse nome — não criei outro. Se a foto é dele, use anexar_foto_produto com esse id; se for pra mudar algo, pergunte se atualiza.",
+        };
+      }
       const produto = await criarProduto({
         nome,
         codigo: codigo || null,
@@ -624,9 +661,7 @@ const FERRAMENTAS: Ferramenta[] = [
         novoValorReais?: number;
         ativo?: boolean;
       };
-      const resolvido = await resolverPorBusca(a.produtoId, a.nomeBusca, (t) =>
-        buscarProdutosSimilar(t, 5).then((p) => p.map((x) => x.id)),
-      );
+      const resolvido = await resolverProduto(a.produtoId, a.nomeBusca);
       if (!resolvido) throw new Error(`Não achei nenhum produto parecido com "${a.nomeBusca}".`);
       if ("ambiguo" in resolvido) {
         const opcoes = await prisma.produto.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, nome: true, codigo: true } });
@@ -646,7 +681,73 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "anexar_foto_produto",
     description:
-      "Salva como foto de um produto do catálogo a imagem que veio anexada JUNTO com esse comando (foto mandada no WhatsApp, com ou sem legenda). Só funciona quando o comando atual tem uma imagem anexada de verdade — se não tiver (comando só de texto/voz pedindo pra anexar uma foto sem mandar nenhuma), não chame essa ferramenta: explique que precisa mandar a foto anexada na mesma mensagem do pedido.",
+      "Salva uma foto como foto de um produto do catálogo: a imagem desta mensagem ou, se esta não tiver, a foto mais recente desta conversa (até 30 min — a foto mandada antes do texto, ou antes de um 'sim'). Use logo depois de criar_produto quando houver foto. Nunca peça pra reenviar a foto sem antes tentar esta ferramenta. Se o produto já tiver foto, a troca pede confirmação sozinha (a anterior fica guardada pra desfazer). Se vier precisaEscolherFoto, pergunte qual das fotos usar e chame de novo com foto.",
+    input_schema: {
+      type: "object",
+      properties: {
+        produtoId: { type: "string" },
+        nomeBusca: { type: "string", description: "Nome ou código do produto, alternativa a produtoId" },
+        foto: { type: "integer", description: "Qual das fotos recentes usar, quando houver mais de uma: 1 = a mais recente, 2 = a anterior. Só quando a pessoa disser." },
+      },
+    },
+    usaAnexoAtual: true,
+    async sensivelSe(args, ctx) {
+      const a = args as { produtoId?: string; nomeBusca?: string };
+      // Sem foto nenhuma pra usar, não há o que confirmar: executa e a
+      // ferramenta diz que falta a foto.
+      if (!ctx.anexoImagem && !(ctx.identificador && (await fotosRecentesDaConversa(ctx.identificador, 1)).length)) return false;
+      const resolvido = await resolverProduto(a.produtoId, a.nomeBusca);
+      if (!resolvido || "ambiguo" in resolvido) return false;
+      const p = await prisma.produto.findUnique({ where: { id: resolvido.id }, select: { imagemUrl: true, imagemMime: true } });
+      return Boolean(p?.imagemUrl || p?.imagemMime);
+    },
+    async descreverAcao(args) {
+      const a = args as { produtoId?: string; nomeBusca?: string };
+      const resolvido = await resolverProduto(a.produtoId, a.nomeBusca);
+      const p = resolvido && !("ambiguo" in resolvido) ? await prisma.produto.findUnique({ where: { id: resolvido.id }, select: { nome: true } }) : null;
+      return `trocar a foto do produto "${p?.nome ?? a.nomeBusca ?? "?"}", que já tem foto (a atual fica guardada — dá pra desfazer)`;
+    },
+    async executar(args, ctx) {
+      const a = args as { produtoId?: string; nomeBusca?: string; foto?: number };
+      const resolvido = await resolverProduto(a.produtoId, a.nomeBusca);
+      if (!resolvido) throw new Error(`Não achei nenhum produto parecido com "${a.nomeBusca}".`);
+      if ("ambiguo" in resolvido) {
+        const opcoes = await prisma.produto.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, nome: true, codigo: true } });
+        return { ambiguo: true, opcoes };
+      }
+
+      let foto: Buffer;
+      let daMemoria: string | null = null;
+      if (ctx.anexoImagem && !a.foto) {
+        foto = ctx.anexoImagem.bytes;
+        ctx.imagemConsumida = true;
+      } else {
+        const fotos = ctx.identificador ? await fotosRecentesDaConversa(ctx.identificador) : [];
+        if (!fotos.length) throw new Error("Não tem nenhuma foto desta conversa nos últimos 30 minutos — peça pra mandar a foto.");
+        const seguidas = fotos.length >= 2 && fotos[0].recebidaEm.getTime() - fotos[1].recebidaEm.getTime() < FOTOS_SEGUIDAS_MS;
+        if (!a.foto && seguidas) {
+          const hora = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" });
+          return {
+            precisaEscolherFoto: true,
+            fotos: fotos.map((f, i) => ({ foto: i + 1, recebidaAs: hora(f.recebidaEm), ordem: i === 0 ? "a última" : i === 1 ? "a penúltima" : "antes" })),
+          };
+        }
+        const escolhida = fotos[(a.foto ?? 1) - 1];
+        if (!escolhida) throw new Error(`Só tenho ${fotos.length} foto(s) recente(s) nesta conversa.`);
+        foto = escolhida.bytes;
+        daMemoria = escolhida.comandoId;
+      }
+
+      const produto = await prisma.produto.findUnique({ where: { id: resolvido.id }, select: { nome: true, imagemUrl: true, imagemMime: true } });
+      await atualizarFotoProduto(resolvido.id, foto);
+      if (daMemoria) await esquecerFotoDaConversa(daMemoria);
+      return { id: resolvido.id, nome: produto?.nome, fotoSalva: true, fotoAnteriorGuardada: Boolean(produto?.imagemUrl || produto?.imagemMime) };
+    },
+  },
+  {
+    name: "desfazer_foto_produto",
+    description:
+      "Volta a foto anterior de um produto, desfazendo a última troca de foto (\"desfaz\", \"essa foto era de outro produto\"). Chamar de novo refaz a troca.",
     input_schema: {
       type: "object",
       properties: {
@@ -654,20 +755,16 @@ const FERRAMENTAS: Ferramenta[] = [
         nomeBusca: { type: "string", description: "Nome ou código do produto, alternativa a produtoId" },
       },
     },
-    async executar(args, ctx) {
-      if (!ctx.anexoImagem) throw new Error("Não tem nenhuma imagem anexada nesse comando pra salvar.");
+    async executar(args) {
       const a = args as { produtoId?: string; nomeBusca?: string };
-      const resolvido = await resolverPorBusca(a.produtoId, a.nomeBusca, (t) =>
-        buscarProdutosSimilar(t, 5).then((p) => p.map((x) => x.id)),
-      );
+      const resolvido = await resolverProduto(a.produtoId, a.nomeBusca);
       if (!resolvido) throw new Error(`Não achei nenhum produto parecido com "${a.nomeBusca}".`);
       if ("ambiguo" in resolvido) {
         const opcoes = await prisma.produto.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, nome: true, codigo: true } });
         return { ambiguo: true, opcoes };
       }
-      const produto = await prisma.produto.findUnique({ where: { id: resolvido.id }, select: { nome: true } });
-      await atualizarFotoProduto(resolvido.id, ctx.anexoImagem.bytes);
-      return { id: resolvido.id, nome: produto?.nome, fotoSalva: true };
+      const { nome } = await desfazerFotoProduto(resolvido.id);
+      return { id: resolvido.id, nome, fotoAnteriorRestaurada: true };
     },
   },
   {
@@ -2009,6 +2106,8 @@ const FERRAMENTAS: Ferramenta[] = [
           : ctx.anexoAudio
             ? { bytes: ctx.anexoAudio.bytes, mime: ctx.anexoAudio.mimetype, nome: `audio.${ctx.anexoAudio.mimetype.includes("mp4") ? "m4a" : "ogg"}` }
             : undefined;
+      // A foto do comprovante fica com a despesa: não sobra pra virar foto de produto.
+      if (ctx.anexoImagem) ctx.imagemConsumida = true;
       const r = await registrarDespesaDaMensagem({
         extracao: extracaoDosArgs(args),
         texto: ctx.textoMensagem ?? "",
@@ -2074,7 +2173,9 @@ Regras:
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
 - Se vier um ORÇAMENTO ANTIGO anexado (PDF ou foto) pedindo pra "virar contrato"/"transformar em contrato" — um orçamento de venda que nunca entrou no CRM —, use gerar_contrato_de_orcamento_antigo. Ela cria o negócio E o contrato de uma vez. Pergunte qual empresa emitiu (Legaus Kids ou Idezza) se não estiver claro no pedido ou no documento.
 - Contrato pode ser emitido em nome da Legaus Kids OU da Idezza — duas pessoas jurídicas diferentes que a Legaus Kids usa pra vender. Sempre que for gerar/mencionar um contrato novo (inclusive gerar_contrato_de_orcamento_antigo), confirme qual das duas antes, não assuma Legaus por padrão sem perguntar quando não estiver óbvio pelo contexto.
-- Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto — ela usa a imagem anexada nesse mesmo comando, não peça a foto de outro jeito. Se vier um pedido de anexar foto SEM nenhuma imagem anexada, avise que precisa mandar a foto junto (anexada na mesma mensagem), não invente que não consegue anexar fotos.
+- Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto. A foto NÃO precisa vir na mesma mensagem: a ferramenta usa a foto desta mensagem ou, se não tiver, a mais recente da conversa (até 30 min) — então nunca diga que a foto "veio em outra mensagem" nem peça pra reenviar sem antes chamar a ferramenta; só peça a foto se a ferramenta disser que não tem nenhuma. Se ela responder precisaEscolherFoto, pergunte qual das fotos (a última ou a penúltima, com o horário). Trocar a foto de um produto que já tem foto pede confirmação sozinho; pra voltar a foto anterior ("desfaz", "essa foto era de outro produto") use desfazer_foto_produto.
+- Cadastro de produto (pedido do Marcos): quando a mensagem trouxer a descrição de um produto — nome na primeira linha, itens e/ou preço — com ou sem foto, e nenhum outro pedido, é cadastro de produto novo. Chame criar_produto DIRETO, sem perguntar se é cadastro ou orçamento e sem pedir confirmação do nome, com o nome EXATAMENTE como veio (não invente, não encurte, não acrescente "Premium"/"Standard"), os itens na descrição e o preço; categoria pelo tipo (playground → Playground). Logo depois, se houver foto (nesta mensagem ou numa das anteriores), chame anexar_foto_produto com o id criado. Se criar_produto responder jaExiste, não crie de novo: avise e pergunte se é pra atualizar o existente. Uma descrição de produto nova nunca é comentário sobre um card ou produto anterior.
+- "Sim", "ok", "beleza" depois de uma ação que você já concluiu (sem nenhuma pergunta sua pendente) não é pedido novo: não repita a ação, só responda curto que está feito.
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
@@ -2144,6 +2245,7 @@ const MODULO_DA_FERRAMENTA: Partial<Record<string, ModuloKey>> = {
   criar_produto: "produtos",
   atualizar_produto: "produtos",
   anexar_foto_produto: "produtos",
+  desfazer_foto_produto: "produtos",
   atualizar_preco_produto: "produtos",
   gerar_cards_produtos: "produtos",
   enviar_cards_produtos_whatsapp: "atendimento",
@@ -2202,7 +2304,15 @@ async function rodarAgenteClaude(
   anexoPdf?: { base64: string; nomeArquivo: string },
   anexoImagem?: { base64: string; mimetype: string },
   anexoArquivo?: { base64: string; nomeArquivo: string; mimetype: string },
-  extras: { anexoAudio?: { base64: string; mimetype: string }; rascunhoDespesaId?: string | null; usuario?: UsuarioAgente | null; canal?: CanalAgente } = {},
+  extras: {
+    anexoAudio?: { base64: string; mimetype: string };
+    rascunhoDespesaId?: string | null;
+    usuario?: UsuarioAgente | null;
+    canal?: CanalAgente;
+    // Quem chamou lê daqui, no fim, se a imagem da mensagem foi usada
+    // (ctx.imagemConsumida) — é o próprio objeto ctx das ferramentas.
+    estado?: { imagemConsumida?: boolean };
+  } = {},
 ): Promise<{
   texto: string;
   ferramentaPendente: { nome: string; args: unknown; descricao: string } | null;
@@ -2269,7 +2379,7 @@ async function rodarAgenteClaude(
   const ctxAnexoArquivo = anexoArquivo
     ? { bytes: Buffer.from(anexoArquivo.base64, "base64"), nomeArquivo: anexoArquivo.nomeArquivo, mimetype: anexoArquivo.mimetype }
     : undefined;
-  const ctx: CtxFerramenta = {
+  const ctx: CtxFerramenta = Object.assign(extras.estado ?? {}, {
     usuarioId,
     telefoneOrigem: telefoneDeIdentificador(identificador),
     anexoImagem: ctxAnexoImagem,
@@ -2278,7 +2388,7 @@ async function rodarAgenteClaude(
     textoMensagem: textoComando,
     anexoPdf: anexoPdf ? { bytes: Buffer.from(anexoPdf.base64, "base64"), nomeArquivo: anexoPdf.nomeArquivo } : undefined,
     anexoAudio: extras.anexoAudio ? { bytes: Buffer.from(extras.anexoAudio.base64, "base64"), mimetype: extras.anexoAudio.mimetype } : undefined,
-  };
+  });
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: montarSystemPromptFixo(), cache_control: { type: "ephemeral" } },
     { type: "text", text: await montarSystemPromptDinamico(extras.rascunhoDespesaId ?? null, extras.canal ?? canalDoIdentificador(identificador)) },
@@ -2367,7 +2477,7 @@ async function rodarAgenteClaude(
         continue;
       }
       const entrada = uso.input as ArgsFerramenta;
-      if (ferramenta.sensivel) {
+      if (ferramenta.sensivel || (ferramenta.sensivelSe && (await ferramenta.sensivelSe(entrada, ctx)))) {
         const descricao = ferramenta.descreverAcao ? await ferramenta.descreverAcao(entrada, ctx) : ferramenta.name;
         // Ferramentas marcadas usaAnexoAtual (ex: enviar_arquivo_whatsapp)
         // precisam do anexo do comando ATUAL na hora de executar de
@@ -2387,6 +2497,8 @@ async function rodarAgenteClaude(
             }
           : entrada;
         ferramentaPendente = { nome: uso.name, args: entradaFinal, descricao };
+        // A imagem foi junto pra ação pendente: não vai também pra memória da conversa.
+        if (ferramenta.usaAnexoAtual && anexoImagem) ctx.imagemConsumida = true;
         acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(entrada), ok: true, pendente: true });
         resultadosFerramenta.push({
           type: "tool_result",
@@ -2643,19 +2755,19 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
   }
 
   const usuario = await prisma.user.findUnique({ where: { id: input.usuarioId }, select: { id: true, isAdmin: true, permissoes: true } });
+  const estado: { imagemConsumida?: boolean } = {};
   const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo, {
     anexoAudio: input.anexoAudio,
     rascunhoDespesaId: rascunho?.id ?? null,
     usuario,
     canal,
+    estado,
   });
 
   const comandoId = await salvarComando(input, {
-    // Não guarda os bytes do PDF/imagem/arquivo (só uma marca textual) — o
-    // anexo só importa pro turno em que foi mandado (ou fica guardado à
-    // parte, em argumentosPendentes, se a ferramenta pendente precisar dele
-    // pra confirmar depois — ver usaAnexoAtual), não precisa persistir no
-    // histórico de conversa.
+    // O texto do histórico só leva uma marca do anexo. PDF e arquivo não
+    // ficam guardados; a imagem que nenhuma ferramenta usou fica (abaixo) pra
+    // próxima mensagem da conversa.
     textoComando: input.anexoPdf
       ? `${input.texto}\n[PDF anexado: ${input.anexoPdf.nomeArquivo}]`
       : input.anexoImagem
@@ -2672,6 +2784,13 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
     tokensSaida: resultado.tokensSaida,
     acoes: resultado.acoes as Prisma.InputJsonValue,
   });
+  // Foto que nenhuma ferramenta usou: a próxima mensagem ("sim", o texto que
+  // veio depois da foto) ainda acha ela (ver anexar_foto_produto).
+  if (input.anexoImagem && !estado.imagemConsumida) {
+    await guardarFotoDaConversa(comandoId, Buffer.from(input.anexoImagem.base64, "base64")).catch((erro) =>
+      console.error(`[agente] não consegui guardar a foto da conversa: ${erro instanceof Error ? erro.message : erro}`),
+    );
+  }
 
   const botoes = resultado.botoes ?? (resultado.ferramentaPendente && canal === "telegram" ? botoesDePendente(comandoId) : undefined);
   return { resposta: resultado.texto, enquete: resultado.enquete, botoes };

@@ -67,15 +67,48 @@ export function excluirProduto(produtoId: string) {
 export async function atualizarFotoProduto(produtoId: string, arquivo: Buffer): Promise<string> {
   const redimensionado = await sharp(arquivo).rotate().resize({ width: 1000, withoutEnlargement: true }).jpeg({ quality: 88 }).toBuffer();
 
+  // A foto de antes fica guardada pra "desfazer" (desfazerFotoProduto).
+  const atual = await prisma.produto.findUniqueOrThrow({ where: { id: produtoId }, select: { imagemBytes: true, imagemMime: true, imagemUrl: true } });
+  const tinhaFoto = Boolean(atual.imagemBytes || atual.imagemUrl);
   await prisma.produto.update({
     where: { id: produtoId },
     data: {
       imagemBytes: new Uint8Array(redimensionado),
       imagemMime: "image/jpeg",
       imagemUrl: `${URL_BASE}/api/imagem/produto/${produtoId}`,
+      ...(tinhaFoto ? { imagemAnteriorBytes: atual.imagemBytes, imagemAnteriorMime: atual.imagemMime, imagemAnteriorUrl: atual.imagemUrl } : {}),
     },
   });
   return `${URL_BASE}/api/imagem/produto/${produtoId}`;
+}
+
+/** Volta a foto de antes da última troca (e guarda a atual no lugar dela — desfazer de novo refaz). */
+export async function desfazerFotoProduto(produtoId: string): Promise<{ nome: string }> {
+  const p = await prisma.produto.findUniqueOrThrow({
+    where: { id: produtoId },
+    select: { nome: true, imagemBytes: true, imagemMime: true, imagemUrl: true, imagemAnteriorBytes: true, imagemAnteriorMime: true, imagemAnteriorUrl: true },
+  });
+  if (!p.imagemAnteriorBytes && !p.imagemAnteriorUrl) throw new Error(`O produto "${p.nome}" não tem foto anterior guardada.`);
+  await prisma.produto.update({
+    where: { id: produtoId },
+    data: {
+      imagemBytes: p.imagemAnteriorBytes,
+      imagemMime: p.imagemAnteriorMime,
+      imagemUrl: p.imagemAnteriorUrl,
+      imagemAnteriorBytes: p.imagemBytes,
+      imagemAnteriorMime: p.imagemMime,
+      imagemAnteriorUrl: p.imagemUrl,
+    },
+  });
+  return { nome: p.nome };
+}
+
+/** Produto ativo com o mesmo nome (sem diferença de maiúsculas, acentos e espaços) — pra não cadastrar duas vezes. */
+export async function produtoAtivoComMesmoNome(nome: string) {
+  const chave = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const alvo = chave(nome);
+  const ativos = await prisma.produto.findMany({ where: { ativo: true }, select: { id: true, nome: true, valorCentavos: true } });
+  return ativos.find((p) => chave(p.nome) === alvo) ?? null;
 }
 
 export function buscarFotoProduto(produtoId: string) {
