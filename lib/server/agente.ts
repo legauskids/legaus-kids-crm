@@ -49,6 +49,7 @@ import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
 import { listarContratos, criarContratoDeOrcamentoAntigo } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
 import { mesmoTelefone, pareceTelefone, telefoneLegivel } from "@/lib/utils/telefone";
+import { nomeArquivoOrcamento, textoEnvioOrcamentoWhatsApp } from "@/lib/utils/orcamento-mensagem";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
 import { normalizarLink } from "@/lib/utils/categoria-tarefa";
@@ -1369,12 +1370,8 @@ const FERRAMENTAS: Ferramenta[] = [
       const telefoneFinal = (telefone || (paraMim ? ctx.telefoneOrigem : orcamento.contato?.telefone || ctx.telefoneOrigem) || "").replace(/\D/g, "");
       if (telefoneFinal.length < 10) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
-      const token = await garantirTokenPublico(orcamento.id);
-      const link = `${URL_BASE}/publico/orcamento/${token}`;
-      const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
-      const texto =
-        `Olá! Segue o orçamento *#${String(orcamento.numero).padStart(4, "0")}* da Legaus Kids, ` +
-        `no valor de ${centavosParaReais(total)}.\n\nVocê pode conferir todos os detalhes aqui: ${link}\n\nQualquer dúvida, estamos à disposição!`;
+      // Só o PDF e a mensagem, sem o link do CRM (pedido do Marcos, 2026-10-14).
+      const texto = textoEnvioOrcamentoWhatsApp(orcamento.numero, calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos));
 
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal, nomeContato: orcamento.contato?.nome });
       await registrarMensagem({
@@ -1383,7 +1380,7 @@ const FERRAMENTAS: Ferramenta[] = [
         direcao: "SAIDA",
         origem: "SISTEMA",
         anexoUrl: `${URL_BASE}/api/pdf/orcamento/${orcamento.id}`,
-        anexoNome: `orcamento-${String(orcamento.numero).padStart(4, "0")}.pdf`,
+        anexoNome: nomeArquivoOrcamento(orcamento.numero),
         anexoMimetype: "application/pdf",
       });
       return { enviado: true, numero: orcamento.numero, para: paraMim ? "seu WhatsApp" : (orcamento.contato?.nome ?? null), telefone: telefoneLegivel(telefoneFinal) };

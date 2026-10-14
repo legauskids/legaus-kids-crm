@@ -15,8 +15,9 @@ import { criarContato } from "@/lib/server/contatos";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
 import { enviarEmail, emailConfigurado } from "@/lib/server/email";
 import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/lib/server/orcamento-email";
-import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
+import { reaisParaCentavos } from "@/lib/utils/money";
 import { URL_BASE } from "@/lib/constants/app";
+import { nomeArquivoOrcamento, textoEnvioOrcamentoWhatsApp } from "@/lib/utils/orcamento-mensagem";
 import type { StatusOrcamento } from "@prisma/client";
 
 export async function criarClienteRapidoAction(input: {
@@ -113,18 +114,24 @@ export async function enviarOrcamentoWhatsAppAction(orcamentoId: string, telefon
   const link = `${URL_BASE}/publico/orcamento/${token}`;
   const total = orcamento.itens.reduce((soma, i) => soma + i.quantidade * i.valorUnitarioCentavos, 0) - orcamento.descontoCentavos;
 
-  const texto =
-    `Olá! Segue o orçamento *#${String(orcamento.numero).padStart(4, "0")}* da Legaus Kids, ` +
-    `no valor de ${centavosParaReais(Math.max(0, total))}.\n\n` +
-    `Você pode conferir todos os detalhes aqui: ${link}\n\n` +
-    `Qualquer dúvida, estamos à disposição!`;
+  // Só o PDF anexado e a mensagem, sem o link do CRM (pedido do Marcos,
+  // 2026-10-14) — antes ia só o texto com o link, sem o arquivo.
+  const texto = textoEnvioOrcamentoWhatsApp(orcamento.numero, total);
 
   try {
     const conversa = await encontrarOuCriarConversaPorTelefone({
       telefone,
       nomeContato: orcamento.contato?.nome,
     });
-    await registrarMensagem({ conversaId: conversa.id, texto, direcao: "SAIDA", origem: "SISTEMA" });
+    await registrarMensagem({
+      conversaId: conversa.id,
+      texto,
+      direcao: "SAIDA",
+      origem: "SISTEMA",
+      anexoUrl: `${URL_BASE}/api/pdf/orcamento/${orcamento.id}`,
+      anexoNome: nomeArquivoOrcamento(orcamento.numero),
+      anexoMimetype: "application/pdf",
+    });
   } catch {
     return { error: "Não foi possível enviar pelo WhatsApp agora." };
   }
