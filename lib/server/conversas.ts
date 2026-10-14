@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
+import { mesmoTelefone, partesTelefone } from "@/lib/utils/telefone";
 
 /**
  * Única superfície que deve tocar as tabelas Conversa/Mensagem. Quando a
@@ -15,6 +16,15 @@ function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
 }
 
+/** Contato com o mesmo celular em outro formato (com/sem 55, com/sem o 9) — o que já tem conversa primeiro. */
+async function contatoDoMesmoCelular(telefone: string) {
+  const partes = partesTelefone(telefone);
+  if (!partes?.ddd) return null;
+  const candidatos = await prisma.contato.findMany({ where: { telefone: { endsWith: partes.final8 } }, include: { conversas: true } });
+  const mesmos = candidatos.filter((c) => c.telefone && mesmoTelefone(c.telefone, telefone));
+  return mesmos.find((c) => c.conversas.length > 0) ?? mesmos[0] ?? null;
+}
+
 /**
  * Ponto de entrada da futura extensão de WhatsApp: acha a conversa de um
  * telefone (criando Contato + Conversa se for a primeira vez que esse
@@ -27,10 +37,12 @@ export async function encontrarOuCriarConversaPorTelefone(input: {
 }) {
   const telefone = normalizarTelefone(input.telefone);
 
-  const contatoExistente = await prisma.contato.findUnique({
-    where: { telefone },
-    include: { conversas: true },
-  });
+  // O mesmo celular pode estar gravado com ou sem o 9 (o WhatsApp manda no
+  // formato interno dele; cadastro feito por gente usa o padrão com o 9 —
+  // 2026-10-14): sem o número exato, vale o mesmo celular no outro formato,
+  // em vez de criar um cadastro duplicado.
+  const contatoExistente =
+    (await prisma.contato.findUnique({ where: { telefone }, include: { conversas: true } })) ?? (await contatoDoMesmoCelular(telefone));
 
   if (contatoExistente) {
     const conversaExistente = contatoExistente.conversas[0];

@@ -45,9 +45,24 @@ export function pareceTelefone(termo: string): boolean {
   return /^[\d\s()+.-]+$/.test(termo.trim()) && partesTelefone(termo) !== null;
 }
 
-/** "5554969602960" -> "(54) 96960-2960" — pra confirmação e aviso mostrarem o número de verdade. */
+/**
+ * Padrão do telefone gravado e mostrado (pedido do Marcos, 2026-10-14): só
+ * dígitos, com 55 e, no CELULAR, com o 9 na frente — 55 + DDD + 9 + 8.
+ * "54 9696-0296" -> "5554996960296". Fixo (começa com 2 a 5) fica com 8
+ * dígitos. Sem DDD ou fora do padrão brasileiro: só tira a máscara.
+ * Contato que chega pelo WhatsApp continua gravado no formato interno dele
+ * (às vezes sem o 9) — a busca tolera os dois (ver mesmoTelefone).
+ */
+export function telefonePadraoBR(valor: string): string {
+  let d = soDigitosTelefone(valor);
+  if (d.length === 10 || d.length === 11) d = `55${d}`;
+  if (d.length === 12 && d.startsWith("55") && /[6-9]/.test(d[4])) d = `${d.slice(0, 4)}9${d.slice(4)}`;
+  return d;
+}
+
+/** "555596356217" -> "(55) 99635-6217" — sempre no padrão com o 9 do celular, pra ninguém reformatar de cabeça. */
 export function telefoneLegivel(telefone: string): string {
-  const d = telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
+  const d = telefonePadraoBR(telefone).replace(/^55(?=\d{10,11}$)/, "");
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return telefone;

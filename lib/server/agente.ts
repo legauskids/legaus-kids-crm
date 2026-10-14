@@ -426,12 +426,17 @@ const FERRAMENTAS: Ferramenta[] = [
     },
     async executar(args) {
       const { termo } = args as { termo: string };
+      // Telefone já no padrão com o 9 do celular: a IA reformatava o número
+      // cru de cabeça e mostrava errado ("(54) 9696-0296" pra 5554969602960,
+      // 2026-10-14).
+      const comTelefoneFormatado = <C extends { telefone: string | null }>(lista: C[]) =>
+        lista.map((c) => ({ ...c, telefone: c.telefone ? telefoneLegivel(c.telefone) : null }));
       if (pareceTelefone(termo)) {
         const porTelefone = await buscarClientesPorTelefone(termo);
-        return porTelefone.length > 0 ? porTelefone : "Nenhum cliente cadastrado com esse telefone.";
+        return porTelefone.length > 0 ? comTelefoneFormatado(porTelefone) : "Nenhum cliente cadastrado com esse telefone.";
       }
       const clientes = await buscarClientesSimilar(termo);
-      return clientes.length > 0 ? clientes : "Nenhum cliente encontrado com esse nome.";
+      return clientes.length > 0 ? comTelefoneFormatado(clientes) : "Nenhum cliente encontrado com esse nome.";
     },
   },
   {
@@ -2257,6 +2262,7 @@ Regras:
 - Cadastro de produto (pedido do Marcos): quando a mensagem trouxer a descrição de um produto — nome na primeira linha, itens e/ou preço — com ou sem foto, e nenhum outro pedido, é cadastro de produto novo. Chame criar_produto DIRETO, sem perguntar se é cadastro ou orçamento e sem pedir confirmação do nome, com o nome EXATAMENTE como veio (não invente, não encurte, não acrescente "Premium"/"Standard"), os itens na descrição e o preço; categoria pelo tipo (playground → Playground). Logo depois, se houver foto (nesta mensagem ou numa das anteriores), chame anexar_foto_produto com o id criado. Se criar_produto responder jaExiste, não crie de novo: avise e pergunte se é pra atualizar o existente. Uma descrição de produto nova nunca é comentário sobre um card ou produto anterior.
 - "Sim", "ok", "beleza" depois de uma ação que você já concluiu (sem nenhuma pergunta sua pendente) não é pedido novo: não repita a ação, só responda curto que está feito.
 - No Telegram (o canal vem no fim destas instruções), "manda aqui", "envia aqui pra eu avaliar/conferir", "me manda", "pra mim" = entregar AQUI no próprio chat: orçamento → enviar_orcamento_whatsapp com paraMim:true (o PDF chega no chat); card de produto → gerar_cards_produtos. Nunca mande pro cliente algo que foi pedido pra você avaliar — pro cliente só quando o pedido disser o cliente ("manda pra Renata"). Quando perguntarem pra qual número algo foi, responda com o telefone que a ferramenta devolveu.
+- Telefone: mostre sempre EXATAMENTE como a ferramenta devolveu (já vem no padrão brasileiro com o 9 do celular, ex.: (54) 99696-0296) — nunca reformate, encurte nem tire dígitos.
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;

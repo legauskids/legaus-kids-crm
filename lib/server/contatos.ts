@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { TipoContato } from "@prisma/client";
+import { telefonePadraoBR } from "@/lib/utils/telefone";
 
 export function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
@@ -127,11 +128,14 @@ export type AtualizarContatoInput = {
   representanteLegalCpf?: string | null;
 };
 
+// Cadastro e edição feitos por gente (tela ou agente) gravam o telefone no
+// padrão com o 9 do celular (telefonePadraoBR, pedido de 2026-10-14). O que
+// chega do WhatsApp continua no formato dele (criarOuAtualizarContato).
 export function atualizarContato(contatoId: string, input: AtualizarContatoInput) {
   const { telefone, ...resto } = input;
   return prisma.contato.update({
     where: { id: contatoId },
-    data: { ...resto, telefone: telefone ? normalizarTelefone(telefone) : telefone },
+    data: { ...resto, telefone: telefone ? telefonePadraoBR(telefone) : telefone },
   });
 }
 
@@ -155,7 +159,7 @@ export function criarContato(input: CriarContatoInput) {
   return prisma.contato.create({
     data: {
       nome: input.nome,
-      telefone: input.telefone ? normalizarTelefone(input.telefone) : null,
+      telefone: input.telefone ? telefonePadraoBR(input.telefone) : null,
       empresa: input.empresa || null,
       tipo: input.tipo,
       cnpj: input.cnpj || null,

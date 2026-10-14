@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mesmoTelefone, pareceTelefone, partesTelefone } from "./telefone";
+import { mesmoTelefone, pareceTelefone, partesTelefone, telefoneLegivel, telefonePadraoBR } from "./telefone";
 
 describe("partesTelefone", () => {
   it("separa DDD e 8 finais em vários formatos", () => {
@@ -43,5 +43,24 @@ describe("pareceTelefone", () => {
     expect(pareceTelefone("Vagner São Borja")).toBe(false);
     expect(pareceTelefone("Apromes 2024")).toBe(false);
     expect(pareceTelefone("123")).toBe(false);
+  });
+});
+
+describe("telefonePadraoBR e telefoneLegivel (padrão com o 9, 2026-10-14)", () => {
+  it("celular ganha o 9 e o 55", () => {
+    expect(telefonePadraoBR("54 9696-0296")).toBe("5554996960296");
+    expect(telefonePadraoBR("555596356217")).toBe("5555996356217");
+    expect(telefonePadraoBR("(51) 99771-5704")).toBe("5551997715704");
+    expect(telefonePadraoBR("5555999603257")).toBe("5555999603257");
+  });
+  it("fixo, sem DDD e estrangeiro não ganham 9", () => {
+    expect(telefonePadraoBR("(55) 3512-1234")).toBe("555535121234");
+    expect(telefonePadraoBR("9696-0296")).toBe("96960296");
+    expect(telefonePadraoBR("+1 415 555 2671 0")).toBe("141555526710");
+  });
+  it("exibição sempre com o 9 do celular", () => {
+    expect(telefoneLegivel("555596356217")).toBe("(55) 99635-6217");
+    expect(telefoneLegivel("5554969602960")).toBe("(54) 96960-2960");
+    expect(telefoneLegivel("555535121234")).toBe("(55) 3512-1234");
   });
 });
