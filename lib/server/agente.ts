@@ -48,7 +48,7 @@ import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precifi
 import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
 import { listarContratos, criarContratoDeOrcamentoAntigo } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
-import { pareceTelefone } from "@/lib/utils/telefone";
+import { mesmoTelefone, pareceTelefone, telefoneLegivel } from "@/lib/utils/telefone";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
 import { normalizarLink } from "@/lib/utils/categoria-tarefa";
@@ -116,6 +116,9 @@ type Ferramenta = {
   // 2026-10-13: "não altere as imagens sem pedir confirmação" — regra do
   // código, não promessa da IA (que só lembra 30 min de conversa).
   sensivelSe?: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<boolean>;
+  // Checagem antes de tudo (antes até de pedir confirmação): devolve o erro
+  // pra IA corrigir o pedido, ou null. Ex.: telefone que ninguém informou.
+  validar?: (args: ArgsFerramenta, ctx: CtxFerramenta) => Promise<string | null>;
   // Ferramenta sensível que precisa do anexo (imagem ou arquivo genérico)
   // do comando ATUAL pra funcionar (ex: enviar_arquivo_whatsapp) — sem essa
   // marca, os bytes do anexo não sobreviveriam até o turno de confirmação
@@ -279,12 +282,6 @@ function entregarNoChat(ctx: CtxFerramenta, arquivo: ArquivoParaEnviar): void {
   ctx.arquivos.push(arquivo);
 }
 
-/** "5554969602960" -> "(54) 96960-2960", pra confirmação mostrar pra quem vai. */
-function telefoneLegivel(telefone: string): string {
-  const d = telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
-  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : telefone;
-}
-
 /**
  * Usado pra mandar algo pro WhatsApp de um cliente — aceita telefone
  * direto, busca por nome, ou (quando nenhum dos dois vem preenchido) cai
@@ -310,6 +307,35 @@ async function resolverTelefoneCliente(
   }
   if (telefoneOrigem) return { telefone: telefoneOrigem, nomeExibicao: "você" };
   return { telefone: null, nomeExibicao: "cliente não identificado" };
+}
+
+/**
+ * Telefone que a IA passou pra um envio só vale se a pessoa digitou ou falou
+ * esse número (nesta mensagem ou na conversa da última meia hora — inclui a
+ * notificação de lead, contato colado) ou se é de um contato cadastrado.
+ * Visto em 2026-10-14: a IA montou "5554969602" de memória, faltando
+ * dígitos, pra mandar um orçamento.
+ */
+export async function telefoneConfiavel(telefone: string, ctx: Pick<CtxFerramenta, "textoMensagem" | "identificador">): Promise<boolean> {
+  if (telefone.replace(/\D/g, "").length < 10) return false;
+  if ((await buscarClientesPorTelefone(telefone, 1)).length > 0) return true;
+  const textos = [ctx.textoMensagem ?? ""];
+  if (ctx.identificador) {
+    const recentes = await prisma.comandoAgente.findMany({
+      where: { identificador: ctx.identificador, criadoEm: { gte: new Date(Date.now() - JANELA_HISTORICO_MS) } },
+      select: { textoComando: true, resposta: true },
+    });
+    for (const r of recentes) textos.push(r.textoComando, r.resposta ?? "");
+  }
+  const numerosDitos = textos.flatMap((t) => t.match(/\+?\d[\d\s().-]{7,}\d/g) ?? []);
+  return numerosDitos.some((n) => mesmoTelefone(n, telefone));
+}
+
+/** Validação das ferramentas de envio com telefone (ver Ferramenta.validar). */
+async function validarTelefoneInformado(args: ArgsFerramenta, ctx: CtxFerramenta): Promise<string | null> {
+  const telefone = typeof args.telefone === "string" ? args.telefone : "";
+  if (!telefone || (await telefoneConfiavel(telefone, ctx))) return null;
+  return `O telefone "${telefone}" não foi informado nesta conversa nem é de um contato cadastrado — não use número de memória. Pra mandar pro cliente cadastrado, chame sem telefone (pelo nome/orçamento); senão, peça o número.`;
 }
 
 /**
@@ -895,6 +921,7 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "enviar_cards_produtos_whatsapp",
+    validar: validarTelefoneInformado,
     description:
       "Manda pro WhatsApp de um cliente um card de imagem (foto + nome + descrição + preço) de cada produto encontrado — um card por produto, cada um numa mensagem separada. Ação sensível — sempre pede confirmação antes. Informe termo (busca por nome/código) OU produtoIds. Opcional ocultarValor:true pra mandar o card SEM o preço (não altera o cadastro do produto, só tira do card — use isso em vez de mudar o preço do produto temporariamente). Pra destinatário: telefone OU clienteNomeBusca; se o pedido for pra mandar pro PRÓPRIO remetente (\"manda pra mim\", \"me manda aqui\"), deixe telefone e clienteNomeBusca em branco — resolve sozinho pro WhatsApp de quem está pedindo. Nunca tente adivinhar/lembrar um telefone de algum ponto anterior da conversa — se não for nem pra si mesmo nem tiver telefone/nome claro, pergunte.",
     input_schema: {
@@ -1174,6 +1201,7 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "enviar_mensagem_whatsapp",
+    validar: validarTelefoneInformado,
     description:
       "Manda uma mensagem de texto direto pro WhatsApp de um contato/cliente — use principalmente pra mandar a sugestão de resposta de um lead novo depois que o Marcos/Dani confirmar (a notificação de lead novo já traz nome, telefone e a sugestão pronta; se a pessoa só disser 'manda'/'pode enviar', use o telefone e o texto da sugestão que já apareceram nessa conversa). Também serve pra responder qualquer conversa do WhatsApp por pedido direto. Ação sensível — sempre pede confirmação antes.",
     input_schema: {
@@ -1200,6 +1228,7 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "enviar_arquivo_whatsapp",
+    validar: validarTelefoneInformado,
     description:
       "Reenvia pro WhatsApp de um contato/cliente o arquivo (imagem, PDF, planilha, documento — qualquer tipo) que veio anexado JUNTO com esse comando. Use quando pedirem pra encaminhar/mandar pra alguém a foto/arquivo que acabou de chegar nessa própria mensagem (ex: 'manda essa foto pro João', 'encaminha esse arquivo pra Dani'). Só funciona quando o comando atual tem um anexo de verdade — se não tiver, não chame essa ferramenta: avise que precisa mandar o arquivo junto, na mesma mensagem do pedido. Pra card de produto do catálogo use enviar_cards_produtos_whatsapp, e pra PDF de orçamento use enviar_orcamento_whatsapp — essa ferramenta é só pra reenviar um anexo solto que chegou agora. Pra destinatário: telefone OU clienteNomeBusca; se for pra mandar pro PRÓPRIO remetente ('manda pra mim', 'guarda aqui'), deixe os dois em branco. Ação sensível — sempre pede confirmação antes.",
     input_schema: {
@@ -1242,6 +1271,7 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "agendar_mensagem_whatsapp",
+    validar: validarTelefoneInformado,
     description:
       "Agenda uma mensagem de texto pro WhatsApp de um contato/cliente pra ser enviada automaticamente numa data/hora futura — usa a mesma fila de 'Mensagem agendada' que já existe na aba Atendimento do CRM (aparece lá, pode ser cancelada por lá também). Use quando o pedido for pra mandar depois ('mais tarde', 'amanhã de manhã', 'sexta às 14h'). Se for pra mandar AGORA, use enviar_mensagem_whatsapp em vez dessa. Ação sensível — sempre pede confirmação antes.",
     input_schema: {
@@ -1294,6 +1324,7 @@ const FERRAMENTAS: Ferramenta[] = [
   },
   {
     name: "enviar_orcamento_whatsapp",
+    validar: validarTelefoneInformado,
     description:
       "Envia um orçamento já criado pro WhatsApp — manda o ARQUIVO PDF de verdade anexado na mensagem (não um link pra clicar). Use essa ferramenta (não obter_link_pdf_orcamento) sempre que alguém pedir pra 'mandar', 'enviar' ou 'anexar' o PDF/arquivo, ou pedir explicitamente 'o arquivo, não o link'. Por padrão manda pro telefone do CLIENTE vinculado ao orçamento. Se o pedido for pra mandar PRA VOCÊ MESMO (ex: 'manda aqui pra mim', 'me manda o PDF', 'envia aqui pra eu avaliar/conferir'), passe paraMim:true — no WhatsApp vai pro WhatsApp de quem pediu; no Telegram o PDF chega aqui no próprio chat (nunca vai pro cliente) — não deixe telefone em branco achando que resolve sozinho: sem paraMim, em branco cai no telefone do CLIENTE do orçamento (pode ser um terceiro, ex: pedir o orçamento do Fulano e mandar 'pra mim' erraria pro telefone do Fulano). E nunca invente/redigite um número de telefone de memória — use paraMim, ou peça o número. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
     input_schema: {
@@ -2530,6 +2561,12 @@ async function rodarAgenteClaude(
         continue;
       }
       const entrada = uso.input as ArgsFerramenta;
+      const invalido = ferramenta.validar ? await ferramenta.validar(entrada, ctx) : null;
+      if (invalido) {
+        acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(entrada), ok: false, erro: invalido });
+        resultadosFerramenta.push({ type: "tool_result", tool_use_id: uso.id, content: `Erro: ${invalido}`, is_error: true });
+        continue;
+      }
       if (ferramenta.sensivel || (ferramenta.sensivelSe && (await ferramenta.sensivelSe(entrada, ctx)))) {
         const descricao = ferramenta.descreverAcao ? await ferramenta.descreverAcao(entrada, ctx) : ferramenta.name;
         // Ferramentas marcadas usaAnexoAtual (ex: enviar_arquivo_whatsapp)

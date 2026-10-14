@@ -2,6 +2,7 @@ import { chamarApi, baixarArquivo } from "./crm-api.js";
 import { registrarMapeamento } from "./lid-cache.js";
 import { marcarComoEnviadoPeloRelay } from "./ids-relay.js";
 import { enviarEnquete } from "./enquetes.js";
+import { variante9Digito } from "./telefone.js";
 
 const INTERVALO_MS = 5000;
 
@@ -106,26 +107,46 @@ async function processarFila(sock) {
  * (signalRepository.lidMapping.getLIDForPN), que consulta o WhatsApp se
  * ainda não souber.
  */
+//
+// 2026-10-14: devolve { jid, existe }. Quando o WhatsApp diz que o número
+// não tem conta (nem no formato com/sem o 9 extra do celular), existe:false
+// e o envio NÃO acontece — antes mandava pro número cru, o Baileys devolvia
+// um id e parecia enviado, mas nunca chegava: o orçamento #22 foi 3 vezes
+// pra um telefone salvo com um dígito a mais, sem erro nenhum. existe:null
+// = não deu pra consultar (erro de rede): manda como antes.
 async function resolverJidParaEnvio(sock, telefone) {
   const jidIngenuo = `${telefone}@s.whatsapp.net`;
   try {
-    const [resultado] = (await sock.onWhatsApp(telefone)) ?? [];
-    const lid = resultado?.exists ? await sock.signalRepository.lidMapping.getLIDForPN(resultado.jid) : null;
-    console.log(`[relay-saida] onWhatsApp(${telefone}) ->`, JSON.stringify(resultado), `| LID: ${lid}`);
-    if (lid) {
-      // Alimenta o mesmo cache que relay-entrada.js usa pra resolver
-      // mensagem RECEBIDA — sem isso, o LID só ficava conhecido no sentido
-      // de envio, e a próxima mensagem que esse mesmo contato mandasse de
-      // volta continuava sem telefone conhecido (visto ao vivo logo depois
-      // desse fix: mensagem da Jessica ainda foi ignorada uma vez).
-      registrarMapeamento(lid, telefone);
-      return lid;
+    for (const candidato of [telefone, variante9Digito(telefone)].filter(Boolean)) {
+      const [resultado] = (await sock.onWhatsApp(candidato)) ?? [];
+      const lid = resultado?.exists ? await sock.signalRepository.lidMapping.getLIDForPN(resultado.jid) : null;
+      console.log(`[relay-saida] onWhatsApp(${candidato}) ->`, JSON.stringify(resultado), `| LID: ${lid}`);
+      if (!resultado?.exists) continue;
+      if (candidato !== telefone) {
+        console.warn(`[relay-saida] ${telefone} não tem WhatsApp; o mesmo celular ${candidato.length > telefone.length ? "com" : "sem"} o 9 tem — mandando pra ele.`);
+      }
+      if (lid) {
+        // Alimenta o mesmo cache que relay-entrada.js usa pra resolver
+        // mensagem RECEBIDA — sem isso, o LID só ficava conhecido no sentido
+        // de envio, e a próxima mensagem que esse mesmo contato mandasse de
+        // volta continuava sem telefone conhecido (visto ao vivo logo depois
+        // desse fix: mensagem da Jessica ainda foi ignorada uma vez).
+        registrarMapeamento(lid, telefone);
+        return { jid: lid, existe: true };
+      }
+      return { jid: `${candidato}@s.whatsapp.net`, existe: true };
     }
+    return { jid: jidIngenuo, existe: false };
   } catch (erro) {
     console.error(`[relay-saida] Falha ao resolver JID de ${telefone} via onWhatsApp, usando o telefone direto:`, erro.message);
+    return { jid: jidIngenuo, existe: null };
   }
-  return jidIngenuo;
 }
+
+// Mensagem pra número sem WhatsApp já avisada ao CRM: não consulta de novo a
+// cada volta da fila enquanto o CRM não tira ela (se o aviso falhar).
+const SEM_WHATSAPP_AVISADA = new Map();
+const ESPERA_REAVISO_MS = 10 * 60 * 1000;
 
 async function processarFilaAgora(sock) {
   let pendentes;
@@ -139,7 +160,19 @@ async function processarFilaAgora(sock) {
 
   for (const item of pendentes) {
     try {
-      const jid = await resolverJidParaEnvio(sock, item.telefone);
+      const avisadaEm = SEM_WHATSAPP_AVISADA.get(item.mensagemId);
+      if (avisadaEm && Date.now() - avisadaEm < ESPERA_REAVISO_MS) continue;
+      const destino = await resolverJidParaEnvio(sock, item.telefone);
+      if (destino.existe === false) {
+        console.warn(`[relay-saida] ${item.telefone} não tem WhatsApp — NÃO enviei a mensagem ${item.mensagemId}; avisando o CRM.`);
+        SEM_WHATSAPP_AVISADA.set(item.mensagemId, Date.now());
+        await chamarApi("/api/integracoes/whatsapp/falha-envio", {
+          method: "POST",
+          body: JSON.stringify({ mensagemId: item.mensagemId, motivo: "SEM_WHATSAPP" }),
+        });
+        continue;
+      }
+      const jid = destino.jid;
       console.log(`[relay-saida] Mandando pra jid resolvido: ${jid}`);
       await simularDigitacao(sock, jid, item.texto);
       let enviada;

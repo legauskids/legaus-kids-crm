@@ -19,3 +19,17 @@ export function mesmoTelefone(a, b) {
   const ca = chaveTelefone(a);
   return !!ca && ca === chaveTelefone(b);
 }
+
+/**
+ * O mesmo celular brasileiro no outro formato: com o 9 extra tira, sem ele
+ * põe ("5554996960296" <-> "555496960296"). null se não for celular BR.
+ * Usado quando o WhatsApp diz que o número não existe no formato salvo.
+ */
+export function variante9Digito(telefone) {
+  const d = soDigitos(telefone);
+  const com9 = d.match(/^55(\d{2})9(\d{8})$/);
+  if (com9) return `55${com9[1]}${com9[2]}`;
+  const sem9 = d.match(/^55(\d{2})([6-9]\d{7})$/);
+  if (sem9) return `55${sem9[1]}9${sem9[2]}`;
+  return null;
+}

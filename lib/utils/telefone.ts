@@ -44,3 +44,11 @@ export function mesmoTelefone(a: string, b: string): boolean {
 export function pareceTelefone(termo: string): boolean {
   return /^[\d\s()+.-]+$/.test(termo.trim()) && partesTelefone(termo) !== null;
 }
+
+/** "5554969602960" -> "(54) 96960-2960" — pra confirmação e aviso mostrarem o número de verdade. */
+export function telefoneLegivel(telefone: string): string {
+  const d = telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return telefone;
+}

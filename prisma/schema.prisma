@@ -260,6 +260,11 @@ model Mensagem {
   // ciclo de 5s do relay pegar a mesma mensagem de novo achando que ainda
   // não foi tentada.
   tentativaEnvioEm DateTime?
+  // O WhatsApp disse que o número não tem conta (nem com/sem o 9): a
+  // mensagem não foi enviada e sai da fila; quem pediu é avisado no Telegram
+  // (2026-10-14 — antes "enviava" sem erro e nunca chegava).
+  falhaEnvio       String?
+  falhaEnvioEm     DateTime?
 
   // Preenchidos quando a mensagem é um contato compartilhado pelo WhatsApp
   // (vCard) — deixa a UI mostrar um card com botão "Adicionar ao CRM" em vez

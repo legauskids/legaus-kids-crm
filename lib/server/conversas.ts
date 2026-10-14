@@ -120,6 +120,8 @@ export async function listMensagensPendentesDeRelay() {
       direcao: "SAIDA",
       origem: { not: "WHATSAPP" },
       externalId: null,
+      // Número sem WhatsApp: não fica sendo tentada pra sempre (ver falhaEnvio).
+      falhaEnvio: null,
       OR: [{ tentativaEnvioEm: null }, { tentativaEnvioEm: { lt: limiteTentativa } }],
     },
     include: { conversa: { include: { contato: true } } },
