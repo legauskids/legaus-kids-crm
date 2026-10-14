@@ -19,7 +19,7 @@ const ALTURA_CARD_MAX = 1350;
 const ALTURA_INFO_MIN = 240;
 
 /** Foto do produto pode vir de upload (imagemBytes) ou de URL externa (site antigo) — trata os dois casos. */
-async function carregarFotoProduto(produto: { imagemBytes: Uint8Array | null; imagemUrl: string | null }): Promise<Buffer | null> {
+export async function carregarFotoProduto(produto: { imagemBytes: Uint8Array | null; imagemUrl: string | null }): Promise<Buffer | null> {
   if (produto.imagemBytes) return Buffer.from(produto.imagemBytes);
   if (produto.imagemUrl) {
     try {

@@ -29,7 +29,8 @@ export const EMPRESA: DadosEmpresa = {
   cidade: "Santa Rosa",
   uf: "RS",
   cep: "98.780-681",
-  telefone: "(55) 9960-3257",
+  // Com o 9 do celular (padrão pedido pelo Marcos em 2026-10-14).
+  telefone: "(55) 99960-3257",
   email: "contato@legauskids.com.br",
   site: "legauskids.com.br",
   representanteNome: "MARCOS ZANCAN",

@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth/guards";
+import { requireModulo, requireUser } from "@/lib/auth/guards";
+import { buscarDestinatarios, enviarProdutoPorWhatsApp, type DestinatarioEnvio } from "@/lib/server/produto-envio";
+import type { FormatoEnvioProduto } from "@/lib/utils/produto-envio";
 import {
   criarProduto,
   atualizarProduto,
@@ -160,4 +162,30 @@ export async function aplicarPrecoEmMassaAction(
 
   await aplicarPrecoEmMassa(categoria, campo, valor);
   return { ok: true };
+}
+
+/** Pra quem mandar o produto: clientes com telefone, pelo nome ou pelo número. */
+export async function buscarDestinatariosAction(termo: string): Promise<DestinatarioEnvio[]> {
+  await requireModulo("produtos");
+  return buscarDestinatarios(termo);
+}
+
+/** Manda o produto (card ou PDF) pelo WhatsApp — entra na fila do whatsapp-service. */
+export async function enviarProdutoWhatsAppAction(input: {
+  produtoId: string;
+  telefone: string;
+  formato: FormatoEnvioProduto;
+  ocultarValor: boolean;
+  mensagem?: string;
+  nomeContato?: string;
+}): Promise<{ ok: true; para: string } | { error: string }> {
+  await requireModulo("produtos");
+  if (input.formato !== "CARD" && input.formato !== "PDF") return { error: "Formato inválido." };
+  try {
+    const r = await enviarProdutoPorWhatsApp(input);
+    revalidatePath("/atendimento");
+    return { ok: true, para: `${r.nome} — ${r.telefoneFormatado}` };
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não foi possível enviar agora." };
+  }
 }

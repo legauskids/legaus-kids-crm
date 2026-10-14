@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Upload, Loader2 } from "lucide-react";
+import { Trash2, Upload, Loader2, Send } from "lucide-react";
 import {
   atualizarProdutoAction,
   excluirProdutoAction,
@@ -29,9 +29,12 @@ const initialState: ProdutoFormState = {};
 export function EditarProdutoDialog({
   produto,
   onOpenChange,
+  onEnviar,
 }: {
   produto: ProdutoVM | null;
   onOpenChange: (open: boolean) => void;
+  /** Abre o envio pelo WhatsApp (card ou PDF) desse produto. */
+  onEnviar?: () => void;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(atualizarProdutoAction, initialState);
@@ -242,9 +245,17 @@ export function EditarProdutoDialog({
                   Excluir
                 </Button>
               )}
-              <Button type="submit" disabled={pending}>
-                {pending ? "Salvando..." : "Salvar"}
-              </Button>
+              <div className="flex items-center gap-2">
+                {onEnviar && (
+                  <Button type="button" variant="outline" onClick={onEnviar}>
+                    <Send className="size-4" />
+                    Enviar pelo WhatsApp
+                  </Button>
+                )}
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Salvando..." : "Salvar"}
+                </Button>
+              </div>
             </DialogFooter>
           </form>
         )}
