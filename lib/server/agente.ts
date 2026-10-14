@@ -22,6 +22,7 @@ import {
   type CampoPrecoProduto,
 } from "@/lib/server/produtos";
 import { esquecerFotoDaConversa, fotosRecentesDaConversa, guardarFotoDaConversa } from "@/lib/server/agente-fotos";
+import type { ArquivoParaEnviar } from "@/lib/server/agente-arquivos";
 import {
   listFunisComEtapas,
   criarNegocio,
@@ -150,6 +151,9 @@ type CtxFerramenta = {
   // Marcado quando uma ferramenta usou a imagem desta mensagem (ou a guardou
   // numa ação pendente): aí ela não vai pra memória da conversa.
   imagemConsumida?: boolean;
+  // Arquivos pra entregar a QUEM PEDIU no próprio canal (Telegram: "manda
+  // aqui pra eu ver" o orçamento ou o card) — o adaptador manda no chat.
+  arquivos?: ArquivoParaEnviar[];
   // Bytes de um arquivo genérico (não-imagem, não-PDF, não-OFX — ex: .docx,
   // .xlsx, .zip, qualquer documento) anexado a ESSE comando. Mesma regra de
   // vida curta que anexoImagem.
@@ -262,6 +266,23 @@ const FOTOS_SEGUIDAS_MS = 2 * 60 * 1000;
  */
 function telefoneDeIdentificador(identificador: string): string | undefined {
   return /^\d{10,}$/.test(identificador) ? identificador : undefined;
+}
+
+/** Conversa pelo Telegram: "pra mim"/"aqui" é o próprio chat, não um WhatsApp. */
+function conversaNoTelegram(ctx: CtxFerramenta): boolean {
+  return Boolean(ctx.identificador?.startsWith("tg:"));
+}
+
+/** Entrega o arquivo pra quem pediu, no chat do Telegram (ver ArquivoParaEnviar). */
+function entregarNoChat(ctx: CtxFerramenta, arquivo: ArquivoParaEnviar): void {
+  ctx.arquivos ??= [];
+  ctx.arquivos.push(arquivo);
+}
+
+/** "5554969602960" -> "(54) 96960-2960", pra confirmação mostrar pra quem vai. */
+function telefoneLegivel(telefone: string): string {
+  const d = telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
+  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : telefone;
 }
 
 /**
@@ -841,7 +862,12 @@ const FERRAMENTAS: Ferramenta[] = [
       // — visto ao vivo em 2026-09-06 ("gerou um link mas só tinha 1 card,
       // deveria ter 8"). Quando o pedido veio do WhatsApp (telefoneOrigem
       // presente), manda cada card como imagem de verdade pra quem pediu,
-      // igual enviar_cards_produtos_whatsapp já faz pro cliente.
+      // igual enviar_cards_produtos_whatsapp já faz pro cliente. No
+      // Telegram, os cards vão como foto no próprio chat.
+      if (conversaNoTelegram(ctx)) {
+        for (const produto of produtos) entregarNoChat(ctx, { tipo: "card-produto", produtoId: produto.id, ocultarValor: a.ocultarValor });
+        return { mostrado: true, aquiNoChat: true, quantidade: produtos.length, produtos: produtos.map((p) => p.nome) };
+      }
       if (ctx.telefoneOrigem) {
         const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: ctx.telefoneOrigem });
         for (const produto of produtos) {
@@ -881,7 +907,12 @@ const FERRAMENTAS: Ferramenta[] = [
         ocultarValor: { type: "boolean", description: "true pra mandar o card sem mostrar o preço" },
       },
     },
-    sensivel: true,
+    // "Manda pra mim" pelo Telegram = os cards no próprio chat, sem risco:
+    // vai direto. Pra cliente, sempre confirma.
+    async sensivelSe(args, ctx) {
+      const a = args as { telefone?: string; clienteNomeBusca?: string };
+      return !(!a.telefone && !a.clienteNomeBusca && conversaNoTelegram(ctx));
+    },
     async descreverAcao(args, ctx) {
       const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string; ocultarValor?: boolean };
       const ids = await resolverIdsDeProdutos(a);
@@ -889,13 +920,17 @@ const FERRAMENTAS: Ferramenta[] = [
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { nome: true } });
       const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
       const nomesProdutos = produtos.map((p) => p.nome).join(", ");
-      return `mandar ${produtos.length} card(s) de produto (${nomesProdutos})${a.ocultarValor ? ", sem preço," : ""} pro WhatsApp de ${destino.nomeExibicao}`;
+      return `mandar ${produtos.length} card(s) de produto (${nomesProdutos})${a.ocultarValor ? ", sem preço," : ""} pro WhatsApp de ${destino.nomeExibicao}${destino.telefone ? ` — ${telefoneLegivel(destino.telefone)}` : " (sem telefone!)"}`;
     },
     async executar(args, ctx) {
       const a = args as { termo?: string; produtoIds?: string[]; telefone?: string; clienteNomeBusca?: string; ocultarValor?: boolean };
       const ids = await resolverIdsDeProdutos(a);
       if (ids.length === 0) throw new Error("Nenhum produto encontrado.");
       const produtos = await prisma.produto.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true, valorCentavos: true } });
+      if (!a.telefone && !a.clienteNomeBusca && conversaNoTelegram(ctx)) {
+        for (const produto of produtos) entregarNoChat(ctx, { tipo: "card-produto", produtoId: produto.id, ocultarValor: a.ocultarValor });
+        return { mostrado: true, aquiNoChat: true, quantidade: produtos.length };
+      }
       const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
       if (!destino.telefone) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
@@ -1182,7 +1217,7 @@ const FERRAMENTAS: Ferramenta[] = [
       if (!ctx.anexoImagem && !ctx.anexoArquivo) return "nenhum arquivo anexado nesse comando pra mandar";
       const nomeAnexo = ctx.anexoArquivo?.nomeArquivo ?? "a imagem anexada";
       const destino = await resolverTelefoneCliente(a, ctx.telefoneOrigem);
-      return `reenviar ${nomeAnexo} pro WhatsApp de ${destino.nomeExibicao}`;
+      return `reenviar ${nomeAnexo} pro WhatsApp de ${destino.nomeExibicao}${destino.telefone ? ` — ${telefoneLegivel(destino.telefone)}` : " (sem telefone!)"}`;
     },
     async executar(args, ctx) {
       const a = args as { telefone?: string; clienteNomeBusca?: string; legenda?: string };
@@ -1260,7 +1295,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "enviar_orcamento_whatsapp",
     description:
-      "Envia um orçamento já criado pro WhatsApp — manda o ARQUIVO PDF de verdade anexado na mensagem (não um link pra clicar). Use essa ferramenta (não obter_link_pdf_orcamento) sempre que alguém pedir pra 'mandar', 'enviar' ou 'anexar' o PDF/arquivo, ou pedir explicitamente 'o arquivo, não o link'. Por padrão manda pro telefone do CLIENTE vinculado ao orçamento. Se o pedido for pra mandar PRA VOCÊ MESMO (o Marcos/Dani pedindo de volta pelo WhatsApp da Legaus Kids, ex: 'manda aqui pra mim', 'me manda o PDF'), passe paraMim:true — não deixe telefone em branco achando que resolve sozinho: sem paraMim, em branco cai no telefone do CLIENTE do orçamento (pode ser um terceiro, ex: pedir o orçamento do Fulano e mandar 'pra mim' erraria pro telefone do Fulano). E nunca invente/redigite um número de telefone de memória — use paraMim, ou peça o número. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
+      "Envia um orçamento já criado pro WhatsApp — manda o ARQUIVO PDF de verdade anexado na mensagem (não um link pra clicar). Use essa ferramenta (não obter_link_pdf_orcamento) sempre que alguém pedir pra 'mandar', 'enviar' ou 'anexar' o PDF/arquivo, ou pedir explicitamente 'o arquivo, não o link'. Por padrão manda pro telefone do CLIENTE vinculado ao orçamento. Se o pedido for pra mandar PRA VOCÊ MESMO (ex: 'manda aqui pra mim', 'me manda o PDF', 'envia aqui pra eu avaliar/conferir'), passe paraMim:true — no WhatsApp vai pro WhatsApp de quem pediu; no Telegram o PDF chega aqui no próprio chat (nunca vai pro cliente) — não deixe telefone em branco achando que resolve sozinho: sem paraMim, em branco cai no telefone do CLIENTE do orçamento (pode ser um terceiro, ex: pedir o orçamento do Fulano e mandar 'pra mim' erraria pro telefone do Fulano). E nunca invente/redigite um número de telefone de memória — use paraMim, ou peça o número. Ação sensível — sempre pede confirmação antes. Informe orcamentoId (se tiver, ex: veio de buscar_orcamentos/criar_orcamento nessa mesma conversa) OU numero (o número humano do orçamento, ex: 8 — funciona mesmo sem saber o ID interno).",
     input_schema: {
       type: "object",
       properties: {
@@ -1270,20 +1305,37 @@ const FERRAMENTAS: Ferramenta[] = [
         paraMim: { type: "boolean", description: "true quando o pedido é pra mandar pro WhatsApp de quem está pedindo (não pro cliente do orçamento)" },
       },
     },
-    sensivel: true,
-    async descreverAcao(args) {
-      const a = args as { orcamentoId?: string; numero?: number; paraMim?: boolean };
+    // Mandar pro cliente sempre confirma; "pra mim" pelo Telegram é só
+    // entregar o PDF no próprio chat, sem risco — vai direto.
+    async sensivelSe(args, ctx) {
+      const a = args as { paraMim?: boolean; telefone?: string };
+      return !(a.paraMim && !a.telefone && conversaNoTelegram(ctx));
+    },
+    async descreverAcao(args, ctx) {
+      const a = args as { orcamentoId?: string; numero?: number; paraMim?: boolean; telefone?: string };
       const orcamento = await resolverOrcamento(a);
       if (!orcamento) return "orçamento não encontrado";
       const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
-      const destino = a.paraMim ? "você" : (orcamento.contato?.nome ?? "cliente sem nome vinculado");
-      return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}), com o PDF anexado, pro WhatsApp de ${destino}`;
+      // A confirmação mostra pra quem e pra qual número vai de verdade (em
+      // 2026-10-14 dizia "pro WhatsApp de você" e foi pra cliente).
+      const telefone = (a.telefone || (a.paraMim ? ctx.telefoneOrigem : orcamento.contato?.telefone || ctx.telefoneOrigem) || "").replace(/\D/g, "");
+      const quem = a.paraMim && !a.telefone ? "o seu WhatsApp" : `o WhatsApp de ${a.telefone ? "quem você indicou" : (orcamento.contato?.nome ?? "cliente sem nome")}`;
+      return `enviar o orçamento #${String(orcamento.numero).padStart(4, "0")} (${centavosParaReais(total)}), com o PDF, para ${quem}${telefone ? ` — ${telefoneLegivel(telefone)}` : " (sem telefone!)"}`;
     },
     async executar(args, ctx) {
       const { telefone, paraMim } = args as { telefone?: string; paraMim?: boolean };
       const orcamento = await resolverOrcamento(args as { orcamentoId?: string; numero?: number });
       if (!orcamento) throw new Error("Orçamento não encontrado.");
-      const telefoneFinal = (telefone || (paraMim ? ctx.telefoneOrigem : undefined) || orcamento.contato?.telefone || ctx.telefoneOrigem || "").replace(/\D/g, "");
+      // "Pra mim" NUNCA cai no telefone do cliente: no Telegram o PDF vai no
+      // próprio chat; sem WhatsApp de quem pediu (chat do CRM), não manda.
+      if (paraMim && !telefone && !ctx.telefoneOrigem) {
+        if (conversaNoTelegram(ctx)) {
+          entregarNoChat(ctx, { tipo: "orcamento-pdf", orcamentoId: orcamento.id });
+          return { entregueAquiNoChat: true, numero: orcamento.numero };
+        }
+        throw new Error("Nesta conversa não tenho um WhatsApp seu pra mandar — use obter_link_pdf_orcamento pra mostrar o PDF aqui.");
+      }
+      const telefoneFinal = (telefone || (paraMim ? ctx.telefoneOrigem : orcamento.contato?.telefone || ctx.telefoneOrigem) || "").replace(/\D/g, "");
       if (telefoneFinal.length < 10) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
       const token = await garantirTokenPublico(orcamento.id);
@@ -1303,7 +1355,7 @@ const FERRAMENTAS: Ferramenta[] = [
         anexoNome: `orcamento-${String(orcamento.numero).padStart(4, "0")}.pdf`,
         anexoMimetype: "application/pdf",
       });
-      return { enviado: true, numero: orcamento.numero };
+      return { enviado: true, numero: orcamento.numero, para: paraMim ? "seu WhatsApp" : (orcamento.contato?.nome ?? null), telefone: telefoneLegivel(telefoneFinal) };
     },
   },
   {
@@ -2176,6 +2228,7 @@ Regras:
 - Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto. A foto NÃO precisa vir na mesma mensagem: a ferramenta usa a foto desta mensagem ou, se não tiver, a mais recente da conversa (até 30 min) — então nunca diga que a foto "veio em outra mensagem" nem peça pra reenviar sem antes chamar a ferramenta; só peça a foto se a ferramenta disser que não tem nenhuma. Se ela responder precisaEscolherFoto, pergunte qual das fotos (a última ou a penúltima, com o horário). Trocar a foto de um produto que já tem foto pede confirmação sozinho; pra voltar a foto anterior ("desfaz", "essa foto era de outro produto") use desfazer_foto_produto.
 - Cadastro de produto (pedido do Marcos): quando a mensagem trouxer a descrição de um produto — nome na primeira linha, itens e/ou preço — com ou sem foto, e nenhum outro pedido, é cadastro de produto novo. Chame criar_produto DIRETO, sem perguntar se é cadastro ou orçamento e sem pedir confirmação do nome, com o nome EXATAMENTE como veio (não invente, não encurte, não acrescente "Premium"/"Standard"), os itens na descrição e o preço; categoria pelo tipo (playground → Playground). Logo depois, se houver foto (nesta mensagem ou numa das anteriores), chame anexar_foto_produto com o id criado. Se criar_produto responder jaExiste, não crie de novo: avise e pergunte se é pra atualizar o existente. Uma descrição de produto nova nunca é comentário sobre um card ou produto anterior.
 - "Sim", "ok", "beleza" depois de uma ação que você já concluiu (sem nenhuma pergunta sua pendente) não é pedido novo: não repita a ação, só responda curto que está feito.
+- No Telegram (o canal vem no fim destas instruções), "manda aqui", "envia aqui pra eu avaliar/conferir", "me manda", "pra mim" = entregar AQUI no próprio chat: orçamento → enviar_orcamento_whatsapp com paraMim:true (o PDF chega no chat); card de produto → gerar_cards_produtos. Nunca mande pro cliente algo que foi pedido pra você avaliar — pro cliente só quando o pedido disser o cliente ("manda pra Renata"). Quando perguntarem pra qual número algo foi, responda com o telefone que a ferramenta devolveu.
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
@@ -2311,7 +2364,7 @@ async function rodarAgenteClaude(
     canal?: CanalAgente;
     // Quem chamou lê daqui, no fim, se a imagem da mensagem foi usada
     // (ctx.imagemConsumida) — é o próprio objeto ctx das ferramentas.
-    estado?: { imagemConsumida?: boolean };
+    estado?: { imagemConsumida?: boolean; arquivos?: ArquivoParaEnviar[] };
   } = {},
 ): Promise<{
   texto: string;
@@ -2605,7 +2658,7 @@ async function comandoRepetidoDemais(identificador: string, textoComando: string
 }
 
 /** Resposta neutra do núcleo: texto + enquete (WhatsApp) ou botões (Telegram). */
-export type ResultadoAgente = { resposta: string; enquete?: Enquete; botoes?: Botoes };
+export type ResultadoAgente = { resposta: string; enquete?: Enquete; botoes?: Botoes; arquivos?: ArquivoParaEnviar[] };
 
 type EntradaComando = {
   texto: string;
@@ -2649,10 +2702,14 @@ function botoesDePendente(comandoId: string): Botoes {
  * Executa a ação sensível que estava esperando confirmação ("sim" ou o
  * botão Confirmar) e marca o pedido original como concluído.
  */
-async function executarPendente(pendente: ComandoAgente, input: { usuarioId: string; identificador: string }): Promise<string> {
+async function executarPendente(
+  pendente: ComandoAgente,
+  input: { usuarioId: string; identificador: string },
+): Promise<{ resposta: string; arquivos?: ArquivoParaEnviar[] }> {
   const ferramenta = FERRAMENTAS.find((f) => f.name === pendente.ferramentaPendente);
   let resposta: string;
   let acao: AcaoAgente = { ferramenta: pendente.ferramentaPendente ?? "?", ok: true };
+  const arquivos: ArquivoParaEnviar[] = [];
   try {
     if (ferramenta) {
       // Reidrata o anexo (imagem/arquivo) que veio junto do comando
@@ -2675,6 +2732,7 @@ async function executarPendente(pendente: ComandoAgente, input: { usuarioId: str
         anexoImagem: anexoImagemReidratado,
         anexoArquivo: anexoArquivoReidratado,
         identificador: input.identificador,
+        arquivos,
       });
     }
     resposta = `Feito — ${pendente.descricaoPendente}.`;
@@ -2688,7 +2746,7 @@ async function executarPendente(pendente: ComandoAgente, input: { usuarioId: str
     where: { id: pendente.id },
     data: { status: "CONCLUIDO", acoes: [...anteriores, { ...acao, confirmada: true }] as Prisma.InputJsonValue },
   });
-  return resposta;
+  return { resposta, arquivos: arquivos.length ? arquivos : undefined };
 }
 
 export async function processarComandoAgente(input: EntradaComando): Promise<ResultadoAgente> {
@@ -2732,9 +2790,9 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
   if (pendente && pendente.ferramentaPendente && !(rascunho && rascunho.atualizadoEm > pendente.criadoEm)) {
     const decisao = interpretarConfirmacao(input.texto);
     if (decisao === "sim") {
-      const resposta = await executarPendente(pendente, input);
+      const { resposta, arquivos } = await executarPendente(pendente, input);
       await salvarComando(input, { textoComando: input.texto, resposta, status: "CONCLUIDO" });
-      return { resposta };
+      return { resposta, arquivos };
     }
     if (decisao === "nao") {
       const resposta = "Combinado, não fiz nada.";
@@ -2755,7 +2813,7 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
   }
 
   const usuario = await prisma.user.findUnique({ where: { id: input.usuarioId }, select: { id: true, isAdmin: true, permissoes: true } });
-  const estado: { imagemConsumida?: boolean } = {};
+  const estado: { imagemConsumida?: boolean; arquivos?: ArquivoParaEnviar[] } = {};
   const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo, {
     anexoAudio: input.anexoAudio,
     rascunhoDespesaId: rascunho?.id ?? null,
@@ -2793,7 +2851,7 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
   }
 
   const botoes = resultado.botoes ?? (resultado.ferramentaPendente && canal === "telegram" ? botoesDePendente(comandoId) : undefined);
-  return { resposta: resultado.texto, enquete: resultado.enquete, botoes };
+  return { resposta: resultado.texto, enquete: resultado.enquete, botoes, arquivos: estado.arquivos?.length ? estado.arquivos : undefined };
 }
 
 /**
@@ -2819,7 +2877,7 @@ export async function processarBotaoAgente(input: { identificador: string; usuar
       await prisma.comandoAgente.update({ where: { id: pendente.id }, data: { status: "CANCELADO" } });
       return { resposta: "Combinado, não fiz nada." };
     }
-    return { resposta: await executarPendente(pendente, input) };
+    return executarPendente(pendente, input);
   }
 
   const r =

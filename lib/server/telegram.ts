@@ -8,6 +8,7 @@ import { tokenPush } from "@/lib/server/push-bancario";
 import { URL_BASE } from "@/lib/constants/app";
 import { transcreverAudio } from "@/lib/server/transcricao";
 import { agenteLigado, dividirMensagem, paraHtmlTelegram, type Botoes } from "@/lib/utils/agente-canal";
+import { gerarArquivoParaEnviar, type ArquivoGerado, type ArquivoParaEnviar } from "@/lib/server/agente-arquivos";
 import { idsAutorizados, lerUpdate, type UpdateLido } from "@/lib/utils/telegram";
 
 // Canal do Telegram exclusivo do Marcos (pedido de 2026-10-07). Recebe por
@@ -80,7 +81,24 @@ export function enviarMensagemTelegram(chatId: string, texto: string) {
 }
 
 /** Resposta do núcleo desenhada no Telegram: HTML, quebrada se for longa, botões na última parte. */
-export async function enviarRespostaTelegram(chatId: string, resposta: { mensagem: string; botoes?: Botoes }): Promise<void> {
+/** Arquivo (PDF do orçamento, card do produto) no chat: foto pra imagem, documento pro resto. */
+export async function enviarArquivoTelegram(chatId: string, arquivo: ArquivoGerado): Promise<void> {
+  const metodo = arquivo.mime.startsWith("image/") ? "sendPhoto" : "sendDocument";
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  if (arquivo.legenda) form.append("caption", arquivo.legenda.slice(0, 1000));
+  form.append(metodo === "sendPhoto" ? "photo" : "document", new Blob([new Uint8Array(arquivo.bytes)], { type: arquivo.mime }), arquivo.nome);
+  let resposta: Response;
+  try {
+    resposta = await fetch(`${API_TELEGRAM}/bot${tokenDoBot()}/${metodo}`, { method: "POST", body: form });
+  } catch {
+    throw new Error(`Telegram ${metodo}: falha de rede`);
+  }
+  const json = (await resposta.json().catch(() => null)) as { ok?: boolean; description?: string } | null;
+  if (!json?.ok) throw new Error(`Telegram ${metodo}: ${json?.description ?? `HTTP ${resposta.status}`}`);
+}
+
+export async function enviarRespostaTelegram(chatId: string, resposta: { mensagem: string; botoes?: Botoes; arquivos?: ArquivoParaEnviar[] }): Promise<void> {
   const partes = dividirMensagem(resposta.mensagem.trim() || "Feito.");
   for (let i = 0; i < partes.length; i++) {
     const botoes = i === partes.length - 1 ? resposta.botoes : undefined;
@@ -98,6 +116,10 @@ export async function enviarRespostaTelegram(chatId: string, resposta: { mensage
       if (!(erro instanceof Error && /parse entities/i.test(erro.message))) throw erro;
       await chamarTelegram("sendMessage", { chat_id: chatId, text: partes[i], reply_markup: teclado });
     }
+  }
+  // Depois do texto, os arquivos que o agente entregou pra quem pediu.
+  for (const arquivo of resposta.arquivos ?? []) {
+    await enviarArquivoTelegram(chatId, await gerarArquivoParaEnviar(arquivo));
   }
 }
 
@@ -171,7 +193,7 @@ function instrucoesDoPush(): string {
     `Bearer ${tokenPush()}`,
   ].join("\n");
 }
-type Resposta = { mensagem: string; botoes?: Botoes };
+type Resposta = { mensagem: string; botoes?: Botoes; arquivos?: ArquivoParaEnviar[] };
 
 /**
  * O que fazer com o update de quem está autorizado. `gravado` = o núcleo
@@ -185,7 +207,7 @@ async function responderUpdate(u: UpdateLido, usuario: Usuario, identificador: s
       await chamarTelegram("editMessageReplyMarkup", { chat_id: u.chatId, message_id: u.mensagemId, reply_markup: { inline_keyboard: [] } }).catch(() => {});
     }
     const r = await processarBotaoAgente({ identificador, usuarioId: usuario.id, dados: u.texto ?? "" });
-    return { resposta: r ? { mensagem: r.resposta, botoes: r.botoes } : { mensagem: "Esse botão não vale mais — me diga por texto o que precisa." }, gravado: false };
+    return { resposta: r ? { mensagem: r.resposta, botoes: r.botoes, arquivos: r.arquivos } : { mensagem: "Esse botão não vale mais — me diga por texto o que precisa." }, gravado: false };
   }
 
   const texto = u.texto?.trim() ?? "";
@@ -211,7 +233,7 @@ async function responderUpdate(u: UpdateLido, usuario: Usuario, identificador: s
     const transcricao = await transcreverAudio(bytes, mime);
     if (!transcricao) return { resposta: { mensagem: "Não consegui entender o áudio — pode mandar de novo ou escrever?" }, gravado: false };
     const r = await processarComandoAgente({ ...base, texto: transcricao, anexoAudio: { base64: bytes.toString("base64"), mimetype: mime } });
-    return { resposta: { mensagem: r.resposta, botoes: r.botoes }, gravado: true };
+    return { resposta: { mensagem: r.resposta, botoes: r.botoes, arquivos: r.arquivos }, gravado: true };
   }
 
   if (u.tipo === "foto" && bytes) {
@@ -220,7 +242,7 @@ async function responderUpdate(u: UpdateLido, usuario: Usuario, identificador: s
       texto: texto || "Segue a imagem anexada.",
       anexoImagem: { base64: bytes.toString("base64"), mimetype: u.arquivo?.mime ?? "image/jpeg" },
     });
-    return { resposta: { mensagem: r.resposta, botoes: r.botoes }, gravado: true };
+    return { resposta: { mensagem: r.resposta, botoes: r.botoes, arquivos: r.arquivos }, gravado: true };
   }
 
   if (u.tipo === "documento" && bytes && u.arquivo) {
@@ -236,11 +258,11 @@ async function responderUpdate(u: UpdateLido, usuario: Usuario, identificador: s
         ? { anexoPdf: { base64: bytes.toString("base64"), nomeArquivo: nome } }
         : { anexoArquivo: { base64: bytes.toString("base64"), nomeArquivo: nome, mimetype: u.arquivo.mime ?? "application/octet-stream" } }),
     });
-    return { resposta: { mensagem: r.resposta, botoes: r.botoes }, gravado: true };
+    return { resposta: { mensagem: r.resposta, botoes: r.botoes, arquivos: r.arquivos }, gravado: true };
   }
 
   const r = await processarComandoAgente({ ...base, texto: texto.replace(/^\//, "") });
-  return { resposta: { mensagem: r.resposta, botoes: r.botoes }, gravado: true };
+  return { resposta: { mensagem: r.resposta, botoes: r.botoes, arquivos: r.arquivos }, gravado: true };
 }
 
 /** Um update do webhook: confere quem é, registra (sem duplicar), processa e responde. */
