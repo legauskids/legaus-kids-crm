@@ -20,14 +20,17 @@ import {
   MessageCircle,
   X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   buscarDestinatariosAction,
+  enviarProdutosPdfWhatsAppAction,
   enviarProdutoWhatsAppAction,
 } from "@/app/(app)/produtos/actions";
 import {
+  LIMITE_PRODUTOS_PDF,
   caminhoArquivoProduto,
+  caminhoArquivoProdutos,
   textoEnvioProduto,
+  textoEnvioProdutos,
   type FormatoEnvioProduto,
 } from "@/lib/utils/produto-envio";
 import { telefoneLegivel, telefonePadraoBR } from "@/lib/utils/telefone";
@@ -35,14 +38,15 @@ import type { DestinatarioEnvio } from "@/lib/server/produto-envio";
 import type { ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 
 /**
- * Mandar um produto do catálogo pelo WhatsApp, em card (imagem) ou PDF
- * (ficha do produto) — pedido do Marcos de 2026-10-14.
+ * Mandar produtos do catálogo pelo WhatsApp (pedidos do Marcos de
+ * 2026-10-14 e 15): um produto em card (imagem) ou PDF (ficha); vários
+ * produtos selecionados num PDF só, um por página.
  */
 export function EnviarProdutoDialog({
-  produto,
+  produtos,
   onOpenChange,
 }: {
-  produto: ProdutoVM | null;
+  produtos: ProdutoVM[];
   onOpenChange: (open: boolean) => void;
 }) {
   const [formato, setFormato] = useState<FormatoEnvioProduto>("CARD");
@@ -71,38 +75,59 @@ export function EnviarProdutoDialog({
     };
   }, [busca, destino]);
 
-  if (!produto) return null;
+  if (produtos.length === 0) return null;
 
+  const varios = produtos.length > 1;
+  const produto = produtos[0];
+  const formatoFinal: FormatoEnvioProduto = varios ? "PDF" : formato;
   const ocultarValor = !mostrarPreco;
-  const sugestoesVisiveis = !destino && busca.trim().length >= 2 ? sugestoes : [];
+  const sugestoesVisiveis =
+    !destino && busca.trim().length >= 2 ? sugestoes : [];
   const telefoneDigitado = telefonePadraoBR(busca);
   const telefoneValido =
     !destino &&
     telefoneDigitado.length >= 12 &&
     /^[\d\s()+.-]+$/.test(busca.trim());
-  const podeEnviar = Boolean(destino || telefoneValido) && !pending;
-  const arquivo = caminhoArquivoProduto(produto.id, formato, ocultarValor);
+  const acimaDoLimite = produtos.length > LIMITE_PRODUTOS_PDF;
+  const podeEnviar =
+    Boolean(destino || telefoneValido) && !pending && !acimaDoLimite;
+  const arquivo = varios
+    ? caminhoArquivoProdutos(
+        produtos.map((p) => p.id),
+        ocultarValor,
+      )
+    : caminhoArquivoProduto(produto.id, formatoFinal, ocultarValor);
+  const textoPadrao = varios
+    ? textoEnvioProdutos(produtos)
+    : textoEnvioProduto(produto, formatoFinal, ocultarValor);
 
   function enviar() {
-    if (!produto) return;
     setErro(null);
     setSucesso(null);
     startTransition(async () => {
-      const r = await enviarProdutoWhatsAppAction({
-        produtoId: produto.id,
+      const comum = {
         telefone: destino?.telefone ?? busca,
-        formato,
         ocultarValor,
         mensagem: mensagem.trim() || undefined,
         nomeContato: destino?.nome,
-      });
+      };
+      const r = varios
+        ? await enviarProdutosPdfWhatsAppAction({
+            ...comum,
+            produtoIds: produtos.map((p) => p.id),
+          })
+        : await enviarProdutoWhatsAppAction({
+            ...comum,
+            produtoId: produto.id,
+            formato: formatoFinal,
+          });
       if ("error" in r) setErro(r.error);
       else setSucesso(`Entrou na fila do WhatsApp para ${r.para}.`);
     });
   }
 
   return (
-    <Dialog open={Boolean(produto)} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -110,39 +135,69 @@ export function EnviarProdutoDialog({
             Enviar pelo WhatsApp
           </DialogTitle>
         </DialogHeader>
-        <p className="-mt-2 text-sm text-muted-foreground">{produto.nome}</p>
+
+        {varios ? (
+          <div className="-mt-2 space-y-1">
+            <p className="text-sm text-muted-foreground">
+              {produtos.length} produtos num PDF só, um por página, nesta ordem:
+            </p>
+            <ol className="max-h-28 list-decimal overflow-y-auto rounded-md border bg-muted/30 py-1.5 pl-8 pr-2 text-sm">
+              {produtos.map((p) => (
+                <li key={p.id} className="truncate">
+                  {p.nome}
+                </li>
+              ))}
+            </ol>
+            {acimaDoLimite && (
+              <p className="text-sm text-destructive">
+                No máximo {LIMITE_PRODUTOS_PDF} produtos por PDF — tire alguns
+                da seleção.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="-mt-2 text-sm text-muted-foreground">{produto.nome}</p>
+        )}
 
         <div className="space-y-2">
-          <Label>Formato</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                { valor: "CARD", rotulo: "Card (imagem)", Icone: ImageIcon },
-                { valor: "PDF", rotulo: "PDF (ficha)", Icone: FileText },
-              ] as const
-            ).map(({ valor, rotulo, Icone }) => (
-              <Button
-                key={valor}
-                type="button"
-                variant={formato === valor ? "default" : "outline"}
-                onClick={() => setFormato(valor)}
-              >
-                <Icone className="size-4" />
-                {rotulo}
-              </Button>
-            ))}
-          </div>
+          {!varios && (
+            <>
+              <Label>Formato</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      valor: "CARD",
+                      rotulo: "Card (imagem)",
+                      Icone: ImageIcon,
+                    },
+                    { valor: "PDF", rotulo: "PDF (ficha)", Icone: FileText },
+                  ] as const
+                ).map(({ valor, rotulo, Icone }) => (
+                  <Button
+                    key={valor}
+                    type="button"
+                    variant={formato === valor ? "default" : "outline"}
+                    onClick={() => setFormato(valor)}
+                  >
+                    <Icone className="size-4" />
+                    {rotulo}
+                  </Button>
+                ))}
+              </div>
+            </>
+          )}
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={mostrarPreco}
               onCheckedChange={(v) => setMostrarPreco(v === true)}
             />
-            Mostrar o preço
+            Mostrar {varios ? "os preços" : "o preço"}
           </label>
         </div>
 
         <div className="rounded-md border bg-muted/30 p-2">
-          {formato === "CARD" ? (
+          {formatoFinal === "CARD" ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               key={arquivo}
@@ -227,14 +282,14 @@ export function EnviarProdutoDialog({
             id="mensagem-produto"
             value={mensagem}
             onChange={(e) => setMensagem(e.target.value)}
-            placeholder={textoEnvioProduto(produto, formato, ocultarValor)}
+            placeholder={textoPadrao}
             rows={2}
           />
         </div>
 
         {erro && <p className="text-sm text-destructive">{erro}</p>}
         {sucesso && (
-          <p className={cn("flex items-center gap-1.5 text-sm text-success")}>
+          <p className="flex items-center gap-1.5 text-sm text-success">
             <Check className="size-4" />
             {sucesso}
           </p>
@@ -244,7 +299,9 @@ export function EnviarProdutoDialog({
           <Button type="button" onClick={enviar} disabled={!podeEnviar}>
             {pending
               ? "Enviando..."
-              : `Enviar ${formato === "PDF" ? "PDF" : "card"}`}
+              : varios
+                ? `Enviar PDF com ${produtos.length} produtos`
+                : `Enviar ${formatoFinal === "PDF" ? "PDF" : "card"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

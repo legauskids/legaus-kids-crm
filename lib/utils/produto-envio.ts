@@ -35,3 +35,23 @@ export function caminhoArquivoProduto(produtoId: string, formato: FormatoEnvioPr
   const base = formato === "PDF" ? `/api/pdf/produto/${produtoId}` : `/api/imagem/produto-card/${produtoId}`;
   return ocultarValor ? `${base}?ocultarValor=1` : base;
 }
+
+// Vários produtos num PDF só (pedido de 2026-10-15): um produto por página.
+export const LIMITE_PRODUTOS_PDF = 30;
+export const NOME_ARQUIVO_PRODUTOS = "produtos-legaus-kids.pdf";
+
+/** Texto padrão do PDF com vários produtos: quantos e os primeiros nomes. */
+export function textoEnvioProdutos(produtos: { nome: string }[], mensagem?: string | null): string {
+  if (mensagem?.trim()) return mensagem.trim();
+  if (produtos.length === 1) return `Segue a ficha do produto *${produtos[0].nome}*.`;
+  const nomes = produtos.slice(0, 5).map((p) => p.nome);
+  const resto = produtos.length - nomes.length;
+  const lista = resto > 0 ? `${nomes.join(", ")} e mais ${resto}` : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+  return `Segue o PDF com ${produtos.length} produtos da Legaus Kids: ${lista}.`;
+}
+
+/** Rota do PDF com vários produtos (na ordem escolhida). */
+export function caminhoArquivoProdutos(produtoIds: string[], ocultarValor: boolean): string {
+  const ids = encodeURIComponent(produtoIds.join(","));
+  return `/api/pdf/produtos?ids=${ids}${ocultarValor ? "&ocultarValor=1" : ""}`;
+}

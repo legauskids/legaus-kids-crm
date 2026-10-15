@@ -5,16 +5,20 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  CheckSquare,
   ChevronDown,
   ChevronRight,
+  FileText,
   ImageOff,
   Plus,
   Search,
   Send,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { corDoIndice } from "@/lib/utils/colors";
 import { centavosParaReais } from "@/lib/utils/money";
+import { LIMITE_PRODUTOS_PDF } from "@/lib/utils/produto-envio";
 import { EditarProdutoDialog } from "@/app/(app)/produtos/editar-produto-dialog";
 import { NovoProdutoDialog } from "@/app/(app)/produtos/novo-produto-dialog";
 import { EnviarProdutoDialog } from "@/app/(app)/produtos/enviar-produto-dialog";
@@ -38,21 +42,36 @@ export type ProdutoVM = {
   instalacaoCentavos: number | null;
 };
 
+/** Seleção de vários produtos pra mandar num PDF só (pedido de 2026-10-15). */
+type Selecao = {
+  ativa: boolean;
+  ordem: (id: string) => number;
+  alternar: (produto: ProdutoVM) => void;
+};
+
 function ProdutoCard({
   produto,
   onClick,
   onEnviar,
+  selecao,
 }: {
   produto: ProdutoVM;
   onClick: () => void;
   onEnviar: () => void;
+  selecao: Selecao;
 }) {
+  const ordem = selecao.ordem(produto.id);
+  const marcado = ordem > 0;
   return (
     <div className="group relative">
       <button
         type="button"
-        onClick={onClick}
-        className="flex w-full flex-col overflow-hidden rounded-lg border bg-card text-left transition-shadow hover:shadow-md"
+        onClick={selecao.ativa ? () => selecao.alternar(produto) : onClick}
+        aria-pressed={selecao.ativa ? marcado : undefined}
+        className={cn(
+          "flex w-full flex-col overflow-hidden rounded-lg border bg-card text-left transition-shadow hover:shadow-md",
+          marcado && "border-primary ring-2 ring-primary/40",
+        )}
       >
         <div className="flex aspect-square items-center justify-center bg-muted/40">
           {produto.imagemUrl ? (
@@ -91,18 +110,32 @@ function ProdutoCard({
           </p>
         </div>
       </button>
-      {/* Mandar pelo WhatsApp (card ou PDF) sem abrir a edição — pedido de 2026-10-14. */}
-      <Button
-        type="button"
-        size="icon"
-        variant="secondary"
-        onClick={onEnviar}
-        title="Enviar pelo WhatsApp"
-        aria-label={`Enviar ${produto.nome} pelo WhatsApp`}
-        className="absolute right-1.5 top-1.5 size-7 opacity-80 shadow-sm group-hover:opacity-100"
-      >
-        <Send className="size-3.5" />
-      </Button>
+      {selecao.ativa ? (
+        // Número = a ordem em que o produto entra no PDF.
+        <span
+          className={cn(
+            "pointer-events-none absolute left-1.5 top-1.5 flex size-6 items-center justify-center rounded-full border-2 text-[11px] font-bold shadow-sm",
+            marcado
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-muted-foreground/40 bg-card",
+          )}
+        >
+          {marcado ? ordem : ""}
+        </span>
+      ) : (
+        // Mandar pelo WhatsApp (card ou PDF) sem abrir a edição — pedido de 2026-10-14.
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={onEnviar}
+          title="Enviar pelo WhatsApp"
+          aria-label={`Enviar ${produto.nome} pelo WhatsApp`}
+          className="absolute right-1.5 top-1.5 size-7 opacity-80 shadow-sm group-hover:opacity-100"
+        >
+          <Send className="size-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
@@ -116,6 +149,7 @@ function CategoriaSection({
   onNovoProduto,
   onEditarProduto,
   onEnviarProduto,
+  selecao,
 }: {
   categoria: string;
   produtos: ProdutoVM[];
@@ -125,6 +159,7 @@ function CategoriaSection({
   onNovoProduto: () => void;
   onEditarProduto: (produto: ProdutoVM) => void;
   onEnviarProduto: (produto: ProdutoVM) => void;
+  selecao: Selecao;
 }) {
   return (
     <div className={cn("overflow-hidden rounded-lg border", cor.border)}>
@@ -158,16 +193,19 @@ function CategoriaSection({
                 produto={p}
                 onClick={() => onEditarProduto(p)}
                 onEnviar={() => onEnviarProduto(p)}
+                selecao={selecao}
               />
             ))}
-            <button
-              type="button"
-              onClick={onNovoProduto}
-              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-            >
-              <Plus className="size-5" />
-              <span className="text-[11px] font-medium">Novo produto</span>
-            </button>
+            {!selecao.ativa && (
+              <button
+                type="button"
+                onClick={onNovoProduto}
+                className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              >
+                <Plus className="size-5" />
+                <span className="text-[11px] font-medium">Novo produto</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -188,8 +226,11 @@ export function ProdutosShell({
     string | undefined
   >(undefined);
   const [editando, setEditando] = useState<ProdutoVM | null>(null);
-  const [enviando, setEnviando] = useState<ProdutoVM | null>(null);
+  const [enviando, setEnviando] = useState<ProdutoVM[]>([]);
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
+  const [selecionando, setSelecionando] = useState(false);
+  // Na ordem em que foram marcados: é a ordem das páginas do PDF.
+  const [selecionados, setSelecionados] = useState<ProdutoVM[]>([]);
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -226,6 +267,17 @@ export function ProdutosShell({
 
   const buscando = busca.trim().length > 0;
 
+  const selecao: Selecao = {
+    ativa: selecionando,
+    ordem: (id) => selecionados.findIndex((p) => p.id === id) + 1,
+    alternar: (produto) =>
+      setSelecionados((atual) =>
+        atual.some((p) => p.id === produto.id)
+          ? atual.filter((p) => p.id !== produto.id)
+          : [...atual, produto],
+      ),
+  };
+
   function toggle(categoria: string) {
     setAbertas((atual) => {
       const novo = new Set(atual);
@@ -240,16 +292,38 @@ export function ProdutosShell({
     setNovoAberto(true);
   }
 
+  function sairDaSelecao() {
+    setSelecionando(false);
+    setSelecionados([]);
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b bg-card px-6 py-3.5 shadow-xs">
         <h1 className="text-xl font-bold tracking-tight text-foreground">
           Produtos
         </h1>
-        <Button size="sm" onClick={() => abrirNovo(undefined)}>
-          <Plus className="size-4" />
-          Novo produto
-        </Button>
+        <div className="flex items-center gap-2">
+          {selecionando ? (
+            <Button size="sm" variant="outline" onClick={sairDaSelecao}>
+              <X className="size-4" />
+              Cancelar seleção
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSelecionando(true)}
+            >
+              <CheckSquare className="size-4" />
+              Selecionar vários
+            </Button>
+          )}
+          <Button size="sm" onClick={() => abrirNovo(undefined)}>
+            <Plus className="size-4" />
+            Novo produto
+          </Button>
+        </div>
       </div>
 
       <div className="border-b bg-card px-6 py-3">
@@ -262,6 +336,12 @@ export function ProdutosShell({
             className="pl-8"
           />
         </div>
+        {selecionando && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Toque nos produtos pra marcar — o número é a ordem em que eles
+            entram no PDF.
+          </p>
+        )}
       </div>
 
       <div className="flex-1 space-y-3 overflow-auto p-4">
@@ -280,11 +360,45 @@ export function ProdutosShell({
               onToggle={() => toggle(categoria)}
               onNovoProduto={() => abrirNovo(categoria)}
               onEditarProduto={setEditando}
-              onEnviarProduto={setEnviando}
+              onEnviarProduto={(p) => setEnviando([p])}
+              selecao={selecao}
             />
           ))
         )}
       </div>
+
+      {selecionando && selecionados.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-card px-6 py-3 shadow-[0_-2px_6px_rgba(0,0,0,0.06)]">
+          <span className="text-sm font-medium">
+            {selecionados.length}{" "}
+            {selecionados.length === 1
+              ? "produto selecionado"
+              : "produtos selecionados"}
+            {selecionados.length > LIMITE_PRODUTOS_PDF && (
+              <span className="ml-2 text-destructive">
+                (máximo {LIMITE_PRODUTOS_PDF} por PDF)
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelecionados([])}
+            >
+              Limpar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setEnviando(selecionados)}
+              disabled={selecionados.length > LIMITE_PRODUTOS_PDF}
+            >
+              <FileText className="size-4" />
+              Enviar em PDF
+            </Button>
+          </div>
+        </div>
+      )}
 
       <NovoProdutoDialog
         key={`novo-${novoAberto ? `aberto-${categoriaParaNovo ?? ""}` : "fechado"}`}
@@ -298,14 +412,14 @@ export function ProdutosShell({
         produto={editando}
         onOpenChange={(open) => !open && setEditando(null)}
         onEnviar={() => {
-          setEnviando(editando);
+          if (editando) setEnviando([editando]);
           setEditando(null);
         }}
       />
       <EnviarProdutoDialog
-        key={`enviar-${enviando?.id ?? "fechado"}`}
-        produto={enviando}
-        onOpenChange={(open) => !open && setEnviando(null)}
+        key={`enviar-${enviando.map((p) => p.id).join(",") || "fechado"}`}
+        produtos={enviando}
+        onOpenChange={(open) => !open && setEnviando([])}
       />
     </div>
   );

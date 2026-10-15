@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caminhoArquivoProduto, nomeArquivoProduto, textoEnvioProduto } from "./produto-envio";
+import { caminhoArquivoProduto, caminhoArquivoProdutos, nomeArquivoProduto, textoEnvioProduto, textoEnvioProdutos } from "./produto-envio";
 
 const kidplay = { nome: "Kidplay Loja", valorCentavos: 2390000 };
 
@@ -25,5 +25,19 @@ describe("nomeArquivoProduto e caminhoArquivoProduto", () => {
   it("rota do arquivo, com ou sem preço", () => {
     expect(caminhoArquivoProduto("abc", "CARD", false)).toBe("/api/imagem/produto-card/abc");
     expect(caminhoArquivoProduto("abc", "PDF", true)).toBe("/api/pdf/produto/abc?ocultarValor=1");
+  });
+});
+
+describe("vários produtos num PDF", () => {
+  const p = (nome: string) => ({ nome });
+  it("texto com os nomes (até 5) e quantos", () => {
+    expect(textoEnvioProdutos([p("A"), p("B"), p("C")])).toBe("Segue o PDF com 3 produtos da Legaus Kids: A, B e C.");
+    expect(textoEnvioProdutos(["A", "B", "C", "D", "E", "F", "G"].map(p))).toBe("Segue o PDF com 7 produtos da Legaus Kids: A, B, C, D, E e mais 2.");
+    expect(textoEnvioProdutos([p("Só um")])).toBe("Segue a ficha do produto *Só um*.");
+    expect(textoEnvioProdutos([p("A"), p("B")], " Oi! ")).toBe("Oi!");
+  });
+  it("rota com os ids na ordem e o preço oculto", () => {
+    expect(caminhoArquivoProdutos(["b", "a"], false)).toBe("/api/pdf/produtos?ids=b%2Ca");
+    expect(caminhoArquivoProdutos(["a"], true)).toBe("/api/pdf/produtos?ids=a&ocultarValor=1");
   });
 });
