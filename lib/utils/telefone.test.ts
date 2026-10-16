@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mesmoTelefone, pareceTelefone, partesTelefone, telefoneLegivel, telefonePadraoBR } from "./telefone";
+import { finalDeTelefone, mesmoTelefone, pareceTelefone, partesTelefone, telefoneLegivel, telefonePadraoBR } from "./telefone";
 
 describe("partesTelefone", () => {
   it("separa DDD e 8 finais em vários formatos", () => {
@@ -43,6 +43,21 @@ describe("pareceTelefone", () => {
     expect(pareceTelefone("Vagner São Borja")).toBe(false);
     expect(pareceTelefone("Apromes 2024")).toBe(false);
     expect(pareceTelefone("123")).toBe(false);
+  });
+});
+
+describe("finalDeTelefone (busca pelos últimos dígitos, 2026-10-16)", () => {
+  it("aceita de 4 a 7 dígitos", () => {
+    expect(finalDeTelefone("6980")).toBe("6980");
+    expect(finalDeTelefone(" 2-6980 ")).toBe("26980");
+    expect(finalDeTelefone("1126980")).toBe("1126980");
+  });
+  it("número inteiro, pouco dígito ou texto não é final", () => {
+    expect(finalDeTelefone("91126980")).toBeNull();
+    expect(finalDeTelefone("555591126980")).toBeNull();
+    expect(finalDeTelefone("698")).toBeNull();
+    expect(finalDeTelefone("Ana 6980")).toBeNull();
+    expect(finalDeTelefone("PL-003")).toBeNull();
   });
 });
 

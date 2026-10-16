@@ -38,17 +38,19 @@ import { gerarHtmlEmailOrcamento, gerarTextoAlternativoEmailOrcamento } from "@/
 import {
   buscarClientesSimilar,
   buscarClientesPorTelefone,
+  buscarClientesPorFinalTelefone,
   buscarProdutosSimilar,
   buscarNegociosSimilarIds,
   buscarTarefasSimilarIds,
   buscarCotacoesSimilar,
   buscarContratosSimilarIds,
 } from "@/lib/server/busca-similar";
+import { buscarConversasAtendimento, conversaDoAtendimento } from "@/lib/server/busca-conversas";
 import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precificacao";
 import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
 import { listarContratos, criarContratoDeOrcamentoAntigo } from "@/lib/server/contratos";
 import { reaisParaCentavos, centavosParaReais } from "@/lib/utils/money";
-import { mesmoTelefone, pareceTelefone, telefoneLegivel } from "@/lib/utils/telefone";
+import { finalDeTelefone, mesmoTelefone, pareceTelefone, telefoneLegivel } from "@/lib/utils/telefone";
 import { nomeArquivoOrcamento, textoEnvioOrcamentoWhatsApp } from "@/lib/utils/orcamento-mensagem";
 import { mensagemErroAnthropic } from "@/lib/utils/anthropic-erro";
 import { URL_BASE } from "@/lib/constants/app";
@@ -418,10 +420,12 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "buscar_clientes",
     description:
-      "Busca clientes/contatos cadastrados por nome, razão social OU telefone. Por nome é busca aproximada tipo Google (tolera erro de digitação e falta de acento/hífen). Por telefone aceita qualquer formato — com ou sem 55, com ou sem o 9 do celular, com ou sem máscara — e acha o cadastro mesmo que esteja gravado em outro formato. Use antes de criar ou editar algo vinculado a um cliente pra achar o ID certo, e pra responder se um número já está cadastrado.",
+      "Busca clientes/contatos cadastrados por nome, razão social OU telefone. Por nome é busca aproximada tipo Google (tolera erro de digitação e falta de acento/hífen). Por telefone aceita qualquer formato — com ou sem 55, com ou sem o 9 do celular, com ou sem máscara — e acha o cadastro mesmo que esteja gravado em outro formato. Também acha pelo FINAL do telefone (só os últimos 4 a 7 dígitos, ex.: '6980'). Inclui os contatos que chegaram pelo WhatsApp e ainda não têm nome salvo (o nome é o próprio telefone). Use antes de criar ou editar algo vinculado a um cliente pra achar o ID certo, e pra responder se um número já está cadastrado.",
     input_schema: {
       type: "object",
-      properties: { termo: { type: "string", description: "Nome, parte do nome ou telefone do cliente" } },
+      properties: {
+        termo: { type: "string", description: "Nome, parte do nome, telefone do cliente ou só o final do telefone (últimos 4+ dígitos)" },
+      },
       required: ["termo"],
     },
     async executar(args) {
@@ -434,6 +438,15 @@ const FERRAMENTAS: Ferramenta[] = [
       if (pareceTelefone(termo)) {
         const porTelefone = await buscarClientesPorTelefone(termo);
         return porTelefone.length > 0 ? comTelefoneFormatado(porTelefone) : "Nenhum cliente cadastrado com esse telefone.";
+      }
+      const final = finalDeTelefone(termo);
+      if (final) {
+        const porFinal = await buscarClientesPorFinalTelefone(final);
+        if (porFinal.length === 0) return `Nenhum contato com telefone terminando em ${final}.`;
+        return {
+          contatos: comTelefoneFormatado(porFinal),
+          ...(porFinal.length > 1 && { aviso: `Mais de um telefone termina em ${final} — confirme com o usuário qual é antes de mexer.` }),
+        };
       }
       const clientes = await buscarClientesSimilar(termo);
       return clientes.length > 0 ? comTelefoneFormatado(clientes) : "Nenhum cliente encontrado com esse nome.";
@@ -1508,12 +1521,16 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "criar_negocio",
     description:
-      "Cria um negócio novo num funil de vendas. Use buscar_funis_etapas antes pra saber funilId/etapaId, e buscar_clientes se precisar do ID do cliente.",
+      "Cria um negócio novo num funil de vendas. Use buscar_funis_etapas antes pra saber funilId/etapaId, e buscar_clientes (ou buscar_conversas, pra quem está sendo atendido no WhatsApp) se precisar do ID do cliente.",
     input_schema: {
       type: "object",
       properties: {
         titulo: { type: "string" },
         clienteId: { type: "string" },
+        conversaId: {
+          type: "string",
+          description: "ID da conversa do Atendimento (de buscar_conversas) — liga o negócio à conversa do WhatsApp; sem clienteId, usa o contato dessa conversa",
+        },
         funilId: { type: "string" },
         etapaId: { type: "string" },
         valorReais: { type: "number" },
@@ -1526,21 +1543,24 @@ const FERRAMENTAS: Ferramenta[] = [
       const a = args as {
         titulo: string;
         clienteId?: string;
+        conversaId?: string;
         funilId: string;
         etapaId: string;
         valorReais?: number;
         produto?: string;
         descricao?: string;
       };
+      const conversa = a.conversaId ? await conversaDoAtendimento(a.conversaId) : null;
       const negocio = await criarNegocio({
         titulo: a.titulo,
-        contatoId: a.clienteId || null,
+        contatoId: a.clienteId || conversa?.contatoId || null,
         funilId: a.funilId,
         etapaId: a.etapaId,
         valorCentavos: reaisParaCentavos(a.valorReais || 0),
         responsavelId: usuarioId,
         produto: a.produto || null,
         descricao: a.descricao || null,
+        origemConversaId: conversa?.id ?? null,
       });
       return { id: negocio.id, titulo: negocio.titulo };
     },
@@ -1716,18 +1736,38 @@ const FERRAMENTAS: Ferramenta[] = [
         descricao: { type: "string", description: "Descrição; na categoria Reunião de Equipe, a pauta/anotações" },
         categoria: { type: "string", description: "Categoria de compromisso: Gerar Receita, Melhoria, Postagem no Feed ou Reunião de Equipe (aceita nome aproximado)" },
         link: { type: "string", description: "Link opcional (ex.: da postagem, na categoria Postagem no Feed)" },
+        clienteId: { type: "string", description: "Cliente/contato da tarefa (de buscar_clientes ou buscar_conversas), quando for sobre um cliente" },
+        negocioId: { type: "string", description: "Negócio da tarefa (ex.: o que acabou de ser criado) — sem clienteId, usa o cliente do negócio" },
+        conversaId: { type: "string", description: "Conversa do Atendimento (de buscar_conversas) — a tarefa aparece nessa conversa; sem clienteId, usa o contato dela" },
       },
       required: ["titulo"],
     },
     async executar(args, { usuarioId }) {
-      const { titulo, dataHora, prazoDias, descricao, categoria, link } = args as {
+      const { titulo, dataHora, prazoDias, descricao, categoria, link, clienteId, negocioId, conversaId } = args as {
         titulo: string;
         dataHora?: string;
         prazoDias?: number;
         descricao?: string;
         categoria?: string;
         link?: string;
+        clienteId?: string;
+        negocioId?: string;
+        conversaId?: string;
       };
+      const conversa = conversaId ? await conversaDoAtendimento(conversaId) : null;
+      // Sem negocioId, vale o negócio que acabou de nascer dessa conversa: a
+      // IA pede negócio e tarefa na mesma rodada, antes de saber o ID (visto
+      // no teste de 2026-10-16) — as ferramentas rodam em ordem.
+      const negocio = negocioId
+        ? await prisma.negocio.findFirst({ where: { id: negocioId }, select: { id: true, contatoId: true, origemConversaId: true } })
+        : conversa
+          ? await prisma.negocio.findFirst({
+              where: { origemConversaId: conversa.id, createdAt: { gte: new Date(Date.now() - 15 * 60 * 1000) } },
+              orderBy: { createdAt: "desc" },
+              select: { id: true, contatoId: true, origemConversaId: true },
+            })
+          : null;
+      if (negocioId && !negocio) throw new Error("Negócio não encontrado — confira o ID com buscar_negocios.");
       const categoriaId = await resolverCategoriaTarefa(categoria);
       let prazo: Date;
       if (dataHora) {
@@ -1744,6 +1784,9 @@ const FERRAMENTAS: Ferramenta[] = [
         solicitanteId: usuarioId,
         categoriaId: categoriaId ?? null,
         link: normalizarLink(link),
+        contatoId: clienteId || negocio?.contatoId || conversa?.contatoId || null,
+        negocioId: negocio?.id ?? null,
+        conversaId: conversa?.id ?? negocio?.origemConversaId ?? null,
       });
       const nomeCategoria = categoriaId ? (await prisma.categoriaTarefa.findUnique({ where: { id: categoriaId }, select: { nome: true } }))?.nome : null;
       return {
@@ -2062,6 +2105,60 @@ const FERRAMENTAS: Ferramenta[] = [
     },
   },
   {
+    name: "buscar_conversas",
+    description:
+      "Procura nas conversas do Atendimento (o WhatsApp dos clientes), inclusive de quem ainda não foi salvo (o nome é o próprio telefone). Filtros, combináveis: final do telefone (últimos 4+ dígitos) ou número inteiro; trecho do nome ou de qualquer mensagem (ex.: 'escorregador', 'São Francisco'); período (conversas com mensagem hoje/ontem/semana/mês). Sem filtro nenhum = conversas com mensagem hoje. Devolve contatoId e conversaId, nome, se o nome já está salvo, telefone, as últimas mensagens e os negócios/tarefas abertos do contato. Use quando falarem de alguém que está sendo atendido ('o contato com final 6980', 'quem chamou hoje', 'a cliente que pediu o playground de 2 torres', 'busca no atendimento/nas conversas') — depois use os IDs em atualizar_cliente (salvar o nome), criar_negocio e criar_tarefa (passando conversaId).",
+    input_schema: {
+      type: "object",
+      properties: {
+        telefone: { type: "string", description: "Final do telefone (4 dígitos ou mais) ou o número inteiro — só os dígitos que o usuário disse" },
+        termo: { type: "string", description: "Trecho do nome do contato ou de alguma mensagem da conversa" },
+        periodo: { type: "string", enum: ["hoje", "ontem", "semana", "mes"], description: "Só conversas com mensagem nesse período" },
+        dataInicio: { type: "string", description: "AAAA-MM-DD — alternativa a periodo" },
+        dataFim: { type: "string", description: "AAAA-MM-DD, inclusive (opcional)" },
+        somenteSemNome: { type: "boolean", description: "true = só contatos ainda sem nome salvo" },
+        somenteSemNegocio: { type: "boolean", description: "true = só contatos sem negócio aberto" },
+      },
+    },
+    async executar(args) {
+      const a = args as {
+        telefone?: string;
+        termo?: string;
+        periodo?: string;
+        dataInicio?: string;
+        dataFim?: string;
+        somenteSemNome?: boolean;
+        somenteSemNegocio?: boolean;
+      };
+      // Final do telefone que a IA mandou no termo ("6980") vira filtro de telefone.
+      if (!a.telefone && a.termo && (finalDeTelefone(a.termo) || pareceTelefone(a.termo))) {
+        a.telefone = a.termo;
+        a.termo = undefined;
+      }
+      const temPeriodo = Boolean(a.periodo || a.dataInicio);
+      const semFiltro = !a.telefone && !a.termo?.trim() && !temPeriodo;
+      const intervalo = temPeriodo || semFiltro ? intervaloDoPeriodo(a) : null;
+      const r = await buscarConversasAtendimento({
+        telefone: a.telefone,
+        termo: a.termo,
+        inicio: intervalo?.inicio,
+        fim: intervalo?.fim,
+        somenteSemNome: a.somenteSemNome,
+        somenteSemNegocio: a.somenteSemNegocio,
+      });
+      if (r.total === 0) return `Nenhuma conversa encontrada${intervalo ? ` (${intervalo.descricao})` : ""}.`;
+      return {
+        ...(intervalo && { periodo: intervalo.descricao }),
+        total: r.total,
+        conversas: r.conversas,
+        ...(r.total > r.conversas.length && { aviso: `Mostrando as ${r.conversas.length} mais recentes de ${r.total} — refine a busca se precisar.` }),
+        ...(a.telefone && finalDeTelefone(a.telefone) && r.total > 1 && {
+          aviso_telefone: "Mais de um telefone termina com esses dígitos — confirme com o usuário qual é antes de mexer.",
+        }),
+      };
+    },
+  },
+  {
     // Painel de reunião (pedido de 2026-09-25): "um dia antes vamos
     // solicitar ao CRM e ele vai preparar uma sugestão de pauta". Acha a
     // reunião agendada (ou cria, se disserem dia e hora) e gera a pauta com
@@ -2250,6 +2347,7 @@ Regras:
 - Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
 - Pra saber se um número já está cadastrado, ou achar um cliente pelo telefone, use buscar_clientes com o telefone como termo (aceita qualquer formato: com ou sem 55, com ou sem o 9, com máscara). Se criar_cliente responder "jaExiste", não tente criar de novo: use o cadastro existente (atualize com atualizar_cliente, ex.: pra pôr o nome).
+- Gente sendo atendida no WhatsApp ("o contato com final 6980", "quem chamou hoje", "a cliente do playground de 2 torres", "busca no atendimento/nas conversas"): use buscar_conversas — acha pelo final do telefone (últimos 4 dígitos já bastam), por trecho do nome ou das mensagens e por período, inclusive quem ainda não tem nome salvo. Nunca diga que não consegue procurar nas conversas. Com o contato achado: "salvar"/"o nome é X" → atualizar_cliente com o contatoId e novoNome; negócio → criar_negocio com conversaId (já liga ao contato e à conversa); tarefa → criar_tarefa com conversaId e, se acabou de criar o negócio, negocioId. Se mais de um contato bater, mostre as opções (nome, telefone, última mensagem) e pergunte qual antes de criar algo. Se o contato ainda não tiver nome salvo (nome_salvo false): quando o pedido disser claramente o nome da pessoa, salve junto; senão, no fim da resposta pergunte o nome pra salvar.
 - Às vezes o comando começa com "[Contexto: contato(s) colado(s) no WhatsApp logo antes deste comando: ...]" — são números (ou cartões de contato) que o Marcos colou no WhatsApp antes de mandar o comando. "Esse contato", "esses números", "ele", "cadastra esse" etc. se referem a eles. Se o comando não tiver relação com esses números, ignore o contexto.
 - Pra perguntas sobre entrada de leads ("quantos leads entraram hoje", "quem chamou essa semana"), use resumo_leads.
 - Compromissos (metas de hábito do CRM): tarefas de Gerar Receita, Melhoria, Postagem no Feed e Reunião de Equipe vão com a categoria em criar_tarefa (parâmetro categoria) quando o Marcos disser a categoria ou quando for o planejamento do dia seguinte. "Planeja amanhã: ligar pro João e mandar proposta pra Escola X" = uma criar_tarefa por item, categoria Gerar Receita, dataHora no próximo dia útil (sexta → segunda; 09:00 se não disser a hora). Postagem com link: passe em link. Na dúvida sobre a categoria, crie sem e pergunte. Pra "como estão meus compromissos", "quanto falta hoje", "já planejei amanhã?", use resumo_compromissos. Concluir a tarefa (atualizar_tarefa com novoStatus CONCLUIDA) já conta.
@@ -2349,6 +2447,7 @@ const MODULO_DA_FERRAMENTA: Partial<Record<string, ModuloKey>> = {
   agendar_mensagem_whatsapp: "atendimento",
   sugerir_resposta_cliente: "atendimento",
   resumo_leads: "atendimento",
+  buscar_conversas: "atendimento",
   buscar_funis_etapas: "negocios",
   buscar_negocios: "negocios",
   criar_negocio: "negocios",

@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { mesmoTelefone, partesTelefone } from "@/lib/utils/telefone";
+import { mesmoTelefone, partesTelefone, soDigitosTelefone } from "@/lib/utils/telefone";
 
 // Busca "tipo Google" pro agente de IA — usa trigram (pg_trgm) do Postgres
 // pra tolerar erro de digitação, falta de hífen/espaço etc (ex: "PL010"
@@ -48,6 +48,21 @@ export async function buscarClientesPorTelefone(telefone: string, limite = 8): P
     take: 50,
   });
   return candidatos.filter((c) => c.telefone && mesmoTelefone(c.telefone, telefone)).slice(0, limite);
+}
+
+/**
+ * Contatos cujo telefone termina com esses dígitos (o final que o Marcos
+ * lembra, ex. "6980" — ver finalDeTelefone), os mais recentes primeiro.
+ */
+export async function buscarClientesPorFinalTelefone(final: string, limite = 8): Promise<ClienteSimilar[]> {
+  const digitos = soDigitosTelefone(final);
+  if (digitos.length < 4) return [];
+  return prisma.contato.findMany({
+    where: { telefone: { endsWith: digitos } },
+    select: { id: true, nome: true, razaoSocial: true, telefone: true, email: true, tipo: true },
+    orderBy: { createdAt: "desc" },
+    take: limite,
+  });
 }
 
 export type ProdutoSimilar = {

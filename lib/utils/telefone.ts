@@ -46,6 +46,19 @@ export function pareceTelefone(termo: string): boolean {
 }
 
 /**
+ * Final de telefone pra busca ("6980", "2-6980"): só dígitos e pontuação, de
+ * 4 a 7 dígitos; null se não for. Os 8 finais são iguais com ou sem o 9 do
+ * celular, então "termina com" acha nos dois formatos. Pedido de 2026-10-16:
+ * "acha o contato com final 6980" não achava nada — a busca pedia o número
+ * inteiro.
+ */
+export function finalDeTelefone(termo: string): string | null {
+  if (!/^[\d\s()+.-]+$/.test(termo.trim())) return null;
+  const digitos = soDigitosTelefone(termo);
+  return digitos.length >= 4 && digitos.length <= 7 ? digitos : null;
+}
+
+/**
  * Padrão do telefone gravado e mostrado (pedido do Marcos, 2026-10-14): só
  * dígitos, com 55 e, no CELULAR, com o 9 na frente — 55 + DDD + 9 + 8.
  * "54 9696-0296" -> "5554996960296". Fixo (começa com 2 a 5) fica com 8
