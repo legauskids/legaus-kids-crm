@@ -38,6 +38,18 @@ export type PushLido = {
   meio: "PIX" | "OUTRO";
 };
 
+/**
+ * Push que a leitura não entendeu mas tem cara de movimentação (valor em
+ * reais, "Pix enviado", "você pagou"...): vale avisar o Marcos com o texto
+ * que chegou, em vez de sumir calado (17/10/2026 — o Pix enviado da
+ * InfinitePay chegou sem o valor e ninguém soube o que veio). Propaganda do
+ * app sem valor nem palavra de movimentação continua sendo ignorada calada.
+ */
+export function pareceMovimentacao(titulo: string | null | undefined, texto: string | null | undefined): boolean {
+  const tudo = `${titulo ?? ""}\n${texto ?? ""}`;
+  return /R\$\s*\d/.test(tudo) || /\bpix (enviado|recebido|agendado|devolvido)|\bvoc[eê] (fez|recebeu|enviou|pagou|transferiu)\b/i.test(tudo);
+}
+
 const VALOR = /R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/;
 const DATA_HORA = /(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2}):(\d{2})(?::(\d{2}))?/;
 const CONTRAPARTE = /^(.+?)\s+(CPF|CNPJ)\s+([#\d.\/-]+)\s*$/i;

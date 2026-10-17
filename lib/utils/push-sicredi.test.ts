@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { botoesDeEntrada, lerPushSicredi, negocioDoAviso } from "./push-sicredi";
+import { botoesDeEntrada, lerPushSicredi, negocioDoAviso, pareceMovimentacao } from "./push-sicredi";
 
 describe("lerPushSicredi", () => {
   it("Pix enviado, notificação completa (print do Marcos, 07/10/2026)", () => {
@@ -97,5 +97,17 @@ describe("botoesDeEntrada e negocioDoAviso", () => {
     expect(negocioDoAviso({ dia: "2026-10-07", valorCentavos: 650000, tipo: "ENTRADA" }, avisos)).toBe("perto");
     expect(negocioDoAviso({ dia: "2026-10-20", valorCentavos: 650000, tipo: "ENTRADA" }, avisos)).toBeNull();
     expect(negocioDoAviso({ dia: "2026-10-07", valorCentavos: 650000, tipo: "SAIDA" }, avisos)).toBeNull();
+  });
+});
+
+describe("pareceMovimentacao (push não entendido vira aviso, 17/10/2026)", () => {
+  it("valor em reais ou palavra de movimentação", () => {
+    expect(pareceMovimentacao("Pix enviado com sucesso! ✅", "")).toBe(true);
+    expect(pareceMovimentacao(null, "Você fez um Pix no valor de R$ 0,02")).toBe(true);
+    expect(pareceMovimentacao("Venda", "Venda de R$ 10,00 no crédito")).toBe(true);
+  });
+  it("propaganda do app continua ignorada calada", () => {
+    expect(pareceMovimentacao("InfinitePay", "Confira as novidades do app!")).toBe(false);
+    expect(pareceMovimentacao("Sicredi", "Use o Pix com segurança.")).toBe(false);
   });
 });
