@@ -21,7 +21,26 @@ describe("lerPushInfinitePay", () => {
     expect(r).toMatchObject({ direcao: "ENTRADA", valorCentavos: 1250000, contraparte: "Escola Arco-Íris Ltda" });
   });
 
-  it("formatos ainda não vistos: Pix enviado e venda no cartão (leitura tolerante)", () => {
+  it("Pix enviado (print do Marcos, 17/10/2026)", () => {
+    const texto = "Pix enviado com sucesso! ✅\nVocê fez um Pix no valor de R$ 0,02 para MARCOS ZANCAN.";
+    expect(lerPushInfinitePay(null, texto)).toEqual({
+      direcao: "SAIDA",
+      valorCentavos: 2,
+      contraparte: "Marcos Zancan",
+      documento: null,
+      banco: null,
+      mensagem: null,
+      dataHora: null,
+      meio: "PIX",
+    });
+    expect(lerPushInfinitePay("Pix enviado com sucesso! ✅", "Você fez um Pix no valor de R$ 1.350,00 para J. SILVA METALURGICA LTDA.")).toMatchObject({
+      direcao: "SAIDA",
+      valorCentavos: 135000,
+      contraparte: "J. Silva Metalurgica Ltda",
+    });
+  });
+
+  it("formatos ainda não vistos: Pix enviado antigo e venda no cartão (leitura tolerante)", () => {
     expect(lerPushInfinitePay("Pix enviado de R$ 50,00", "Você enviou um Pix para Posto Ipiranga.")).toMatchObject({ direcao: "SAIDA", valorCentavos: 5000, contraparte: "Posto Ipiranga" });
     expect(lerPushInfinitePay("Venda aprovada!", "Venda de R$ 1.200,00 no crédito em 3x")).toMatchObject({ direcao: "ENTRADA", valorCentavos: 120000, meio: "OUTRO" });
   });

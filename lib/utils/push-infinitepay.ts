@@ -7,9 +7,12 @@
 //   título: "Pix recebido de R$ 0,01! 💰✅"
 //   texto:  "Você recebeu um Pix de MARCOS ZANCAN na sua conta InfinitePay!
 //            Clique para conferir seu saldo. 👆"
-// Não traz data nem hora: vale a hora em que chegou. Os outros tipos (Pix
-// enviado, venda no cartão) ainda não foram vistos — a leitura é tolerante
-// pelas palavras de sempre e é ajustada quando chegar o primeiro de verdade.
+// Pix enviado (print de 17/10/2026):
+//   título: "Pix enviado com sucesso! ✅"
+//   texto:  "Você fez um Pix no valor de R$ 0,02 para MARCOS ZANCAN."
+// Não traz data nem hora: vale a hora em que chegou. Venda no cartão ainda
+// não foi vista — a leitura é tolerante pelas palavras de sempre e é
+// ajustada quando chegar a primeira de verdade.
 
 import type { PushLido } from "./push-sicredi";
 
@@ -42,6 +45,7 @@ export function lerPushInfinitePay(titulo: string | null | undefined, texto: str
   const quem =
     tudo.match(/\bPix de (.+?) na sua conta\b/i) ??
     tudo.match(/\bPix para (.+?)(?: na sua conta| com| foi|[.!]|\n|$)/i) ??
+    tudo.match(/\bR\$\s*[\d.,]+ para (.+?)(?:[.!]\s*)?(?:\n|$)/i) ??
     tudo.match(/\b(?:de|para) ([^\n!.]+?) na sua conta\b/i);
 
   return {
