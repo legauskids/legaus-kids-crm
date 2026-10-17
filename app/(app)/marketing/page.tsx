@@ -1,88 +1,70 @@
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { Plus } from "lucide-react";
 import { requireModulo } from "@/lib/auth/guards";
-import { listarPostagens, listarModelos } from "@/lib/server/marketing";
-import { NovaPostagemForm } from "@/app/(app)/marketing/nova-postagem-form";
-import { PostagensLista } from "@/app/(app)/marketing/postagens-lista";
-import { ModelosTab } from "@/app/(app)/marketing/modelos-tab";
+import { listarPostagens } from "@/lib/server/marketing";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { ROTULO_CONTEUDO } from "@/lib/utils/postagem-arte";
+import { ROTULO_STATUS_POSTAGEM, VARIANTE_STATUS_POSTAGEM } from "@/app/(app)/marketing/rotulos";
 
-const ABAS = [
-  { chave: "nova", label: "Nova postagem" },
-  { chave: "postagens", label: "Postagens" },
-  { chave: "modelos", label: "Modelos" },
-] as const;
-
-export default async function MarketingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ aba?: string; novos?: string }>;
-}) {
+export default async function MarketingPage() {
   await requireModulo("marketing");
-  const { aba, novos } = await searchParams;
-  const abaAtiva = ABAS.some((a) => a.chave === aba) ? aba! : "nova";
-  const idsNovos = novos ? novos.split(",").filter(Boolean) : undefined;
+  const postagens = await listarPostagens();
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="border-b bg-card px-6 py-3.5 shadow-xs">
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Marketing</h1>
-        <p className="text-sm text-muted-foreground">
-          Envie fotos de projetos e instalações — a IA enquadra dentro do padrão visual da Legaus Kids e sugere a legenda. Nada vai pro
-          ar sem sua aprovação.
-        </p>
-        <div className="mt-3 flex gap-1">
-          {ABAS.map((a) => (
-            <Link
-              key={a.chave}
-              href={a.chave === "nova" ? "/marketing" : `/marketing?aba=${a.chave}`}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                abaAtiva === a.chave ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {a.label}
-            </Link>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3.5 shadow-xs sm:px-6">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground">Marketing</h1>
+          <p className="text-sm text-muted-foreground">
+            Fotos reais das obras viram artes no padrão da Legaus Kids, com legenda sugerida. Nada vai pro ar sem sua aprovação.
+          </p>
         </div>
+        <Link href="/marketing/novo" className={buttonVariants()}>
+          <Plus className="size-4" />
+          Novo post
+        </Link>
       </div>
 
-      {abaAtiva === "nova" && <NovaPostagemForm />}
-      {abaAtiva === "postagens" && <PostagensDataTab idsNovos={idsNovos} />}
-      {abaAtiva === "modelos" && <ModelosDataTab />}
+      <div className="p-4 sm:p-6">
+        {postagens.length === 0 ? (
+          <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+            Nenhum post ainda. Toque em <span className="font-medium text-foreground">Novo post</span> e mande as fotos da obra.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {postagens.map((p) => {
+              const capa = p.artes[0];
+              return (
+                <Link key={p.id} href={`/marketing/${p.id}`} className="group overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
+                  <div className="aspect-[4/5] bg-muted">
+                    {capa && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/imagem/postagem-arte/${capa.id}?v=${capa.atualizadoEm.getTime()}`}
+                        alt={p.headline ?? `Post ${p.numero}`}
+                        loading="lazy"
+                        className="size-full object-cover"
+                      />
+                    )}
+                  </div>
+                  <div className="space-y-1 p-2.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs text-muted-foreground">#{p.numero}</span>
+                      <Badge variant={VARIANTE_STATUS_POSTAGEM[p.status]}>{ROTULO_STATUS_POSTAGEM[p.status]}</Badge>
+                    </div>
+                    <p className="truncate text-sm font-medium">{p.headline || ROTULO_CONTEUDO[p.conteudo]}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {ROTULO_CONTEUDO[p.conteudo]}
+                      {p.cidade ? ` · ${p.cidade}` : ""} · {p.criadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
-  );
-}
-
-async function PostagensDataTab({ idsNovos }: { idsNovos?: string[] }) {
-  const postagens = await listarPostagens(undefined, idsNovos);
-  return (
-    <PostagensLista
-      filtrandoNovos={Boolean(idsNovos && idsNovos.length > 0)}
-      postagens={postagens.map((p) => ({
-        id: p.id,
-        numero: p.numero,
-        tipo: p.tipo,
-        status: p.status,
-        legenda: p.legenda,
-        contexto: p.contexto,
-        headline: p.headline,
-        criadoEm: p.criadoEm.toISOString(),
-        criadoPorNome: p.criadoPor.nome,
-        imagens: p.imagens.map((img) => ({
-          id: img.id,
-          ordem: img.ordem,
-          variantes: img.variantes.map((v) => ({ id: v.id, layout: v.layout, escolhida: v.escolhida })),
-        })),
-      }))}
-    />
-  );
-}
-
-async function ModelosDataTab() {
-  const modelos = await listarModelos();
-  return (
-    <ModelosTab
-      modelos={modelos.map((m) => ({ id: m.id, titulo: m.titulo, tipo: m.tipo, legendaModelo: m.legendaModelo }))}
-    />
   );
 }

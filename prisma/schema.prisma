@@ -370,6 +370,7 @@ model Negocio {
   rateiosTransacao    RateioTransacao[]
   despesas            Despesa[]
   avisosBancarios     AvisoBancario[]
+  postagens           Postagem[]
 
   @@index([contatoId])
 }
@@ -650,24 +651,52 @@ model ModeloPostagem {
   atualizadoEm  DateTime     @updatedAt
 }
 
-// Uma Postagem pode ter várias fotos (carrossel) — cada foto tem 2-3
-// variantes de layout de marca geradas de uma vez, e uma delas fica marcada
-// como escolhida. Edição por IA substitui a "original" da foto e regenera
-// as variantes.
+// Posts do Instagram no padrão da marca aprovado em 2026-10-16 (ver
+// docs/referencias/legaus-posts/POSTS-INSTAGRAM.md, fora do git): o Marcos
+// manda as fotos reais da obra, o servidor trata e monta as artes (carrossel
+// 4:5 e/ou story, conforme o tipo), a IA sugere a legenda e nada vai pro ar
+// sem aprovação. Só fotos reais — sem edição de imagem por IA (removida em
+// 2026-10-17 junto com os 3 layouts antigos).
+enum ConteudoPostagem {
+  ENTREGA
+  INSTALACAO
+  TBT
+  PRODUTO
+  BENEFICIOS
+}
+
+enum FormatoArte {
+  FEED
+  STORY
+}
+
 model Postagem {
-  id           String         @id @default(cuid())
-  numero       Int            @unique @default(autoincrement())
-  tipo         TipoPostagem
-  status       StatusPostagem @default(AGUARDANDO_APROVACAO)
+  id           String           @id @default(cuid())
+  numero       Int              @unique @default(autoincrement())
+  tipo         TipoPostagem     @default(FEED_INSTAGRAM)
+  conteudo     ConteudoPostagem @default(ENTREGA)
+  status       StatusPostagem   @default(AGUARDANDO_APROVACAO)
   contexto     String?
   headline     String?
   legenda      String?
+  // O que foi entregue (vira a linha grande do título: "Entrega de / Playground").
+  produto      String?
+  // Opcionais, só fatos informados — a legenda não inventa cliente nem cidade.
+  cliente      String?
+  cidade       String?
+  // Textos das artes: { titulo: [linha pequena, linha grande], selos, preco?, argumentos? }.
+  textos       Json?
+  negocioId    String?
+  negocio      Negocio?         @relation(fields: [negocioId], references: [id], onDelete: SetNull)
   criadoPorId  String
-  criadoPor    User           @relation(fields: [criadoPorId], references: [id])
-  criadoEm     DateTime       @default(now())
-  atualizadoEm DateTime       @updatedAt
+  criadoPor    User             @relation(fields: [criadoPorId], references: [id])
+  criadoEm     DateTime         @default(now())
+  atualizadoEm DateTime         @updatedAt
 
   imagens PostagemImagem[]
+  artes   PostagemArte[]
+
+  @@index([negocioId])
 }
 
 model PostagemImagem {
@@ -677,26 +706,30 @@ model PostagemImagem {
   ordem              Int      @default(0)
   imagemOriginal     Bytes
   imagemOriginalMime String   @default("image/jpeg")
+  // Correção leve de luz e cor (tratarFoto), é a que entra nas artes.
+  imagemTratada      Bytes?
+  largura            Int?
+  altura             Int?
   criadoEm           DateTime @default(now())
-
-  variantes PostagemImagemVariante[]
 }
 
-enum LayoutVariante {
-  FAIXA
-  CANTO
-  LATERAL
-}
+// Uma arte do post (capa, slide do carrossel ou story). `dados` é o modelo do
+// editor (fotos com caixa e ponto focal, título, selos, logo — ver
+// lib/utils/postagem-arte.ts); `imagem` é o JPEG renderizado no servidor,
+// refeito quando os dados mudam.
+model PostagemArte {
+  id            String      @id @default(cuid())
+  postagemId    String
+  postagem      Postagem    @relation(fields: [postagemId], references: [id], onDelete: Cascade)
+  ordem         Int
+  formato       FormatoArte
+  dados         Json
+  imagem        Bytes?
+  renderizadaEm DateTime?
+  criadoEm      DateTime    @default(now())
+  atualizadoEm  DateTime    @updatedAt
 
-model PostagemImagemVariante {
-  id               String         @id @default(cuid())
-  postagemImagemId String
-  postagemImagem   PostagemImagem @relation(fields: [postagemImagemId], references: [id], onDelete: Cascade)
-  layout           LayoutVariante
-  escolhida        Boolean        @default(false)
-  imagem           Bytes
-  imagemMime       String         @default("image/jpeg")
-  criadoEm         DateTime       @default(now())
+  @@index([postagemId, ordem])
 }
 
 enum TipoCotacao {

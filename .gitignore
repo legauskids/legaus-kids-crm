@@ -50,3 +50,7 @@ next-env.d.ts
 .claude/skills/
 .agents/
 skills-lock.json
+
+# Pacote de referência dos posts do Instagram (fotos de cliente) — o app usa
+# só a logo e as fontes copiadas pra public/marketing.
+docs/referencias/legaus-posts/

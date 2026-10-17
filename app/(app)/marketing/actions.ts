@@ -3,142 +3,129 @@
 import { revalidatePath } from "next/cache";
 import { requireModulo } from "@/lib/auth/guards";
 import {
-  criarPostagem,
+  adicionarFoto,
   atualizarLegendaPostagem,
   atualizarStatusPostagem,
+  atualizarTextosPostagem,
+  criarPostagem,
   excluirPostagem,
-  definirVarianteEscolhida,
-  editarImagemDaPostagem,
-  salvarModelo,
-  criarModelo,
-  excluirModelo,
+  gerarLegendaDaPostagem,
+  montarArtesDaPostagem,
 } from "@/lib/server/marketing";
-import type { TipoPostagem, StatusPostagem } from "@prisma/client";
+import { comMaiuscula, type ConteudoPostagem, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import type { StatusPostagem } from "@prisma/client";
 
-function revalidateMarketing() {
+type Resultado<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+
+function revalidar(id?: string) {
   revalidatePath("/marketing");
+  if (id) revalidatePath(`/marketing/${id}`);
 }
 
-export type PostagemFormState = { error?: string; success?: boolean; ids?: string[] };
+function erro(e: unknown, padrao: string): { ok: false; error: string } {
+  return { ok: false, error: e instanceof Error ? e.message : padrao };
+}
 
-const TIPOS_VALIDOS = ["FEED_INSTAGRAM", "STORY_INSTAGRAM", "STATUS_WHATSAPP", "FEED_FACEBOOK"];
+const CONTEUDOS: ConteudoPostagem[] = ["ENTREGA", "INSTALACAO", "TBT", "PRODUTO", "BENEFICIOS"];
 
-export async function criarPostagemAction(
-  _prevState: PostagemFormState,
-  formData: FormData,
-): Promise<PostagemFormState> {
+export type NovaPostagemInput = {
+  conteudo: ConteudoPostagem;
+  produto?: string;
+  cliente?: string;
+  cidade?: string;
+  negocioId?: string;
+  preco?: string;
+  argumentos?: string;
+  contexto?: string;
+};
+
+export async function criarPostagemAction(input: NovaPostagemInput): Promise<Resultado<{ id: string }>> {
   const user = await requireModulo("marketing");
-  const arquivos = formData.getAll("imagens").filter((a): a is File => a instanceof File && a.size > 0);
-  const tipos = formData.getAll("tipos").map(String).filter((t) => TIPOS_VALIDOS.includes(t));
-  const contexto = String(formData.get("contexto") ?? "").trim();
-  const headline = String(formData.get("headline") ?? "").trim();
-
-  if (arquivos.length === 0) {
-    return { error: "Escolha ao menos uma imagem." };
-  }
-  if (tipos.length === 0) {
-    return { error: "Escolha ao menos um lugar pra postar." };
-  }
-
+  if (!CONTEUDOS.includes(input.conteudo)) return { ok: false, error: "Escolha o tipo do post." };
+  if (input.conteudo === "BENEFICIOS" && !input.argumentos?.trim()) return { ok: false, error: "Escreva os argumentos, um por linha." };
   try {
-    const imagens = await Promise.all(
-      arquivos.map(async (arquivo) => ({
-        buffer: Buffer.from(await arquivo.arrayBuffer()),
-        mime: arquivo.type || "image/jpeg",
-      })),
-    );
-    // uma postagem por destino selecionado — cada tipo tem seu próprio
-    // enquadramento (feed x story) e formato de legenda.
-    const criadas = await Promise.all(
-      tipos.map((tipo) =>
-        criarPostagem({
-          tipo: tipo as TipoPostagem,
-          contexto,
-          headline: headline || undefined,
-          imagens,
-          criadoPorId: user.id,
-        }),
-      ),
-    );
-    revalidateMarketing();
-    return { success: true, ids: criadas.map((p) => p.id) };
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui processar as imagens." };
+    const p = await criarPostagem({
+      ...input,
+      argumentos: input.argumentos?.split("\n"),
+      criadoPorId: user.id,
+    });
+    return { ok: true, id: p.id };
+  } catch (e) {
+    return erro(e, "Não consegui criar o post.");
   }
 }
 
-export async function definirVarianteEscolhidaAction(postagemImagemId: string, varianteId: string): Promise<void> {
+/** Uma foto por chamada — o celular já reduz antes de mandar. */
+export async function enviarFotoAction(postagemId: string, formData: FormData): Promise<Resultado> {
   await requireModulo("marketing");
-  await definirVarianteEscolhida(postagemImagemId, varianteId);
-  revalidateMarketing();
-}
-
-export type EditarImagemIAState = { error?: string; success?: boolean };
-
-export async function editarImagemComIAAction(
-  postagemImagemId: string,
-  instrucao: string,
-): Promise<EditarImagemIAState> {
-  await requireModulo("marketing");
-  if (!instrucao.trim()) return { error: "Descreva o que você quer mudar na foto." };
-
+  const foto = formData.get("foto");
+  if (!(foto instanceof File) || foto.size === 0) return { ok: false, error: "Foto vazia." };
   try {
-    await editarImagemDaPostagem(postagemImagemId, instrucao.trim());
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui editar a imagem." };
+    await adicionarFoto(postagemId, Buffer.from(await foto.arrayBuffer()), foto.type);
+    return { ok: true };
+  } catch (e) {
+    return erro(e, "Não consegui ler essa foto.");
   }
-
-  revalidateMarketing();
-  return { success: true };
 }
 
-export async function atualizarLegendaAction(id: string, legenda: string): Promise<void> {
+/** Depois das fotos: monta as artes e pede a legenda à IA. */
+export async function concluirPostagemAction(postagemId: string): Promise<Resultado<{ legendaGerada: boolean }>> {
   await requireModulo("marketing");
-  await atualizarLegendaPostagem(id, legenda);
-  revalidateMarketing();
-}
-
-export async function atualizarStatusPostagemAction(id: string, status: StatusPostagem): Promise<void> {
-  await requireModulo("marketing");
-  await atualizarStatusPostagem(id, status);
-  revalidateMarketing();
-}
-
-export async function excluirPostagemAction(id: string): Promise<void> {
-  await requireModulo("marketing");
-  await excluirPostagem(id);
-  revalidateMarketing();
-}
-
-export async function salvarModeloAction(id: string, legendaModelo: string): Promise<void> {
-  await requireModulo("marketing");
-  await salvarModelo(id, legendaModelo);
-  revalidateMarketing();
-}
-
-export type ModeloFormState = { error?: string; success?: boolean };
-
-export async function criarModeloAction(
-  _prevState: ModeloFormState,
-  formData: FormData,
-): Promise<ModeloFormState> {
-  await requireModulo("marketing");
-  const titulo = String(formData.get("titulo") ?? "").trim();
-  const tipo = String(formData.get("tipo") ?? "");
-  const legendaModelo = String(formData.get("legendaModelo") ?? "").trim();
-
-  if (!titulo || !legendaModelo) return { error: "Preencha título e texto do modelo." };
-  if (!["FEED_INSTAGRAM", "STORY_INSTAGRAM", "STATUS_WHATSAPP", "FEED_FACEBOOK"].includes(tipo)) {
-    return { error: "Escolha o tipo." };
+  try {
+    await montarArtesDaPostagem(postagemId);
+    const legenda = await gerarLegendaDaPostagem(postagemId);
+    revalidar(postagemId);
+    return { ok: true, legendaGerada: Boolean(legenda) };
+  } catch (e) {
+    return erro(e, "Não consegui montar as artes.");
   }
-
-  await criarModelo({ titulo, tipo: tipo as TipoPostagem, legendaModelo });
-  revalidateMarketing();
-  return { success: true };
 }
 
-export async function excluirModeloAction(id: string): Promise<void> {
+export async function gerarLegendaAction(postagemId: string): Promise<Resultado<{ legenda: string }>> {
   await requireModulo("marketing");
-  await excluirModelo(id);
-  revalidateMarketing();
+  const legenda = await gerarLegendaDaPostagem(postagemId);
+  if (!legenda) return { ok: false, error: "A IA não respondeu agora — tente de novo ou escreva a legenda." };
+  revalidar(postagemId);
+  return { ok: true, legenda };
+}
+
+export async function salvarLegendaAction(postagemId: string, legenda: string): Promise<Resultado> {
+  await requireModulo("marketing");
+  await atualizarLegendaPostagem(postagemId, legenda.trim());
+  revalidar(postagemId);
+  return { ok: true };
+}
+
+export async function salvarTextosAction(postagemId: string, textos: TextosPostagem): Promise<Resultado> {
+  await requireModulo("marketing");
+  const limpos: TextosPostagem = {
+    titulo: [comMaiuscula(textos.titulo[0] ?? ""), comMaiuscula(textos.titulo[1] ?? "")],
+    // No máximo 3 informações por imagem: título + 2 selos.
+    selos: textos.selos.map(comMaiuscula).filter(Boolean).slice(0, 2),
+    preco: textos.preco?.trim() || null,
+    argumentos: (textos.argumentos ?? []).map(comMaiuscula).filter(Boolean),
+  };
+  if (!limpos.titulo[0] && !limpos.titulo[1]) return { ok: false, error: "O título não pode ficar vazio." };
+  try {
+    await atualizarTextosPostagem(postagemId, limpos);
+    revalidar(postagemId);
+    return { ok: true };
+  } catch (e) {
+    return erro(e, "Não consegui refazer as artes.");
+  }
+}
+
+export async function mudarStatusAction(postagemId: string, status: StatusPostagem): Promise<Resultado> {
+  await requireModulo("marketing");
+  if (!["AGUARDANDO_APROVACAO", "APROVADO", "RECUSADO"].includes(status)) return { ok: false, error: "Status inválido." };
+  await atualizarStatusPostagem(postagemId, status);
+  revalidar(postagemId);
+  return { ok: true };
+}
+
+export async function excluirPostagemAction(postagemId: string): Promise<Resultado> {
+  await requireModulo("marketing");
+  await excluirPostagem(postagemId);
+  revalidar();
+  return { ok: true };
 }
