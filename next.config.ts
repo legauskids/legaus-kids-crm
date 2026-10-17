@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   // As artes dos posts são desenhadas no servidor com as fontes e a logo lidas
   // do disco (lib/server/postagem-render.ts): vão junto no pacote da função.
   outputFileTracingIncludes: {
-    "/api/imagem/postagem-arte/[id]": ["./public/marketing/*.ttf", "./public/legaus-logo.png"],
+    "/api/imagem/postagem-arte/[id]": ["./public/fontes-marca/*.ttf", "./public/legaus-logo.png"],
   },
 };
 

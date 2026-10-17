@@ -83,6 +83,50 @@ export function alturaSelo(tam: number): number {
   return Math.round(tam * 2);
 }
 
+/**
+ * Desenhando cada linha do título com altura de linha 1, a letra fica 0,31 ×
+ * tamanho mais alta que no legaus_render.py (medido nas artes aprovadas): o
+ * renderizador e a prévia do editor descem isso.
+ */
+export const DESLOCAMENTO_LETRA_TITULO = 0.31;
+
+/** Medidas internas do selo (legaus_render.pill): altura, ícone, espaço e margem lateral. */
+export function medidasSelo(tam: number) {
+  const h = alturaSelo(tam);
+  return { h, raioIcone: Math.round(h * 0.28), espaco: Math.round(tam * 0.45), margem: Math.round(tam * 0.75) };
+}
+
+/** Altura ÷ largura da logo original (public/legaus-logo.png, 2203 × 1404). */
+export const LOGO_PROPORCAO = 1404 / 2203;
+
+/** Ícone de check do selo, em SVG (o mesmo no servidor e na prévia do editor). */
+export function iconeCheckSvg(raio: number, fundo: string, traco: string): string {
+  const d = raio * 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}"><circle cx="${raio}" cy="${raio}" r="${raio}" fill="${fundo}"/><polyline points="${raio * 0.55},${raio * 1.02} ${raio * 0.88},${raio * 1.35} ${raio * 1.48},${raio * 0.68}" fill="none" stroke="${traco}" stroke-width="${Math.max(4, Math.round(raio * 0.28))}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/** Cores do selo: laranja com texto branco, ou branco com texto verde-azulado. */
+export function coresSelo(estilo: ElementoSelo["estilo"]): { fundo: string; texto: string } {
+  return estilo === "laranja" ? { fundo: CORES_MARCA.laranja, texto: CORES_MARCA.branco } : { fundo: CORES_MARCA.branco, texto: CORES_MARCA.teal };
+}
+
+/**
+ * Como a foto entra na caixa (cover sem distorcer, ponto focal e zoom ≥ 1):
+ * tamanho da foto ampliada e o recorte (left/top) — o mesmo cálculo no
+ * servidor (sharp) e na prévia do editor (CSS).
+ */
+export function recorteDaFoto(foto: { largura: number; altura: number }, f: Pick<FotoArte, "box" | "fx" | "fy" | "zoom">) {
+  const [x0, y0, x1, y1] = f.box;
+  const w = Math.round(x1 - x0);
+  const h = Math.round(y1 - y0);
+  const escala = Math.max(w / foto.largura, h / foto.altura) * Math.max(1, f.zoom || 1);
+  const rw = Math.max(w, Math.round(foto.largura * escala));
+  const rh = Math.max(h, Math.round(foto.altura * escala));
+  const left = Math.min(Math.max(Math.round(rw * f.fx - w / 2), 0), rw - w);
+  const top = Math.min(Math.max(Math.round(rh * f.fy - h / 2), 0), rh - h);
+  return { w, h, rw, rh, left, top };
+}
+
 /** Toda frase de título e selo começa com maiúscula (regra 4 da marca). */
 export function comMaiuscula(texto: string): string {
   const t = texto.trim();
@@ -237,3 +281,74 @@ export function textosPadrao(conteudo: ConteudoPostagem, produto: string, preco?
       return { titulo: ["Entrega de", item], selos: ["Diversão Garantida", "Qualidade e Segurança"] };
   }
 }
+
+const limitar = (v: unknown, min: number, max: number) => {
+  const n = Number(v);
+  return Math.min(Math.max(Number.isFinite(n) ? n : min, min), max);
+};
+const TEXTO_MAX = 40;
+const CORES_TITULO = ["teal", "laranja"] as const;
+
+/**
+ * O que o editor manda salvar, conferido contra a arte guardada (etapa 2,
+ * 2026-10-17): as caixas das fotos não mudam (só qual foto, ponto focal e
+ * zoom), a logo só muda de tamanho e posição e nunca some, no máximo título
+ * + 2 selos (3 informações), cores só da marca, textos com maiúscula e tudo
+ * dentro da arte.
+ */
+export function sanitizarDadosArte(guardada: DadosArte, enviada: Partial<DadosArte>, imagensDoPost: string[]): DadosArte {
+  const { w, h } = guardada;
+  const fotos: FotoArte[] = guardada.fotos.map((g, i) => {
+    const e = enviada.fotos?.[i];
+    return {
+      imagemId: e && imagensDoPost.includes(e.imagemId) ? e.imagemId : g.imagemId,
+      box: g.box,
+      fx: limitar(e?.fx ?? g.fx, 0, 1),
+      fy: limitar(e?.fy ?? g.fy, 0, 1),
+      zoom: limitar(e?.zoom ?? g.zoom, 1, 4),
+    };
+  });
+
+  const enviados = Array.isArray(enviada.elementos) ? enviada.elementos : [];
+  const elementos: ElementoArte[] = [];
+  const titulo = enviados.find((x): x is ElementoTitulo => x?.tipo === "titulo");
+  if (titulo && Array.isArray(titulo.linhas)) {
+    const linhas = titulo.linhas
+      .slice(0, 2)
+      .map((l, i): LinhaTitulo => ({
+        t: comMaiuscula(String(l?.t ?? "").slice(0, TEXTO_MAX)),
+        tam: Math.round(limitar(l?.tam, 20, 160)),
+        cor: (CORES_TITULO as readonly string[]).includes(l?.cor) ? l.cor : i === 0 ? "teal" : "laranja",
+      }))
+      .filter((l) => l.t);
+    if (linhas.length) {
+      elementos.push({ id: "titulo", tipo: "titulo", x: Math.round(limitar(titulo.x, 0, w - 40)), y: Math.round(limitar(titulo.y, 0, h - 40)), escala: limitar(titulo.escala, 0.5, 2), linhas });
+    }
+  }
+  enviados
+    .filter((x): x is ElementoSelo => x?.tipo === "selo")
+    .map((s) => ({ ...s, t: comMaiuscula(String(s.t ?? "").slice(0, TEXTO_MAX)) }))
+    .filter((s) => s.t)
+    .slice(0, 2)
+    .forEach((s, i) => {
+      elementos.push({
+        id: `selo${i + 1}`,
+        tipo: "selo",
+        x: Math.round(limitar(s.x, 0, w - 40)),
+        y: Math.round(limitar(s.y, 0, h - 40)),
+        t: s.t,
+        tam: Math.round(limitar(s.tam, 18, 48)),
+        estilo: s.estilo === "branco" ? "branco" : "laranja",
+      });
+    });
+  const logo = enviados.find((x): x is ElementoLogo => x?.tipo === "logo") ?? guardada.elementos.find((x): x is ElementoLogo => x.tipo === "logo");
+  if (logo) {
+    const larg = Math.round(limitar(logo.larg, 120, 640));
+    const altura = larg * LOGO_PROPORCAO;
+    elementos.push({ id: "logo", tipo: "logo", larg, cx: Math.round(limitar(logo.cx, larg / 2, w - larg / 2)), base: Math.round(limitar(logo.base, altura, h)) });
+  }
+  return { w, h, fotos, elementos };
+}
+
+/** Story: o que fica nos 250 px de cima ou de baixo (onde ficam os botões do Instagram). */
+export const MARGEM_STORY = 250;

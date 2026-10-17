@@ -11,8 +11,9 @@ import {
   excluirPostagem,
   gerarLegendaDaPostagem,
   montarArtesDaPostagem,
+  salvarDadosArte,
 } from "@/lib/server/marketing";
-import { comMaiuscula, type ConteudoPostagem, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import { comMaiuscula, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 import type { StatusPostagem } from "@prisma/client";
 
 type Resultado<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -112,6 +113,19 @@ export async function salvarTextosAction(postagemId: string, textos: TextosPosta
     return { ok: true };
   } catch (e) {
     return erro(e, "Não consegui refazer as artes.");
+  }
+}
+
+/** Ajustes do editor de uma arte (posições, tamanhos, textos, foto e enquadramento). */
+export async function salvarArteAction(arteId: string, dados: Partial<DadosArte>): Promise<Resultado<{ voltouPraRevisao: boolean }>> {
+  await requireModulo("marketing");
+  try {
+    const r = await salvarDadosArte(arteId, dados);
+    revalidar(r.postagemId);
+    revalidatePath(`/marketing/${r.postagemId}/arte/${arteId}`);
+    return { ok: true, voltouPraRevisao: r.voltouPraRevisao };
+  } catch (e) {
+    return erro(e, "Não consegui salvar os ajustes.");
   }
 }
 

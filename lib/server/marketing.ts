@@ -4,7 +4,7 @@ import sharp from "sharp";
 import type { ConteudoPostagem, Prisma, StatusPostagem } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { renderizarArte, tratarFoto } from "@/lib/server/postagem-render";
-import { montarArtes, textosPadrao, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import { montarArtes, sanitizarDadosArte, textosPadrao, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 
 // Posts do Instagram (padrão da marca de 2026-10-16, reconstruído em
 // 2026-10-17 sobre o módulo Marketing antigo, que nunca foi usado). Fluxo:
@@ -287,8 +287,56 @@ export function buscarPostagem(id: string) {
   });
 }
 
-export function buscarImagemOriginalPorId(id: string) {
-  return prisma.postagemImagem.findUnique({ where: { id }, select: { imagemOriginal: true, imagemOriginalMime: true } });
+/** Foto do post como entra nas artes (a tratada; a original só se não houver). */
+export async function buscarFotoDoPost(id: string): Promise<{ buffer: Buffer; mime: string } | null> {
+  const f = await prisma.postagemImagem.findUnique({ where: { id }, select: { imagemTratada: true, imagemOriginal: true, imagemOriginalMime: true } });
+  if (!f) return null;
+  return f.imagemTratada ? { buffer: Buffer.from(f.imagemTratada), mime: "image/jpeg" } : { buffer: Buffer.from(f.imagemOriginal), mime: f.imagemOriginalMime };
+}
+
+/** Tudo que o editor de uma arte precisa (etapa 2). */
+export async function buscarArteParaEditor(arteId: string) {
+  const arte = await prisma.postagemArte.findUnique({
+    where: { id: arteId },
+    select: {
+      id: true,
+      ordem: true,
+      formato: true,
+      dados: true,
+      atualizadoEm: true,
+      postagem: {
+        select: {
+          id: true,
+          numero: true,
+          conteudo: true,
+          status: true,
+          imagens: { orderBy: { ordem: "asc" }, select: { id: true, largura: true, altura: true } },
+          artes: { orderBy: { ordem: "asc" }, select: { id: true, ordem: true, formato: true } },
+        },
+      },
+    },
+  });
+  if (!arte) return null;
+  return { ...arte, dados: arte.dados as unknown as DadosArte };
+}
+
+/**
+ * Salva os ajustes do editor — conferidos contra a arte guardada
+ * (sanitizarDadosArte) — e apaga o JPEG pra ser desenhado de novo. Post já
+ * aprovado volta pra revisão: o que foi aprovado mudou.
+ */
+export async function salvarDadosArte(arteId: string, enviada: Partial<DadosArte>) {
+  const arte = await prisma.postagemArte.findUniqueOrThrow({
+    where: { id: arteId },
+    select: { dados: true, postagemId: true, postagem: { select: { status: true, imagens: { select: { id: true } } } } },
+  });
+  const dados = sanitizarDadosArte(arte.dados as unknown as DadosArte, enviada, arte.postagem.imagens.map((i) => i.id));
+  const voltaPraRevisao = arte.postagem.status === "APROVADO";
+  await prisma.$transaction([
+    prisma.postagemArte.update({ where: { id: arteId }, data: { dados: dados as unknown as Prisma.InputJsonValue, imagem: null, renderizadaEm: null } }),
+    ...(voltaPraRevisao ? [prisma.postagem.update({ where: { id: arte.postagemId }, data: { status: "AGUARDANDO_APROVACAO" } })] : []),
+  ]);
+  return { postagemId: arte.postagemId, voltouPraRevisao: voltaPraRevisao };
 }
 
 export async function atualizarLegendaPostagem(id: string, legenda: string): Promise<void> {

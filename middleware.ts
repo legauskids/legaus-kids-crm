@@ -17,6 +17,7 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|publico|api/auth|api/integracoes|api/agente|api/telegram|api/push|api/pdf|api/imagem|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|logo-mark.*\\.svg|icon-.*\\.png).*)",
+    // fontes-marca: Baloo 2 e Nunito (OFL) da prévia do editor de posts.
+    "/((?!login|publico|api/auth|api/integracoes|api/agente|api/telegram|api/push|api/pdf|api/imagem|fontes-marca|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|logo-mark.*\\.svg|icon-.*\\.png).*)",
   ],
 };

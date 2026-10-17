@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Copy, Download, Loader2, RefreshCw, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { Check, Copy, Download, Loader2, Move, RefreshCw, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +36,7 @@ function urlArte(a: ArteVM, baixar = false) {
 }
 
 /** A arte é desenhada no servidor na primeira vez que abre — mostra "desenhando" até chegar. */
-function Arte({ arte, rotulo }: { arte: ArteVM; rotulo: string }) {
+function Arte({ arte, rotulo, postId }: { arte: ArteVM; rotulo: string; postId: string }) {
   const [carregada, setCarregada] = useState(false);
   const story = arte.formato === "STORY";
   return (
@@ -50,12 +51,18 @@ function Arte({ arte, rotulo }: { arte: ArteVM; rotulo: string }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={urlArte(arte)} alt={rotulo} onLoad={() => setCarregada(true)} className="relative size-full object-cover" />
       </a>
-      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>{rotulo}</span>
-        <a href={urlArte(arte, true)} className="inline-flex items-center gap-1 hover:text-foreground">
-          <Download className="size-3.5" />
-          Baixar
-        </a>
+        <span className="flex items-center gap-2.5">
+          <Link href={`/marketing/${postId}/arte/${arte.id}`} className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+            <Move className="size-3.5" />
+            Ajustar
+          </Link>
+          <a href={urlArte(arte, true)} className="inline-flex items-center gap-1 hover:text-foreground">
+            <Download className="size-3.5" />
+            Baixar
+          </a>
+        </span>
       </div>
     </div>
   );
@@ -104,13 +111,13 @@ export function PostDetalhe({ post }: { post: PostVM }) {
         <h2 className="text-sm font-semibold">{post.conteudo === "INSTALACAO" || post.conteudo === "TBT" ? "Story" : `Carrossel (${feed.length})`}</h2>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {feed.map((a, i) => (
-            <Arte key={a.id} arte={a} rotulo={i === 0 ? "1 · Capa" : `${i + 1} · Slide`} />
+            <Arte key={a.id} arte={a} postId={post.id} rotulo={i === 0 ? "1 · Capa" : `${i + 1} · Slide`} />
           ))}
           {stories.map((a) => (
-            <Arte key={a.id} arte={a} rotulo="Story" />
+            <Arte key={a.id} arte={a} postId={post.id} rotulo="Story" />
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">Toque numa arte pra ver em tamanho real. O ajuste fino (arrastar título, selos, logo e enquadramento) chega na próxima etapa.</p>
+        <p className="text-xs text-muted-foreground">Toque numa arte pra ver em tamanho real, ou em Ajustar pra arrastar título, selos, logo e enquadrar as fotos.</p>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -144,11 +151,15 @@ export function PostDetalhe({ post }: { post: PostVM }) {
               </div>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">No máximo 3 informações por imagem: o título e 2 selos.</p>
+          <p className="text-xs text-muted-foreground">
+            No máximo 3 informações por imagem: o título e 2 selos. Refazer monta todas as artes de novo no padrão — os ajustes feitos no editor se perdem
+            (pra mudar o texto de uma arte só, use Ajustar).
+          </p>
           <Button
             variant="outline"
             disabled={pending || !textosAlterados}
             onClick={() =>
+              confirm("Refazer todas as artes no padrão? Os ajustes feitos no editor se perdem.") &&
               executar(
                 "textos",
                 () =>

@@ -5,10 +5,15 @@ import sharp from "sharp";
 import { ImageResponse } from "next/og";
 import {
   CORES_MARCA,
+  DESLOCAMENTO_LETRA_TITULO,
+  LOGO_PROPORCAO,
   RAIO_FOTO,
-  alturaSelo,
   contornoTitulo,
+  coresSelo,
+  iconeCheckSvg,
   linhasDoTitulo,
+  medidasSelo,
+  recorteDaFoto,
   type DadosArte,
   type ElementoLogo,
   type ElementoSelo,
@@ -16,26 +21,24 @@ import {
   type FotoArte,
 } from "@/lib/utils/postagem-arte";
 
-// Renderizador ÚNICO das artes dos posts (padrão de 2026-10-16): o editor
-// mostra a imagem que sai daqui, então o que o Marcos aprova é exatamente o
-// que vai pro Instagram. Mesmo motor do card de produto (next/og + sharp).
-// Fontes: Baloo 2 e Nunito (OFL, substitutas da Bjola e da Museo Sans
-// Rounded) em instâncias fixas — o motor não lê fonte variável.
+// Renderizador ÚNICO das artes dos posts (padrão de 2026-10-16): o JPEG que
+// sai daqui é o que o Marcos aprova e o que vai pro Instagram. A prévia ao
+// vivo do editor (app/(app)/marketing/[id]/arte) usa as mesmas medidas de
+// lib/utils/postagem-arte.ts, mas a arte final é sempre esta. Mesmo motor do
+// card de produto (next/og + sharp). Fontes: Baloo 2 e Nunito (OFL,
+// substitutas da Bjola e da Museo Sans Rounded) em instâncias fixas — o
+// motor não lê fonte variável.
 
 type No = { type: string; key: string | null; props: Record<string, unknown> };
 
-const PASTA = path.join(process.cwd(), "public", "marketing");
-let recursos: { baloo: Buffer; nunito: Buffer; logo: Buffer; logoProporcao: number } | null = null;
+const PASTA = path.join(process.cwd(), "public", "fontes-marca");
+let recursos: { baloo: Buffer; nunito: Buffer; logo: Buffer } | null = null;
 
-async function carregarRecursos() {
-  if (recursos) return recursos;
-  const logo = fs.readFileSync(path.join(process.cwd(), "public", "legaus-logo.png"));
-  const meta = await sharp(logo).metadata();
-  recursos = {
+function carregarRecursos() {
+  recursos ??= {
     baloo: fs.readFileSync(path.join(PASTA, "Baloo2-ExtraBold.ttf")),
     nunito: fs.readFileSync(path.join(PASTA, "Nunito-Black.ttf")),
-    logo,
-    logoProporcao: (meta.height ?? 1) / (meta.width ?? 1),
+    logo: fs.readFileSync(path.join(process.cwd(), "public", "legaus-logo.png")),
   };
   return recursos;
 }
@@ -72,18 +75,9 @@ export async function tratarFoto(original: Buffer): Promise<{ buffer: Buffer; la
 
 /** Recorta a foto pra caixa sem distorcer, no ponto focal, com zoom (≥ 1). */
 async function recortar(foto: Buffer, f: FotoArte): Promise<Buffer> {
-  const [x0, y0, x1, y1] = f.box;
-  const w = Math.round(x1 - x0);
-  const h = Math.round(y1 - y0);
   const meta = await sharp(foto).metadata();
-  const fw = meta.width ?? w;
-  const fh = meta.height ?? h;
-  const escala = Math.max(w / fw, h / fh) * Math.max(1, f.zoom || 1);
-  const rw = Math.max(w, Math.round(fw * escala));
-  const rh = Math.max(h, Math.round(fh * escala));
-  const left = Math.min(Math.max(Math.round(rw * f.fx - w / 2), 0), rw - w);
-  const top = Math.min(Math.max(Math.round(rh * f.fy - h / 2), 0), rh - h);
-  return sharp(foto).resize(rw, rh).extract({ left, top, width: w, height: h }).jpeg({ quality: 92 }).toBuffer();
+  const r = recorteDaFoto({ largura: meta.width ?? 1, altura: meta.height ?? 1 }, f);
+  return sharp(foto).resize(r.rw, r.rh).extract({ left: r.left, top: r.top, width: r.w, height: r.h }).jpeg({ quality: 92 }).toBuffer();
 }
 
 function noTitulo(e: ElementoTitulo): No {
@@ -92,17 +86,13 @@ function noTitulo(e: ElementoTitulo): No {
   const linhas = e.linhas.map((l, i) => {
     const tam = Math.round(l.tam * escala);
     const contorno = contornoTitulo(tam);
-    const altura = Math.round(tam * 1.4);
-    // Com lineHeight 1, a letra fica 0,31 × tamanho mais alta que no
-    // legaus_render.py (medido nas artes aprovadas): desce isso.
-    const topo = topos[i] + Math.round(tam * 0.31);
     const texto = (key: string, estilo: Record<string, unknown>) =>
       no("div", key, {
         style: { position: "absolute", left: 0, top: 0, display: "flex", whiteSpace: "nowrap", fontFamily: "Baloo2", fontSize: tam, lineHeight: 1, ...estilo },
         children: l.t,
       });
     return no("div", `linha${i}`, {
-      style: { position: "absolute", left: 0, top: topo, display: "flex", height: altura, width: 1080 },
+      style: { position: "absolute", left: 0, top: topos[i] + Math.round(tam * DESLOCAMENTO_LETRA_TITULO), display: "flex", height: Math.round(tam * 1.4), width: 1080 },
       children: [
         // Contorno branco por fora + sombra, e a cor por cima (como o título "adesivo" aprovado).
         texto("contorno", {
@@ -117,47 +107,39 @@ function noTitulo(e: ElementoTitulo): No {
   return no("div", e.id, { style: { position: "absolute", left: e.x, top: e.y, display: "flex", width: 1080 - e.x, height: alturaTotal + 60 }, children: linhas });
 }
 
-function iconeCheck(raio: number, fundo: string, traco: string): string {
-  const d = raio * 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}"><circle cx="${raio}" cy="${raio}" r="${raio}" fill="${fundo}"/><polyline points="${raio * 0.55},${raio * 1.02} ${raio * 0.88},${raio * 1.35} ${raio * 1.48},${raio * 0.68}" fill="none" stroke="${traco}" stroke-width="${Math.max(4, Math.round(raio * 0.28))}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  return dataUri(Buffer.from(svg), "image/svg+xml");
-}
-
 function noSelo(e: ElementoSelo): No {
-  const fundo = e.estilo === "laranja" ? CORES_MARCA.laranja : CORES_MARCA.branco;
-  const cor = e.estilo === "laranja" ? CORES_MARCA.branco : CORES_MARCA.teal;
-  const h = alturaSelo(e.tam);
-  const raio = Math.round(h * 0.28);
+  const { fundo, texto } = coresSelo(e.estilo);
+  const m = medidasSelo(e.tam);
   return no("div", e.id, {
     style: {
       position: "absolute",
       left: e.x,
       top: e.y,
-      height: h,
+      height: m.h,
       display: "flex",
       alignItems: "center",
-      gap: Math.round(e.tam * 0.45),
-      paddingLeft: Math.round(e.tam * 0.75),
-      paddingRight: Math.round(e.tam * 0.75),
-      borderRadius: h / 2,
+      gap: m.espaco,
+      paddingLeft: m.margem,
+      paddingRight: m.margem,
+      borderRadius: m.h / 2,
       background: fundo,
       boxShadow: "0px 10px 12px rgba(0,0,0,0.27)",
     },
     children: [
-      no("img", "check", { src: iconeCheck(raio, cor, fundo), width: raio * 2, height: raio * 2 }),
-      no("div", "texto", { style: { display: "flex", fontFamily: "Nunito", fontSize: e.tam, color: cor, lineHeight: 1, whiteSpace: "nowrap" }, children: e.t }),
+      no("img", "check", { src: dataUri(Buffer.from(iconeCheckSvg(m.raioIcone, texto, fundo)), "image/svg+xml"), width: m.raioIcone * 2, height: m.raioIcone * 2 }),
+      no("div", "texto", { style: { display: "flex", fontFamily: "Nunito", fontSize: e.tam, color: texto, lineHeight: 1, whiteSpace: "nowrap" }, children: e.t }),
     ],
   });
 }
 
-function noLogo(e: ElementoLogo, logo: string, proporcao: number): No {
-  const altura = Math.round(e.larg * proporcao);
+function noLogo(e: ElementoLogo, logo: string): No {
+  const altura = Math.round(e.larg * LOGO_PROPORCAO);
   return no("img", e.id, { src: logo, width: e.larg, height: altura, style: { position: "absolute", left: Math.round(e.cx - e.larg / 2), top: Math.round(e.base - altura) } });
 }
 
 /** Desenha a arte e devolve o JPEG final (a API do Instagram só aceita JPEG). */
 export async function renderizarArte(dados: DadosArte, fotos: Map<string, Buffer>): Promise<Buffer> {
-  const r = await carregarRecursos();
+  const r = carregarRecursos();
   const logo = dataUri(r.logo, "image/png");
   const nosFotos = await Promise.all(
     dados.fotos.map(async (f, i) => {
@@ -169,9 +151,7 @@ export async function renderizarArte(dados: DadosArte, fotos: Map<string, Buffer
       return no("img", `foto${i}`, { src: dataUri(recorte, "image/jpeg"), width: x1 - x0, height: y1 - y0, style: estilo });
     }),
   );
-  const nosElementos = dados.elementos.map((e) =>
-    e.tipo === "titulo" ? noTitulo(e) : e.tipo === "selo" ? noSelo(e) : noLogo(e, logo, r.logoProporcao),
-  );
+  const nosElementos = dados.elementos.map((e) => (e.tipo === "titulo" ? noTitulo(e) : e.tipo === "selo" ? noSelo(e) : noLogo(e, logo)));
 
   const resposta = new ImageResponse(
     no("div", null as unknown as string, {
