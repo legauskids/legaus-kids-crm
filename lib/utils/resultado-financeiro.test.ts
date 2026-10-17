@@ -22,8 +22,11 @@ const transacoes: TransacaoParaResultado[] = [
   { data: dia("2026-09-05"), valorCentavos: 5_000, tipo: "SAIDA", status: "CONCILIADA", rateios: [{ ...semRateio, valorCentavos: 5_000, centroCustoId: "tar", centroCustoNome: "Tarifas" }] },
   // Saída metade classificada, metade a classificar
   { data: dia("2026-09-06"), valorCentavos: 100_000, tipo: "SAIDA", status: "NAO_CONCILIADA", rateios: [{ ...semRateio, valorCentavos: 50_000, centroCustoId: "tar", centroCustoNome: "Tarifas" }] },
-  // Transferência entre contas — ignorada, não conta
+  // Lançamento ignorado — não conta
   { data: dia("2026-09-07"), valorCentavos: 9_999_999, tipo: "SAIDA", status: "IGNORADA", rateios: [] },
+  // Movimentação entre as contas da empresa, as duas pontas (2026-10-17) — não conta
+  { data: dia("2026-09-08"), valorCentavos: 7_777_777, tipo: "SAIDA", status: "TRANSFERENCIA", rateios: [] },
+  { data: dia("2026-09-08"), valorCentavos: 7_777_777, tipo: "ENTRADA", status: "TRANSFERENCIA", rateios: [] },
   // Entrada sem classificação nenhuma
   { data: dia("2026-08-30"), valorCentavos: 20_000, tipo: "ENTRADA", status: "NAO_CONCILIADA", rateios: [] },
 ];

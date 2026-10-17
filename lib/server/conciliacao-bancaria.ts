@@ -7,11 +7,15 @@ import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
 import { candidatosDaLinha, negocioSugeridoParaEntrada } from "@/lib/utils/pares-despesa";
 import { negociosDosAvisos } from "@/lib/server/push-bancario";
 import { pendenciasDaDespesa, validarCentro } from "@/lib/utils/despesas";
+import { contaPropriaNoExtrato } from "@/lib/utils/contas-proprias";
 
 // Conciliação do extrato (OFX do Sicredi) com despesas registradas antes e
 // com projetos/categorias. Desde 2026-10-07 NADA é conciliado sozinho: a
 // importação só grava as linhas, e a tela mostra prováveis pares (saídas x
-// despesas) e o negócio sugerido (entradas) pra o usuário confirmar.
+// despesas) e o negócio sugerido (entradas) pra o usuário confirmar. A
+// exceção (2026-10-17): Pix entre as contas da própria empresa já entra
+// como movimentação entre contas (TRANSFERENCIA), fora do resultado — dá
+// pra desfazer na tela.
 
 // Cliente de dentro de prisma.$transaction(async (tx) => ...) — vem do
 // cliente estendido de lib/db.ts, por isso não é o Prisma.TransactionClient.
@@ -37,6 +41,7 @@ export async function importarExtratoDaMensagem(input: { nomeArquivo: string; by
       (resultado.duplicadasIgnoradas > 0 ? ` (${resultado.duplicadasIgnoradas} já existiam, ignoradas)` : "") +
       `.\n\n🔗 *${resultado.paresProvaveis}* saída(s) com despesa registrada pra confirmar o par` +
       `\n💰 *${resultado.entradasComSugestao}* entrada(s) com negócio sugerido` +
+      (resultado.transferencias > 0 ? `\n🔁 *${resultado.transferencias}* movimentação(ões) entre contas (fora do resultado)` : "") +
       `\n\nConfirme em Financeiro → Conciliação bancária — nada é conciliado sem confirmação.`
     );
   } catch (erro) {
@@ -57,6 +62,7 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
     : new Set<string>();
 
   const transacoesNovas = extrato.transacoes.filter((t) => !t.fitId || !jaImportados.has(t.fitId));
+  const agora = new Date();
 
   const importacao = await prisma.extratoBancarioImportacao.create({
     data: {
@@ -72,6 +78,11 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
           valorCentavos: t.valorCentavos,
           tipo: t.tipo,
           fitId: t.fitId,
+          ...(contaPropriaNoExtrato(t.descricao) && {
+            status: "TRANSFERENCIA" as const,
+            conciliadaPorId: input.importadoPorId,
+            conciliadaEm: agora,
+          }),
         })),
       },
     },
@@ -85,7 +96,12 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
   );
   let paresProvaveis = 0;
   let entradasComSugestao = 0;
+  let transferencias = 0;
   for (const t of importacao.transacoes) {
+    if (t.status === "TRANSFERENCIA") {
+      transferencias++;
+      continue;
+    }
     const linha = { id: t.id, dia: diaBrasilia(t.data), descricao: t.descricao, valorCentavos: t.valorCentavos, tipo: t.tipo };
     if (t.tipo === "SAIDA" && candidatosDaLinha(linha, despesas).length > 0) paresProvaveis++;
     if (t.tipo === "ENTRADA" && (negocioDoPush.has(t.id) || negocioSugeridoParaEntrada(linha, negociosVM))) entradasComSugestao++;
@@ -98,6 +114,7 @@ export async function importarExtratoOfx(input: { nomeArquivo: string; bytes: Bu
     duplicadasIgnoradas: extrato.transacoes.length - transacoesNovas.length,
     paresProvaveis,
     entradasComSugestao,
+    transferencias,
   };
 }
 
@@ -143,7 +160,7 @@ export async function getPainelConciliacao(resolvidosDesde: Date | null) {
   const [pendentes, resolvidos, despesas] = await Promise.all([
     prisma.transacaoBancaria.findMany({ where: { status: "NAO_CONCILIADA" }, include: includeLinha, orderBy: { data: "desc" } }),
     prisma.transacaoBancaria.findMany({
-      where: { status: { in: ["CONCILIADA", "IGNORADA"] }, ...(resolvidosDesde ? { data: { gte: resolvidosDesde } } : {}) },
+      where: { status: { in: ["CONCILIADA", "IGNORADA", "TRANSFERENCIA"] }, ...(resolvidosDesde ? { data: { gte: resolvidosDesde } } : {}) },
       include: includeLinha,
       orderBy: { data: "desc" },
     }),
@@ -280,12 +297,21 @@ async function soltarDespesa(tx: Tx, transacaoId: string) {
 }
 
 export async function ignorarTransacao(transacaoId: string, usuarioId: string) {
+  await resolverSemResultado(transacaoId, "IGNORADA", usuarioId);
+}
+
+/** "Entre contas": movimentação entre as contas da própria empresa — registrada, fora do resultado. */
+export async function marcarTransferencia(transacaoId: string, usuarioId: string) {
+  await resolverSemResultado(transacaoId, "TRANSFERENCIA", usuarioId);
+}
+
+async function resolverSemResultado(transacaoId: string, status: "IGNORADA" | "TRANSFERENCIA", usuarioId: string) {
   await prisma.$transaction(async (tx) => {
     await soltarDespesa(tx, transacaoId);
     await tx.rateioTransacao.deleteMany({ where: { transacaoId } });
     await tx.transacaoBancaria.update({
       where: { id: transacaoId },
-      data: { status: "IGNORADA", negocioId: null, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
+      data: { status, negocioId: null, conciliadaPorId: usuarioId, conciliadaEm: new Date() },
     });
   });
 }

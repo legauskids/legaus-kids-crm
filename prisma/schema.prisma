@@ -832,6 +832,10 @@ enum StatusTransacaoBancaria {
   NAO_CONCILIADA
   CONCILIADA
   IGNORADA
+  // Movimentação entre as contas da própria empresa (Sicredi, InfinitePay
+  // Legaus e InfinitePay Idezza): fica registrada, mas não é receita nem
+  // despesa (regra do Marcos de 2026-10-17 — ver lib/utils/contas-proprias.ts).
+  TRANSFERENCIA
 }
 
 model TransacaoBancaria {
@@ -1231,6 +1235,9 @@ enum StatusAvisoBancario {
   RESPONDIDO
   // "Não é de negócio" / descartado.
   IGNORADO
+  // Pix entre as contas da própria empresa: não vira despesa nem pergunta o
+  // negócio (2026-10-17).
+  TRANSFERENCIA
 }
 
 model AvisoBancario {

@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { calcularResultado, serieMensal, type TransacaoParaResultado } from "@/lib/utils/resultado-financeiro";
+import { STATUS_FORA_DO_RESULTADO, calcularResultado, serieMensal, type TransacaoParaResultado } from "@/lib/utils/resultado-financeiro";
 
 // Dados do "Dashboard financeiro" (aba do Financeiro): resultado de CAIXA
 // vindo dos extratos importados e do rateio deles entre projetos e centros
@@ -129,7 +129,7 @@ export async function getDashboardFinanceiro(periodo: PeriodoFinanceiro) {
         }),
         prisma.rateioTransacao.groupBy({
           by: ["negocioId"],
-          where: { negocioId: { in: ids }, transacao: { tipo: "ENTRADA", status: { not: "IGNORADA" } } },
+          where: { negocioId: { in: ids }, transacao: { tipo: "ENTRADA", status: { notIn: [...STATUS_FORA_DO_RESULTADO] } } },
           _sum: { valorCentavos: true },
         }),
       ])

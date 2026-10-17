@@ -10,6 +10,7 @@ import { botoesDeParecida, montarDespesaDaMensagem, negociosParecidos } from "@/
 import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
 import { botoesDeEntrada, lerPushSicredi, negocioDoAviso, type PushLido } from "@/lib/utils/push-sicredi";
 import { lerPushInfinitePay } from "@/lib/utils/push-infinitepay";
+import { contaPropriaDoPush, type ContaPropria } from "@/lib/utils/contas-proprias";
 import type { PedidoBotao } from "@/lib/utils/agente-canal";
 
 // Push dos apps do Sicredi e da InfinitePay encaminhado pelo MacroDroid do
@@ -21,6 +22,9 @@ import type { PedidoBotao } from "@/lib/utils/agente-canal";
 //   (áudio, comprovante ou outro push), pergunta se é a mesma e junta.
 // - ENTRADA: pergunta de qual negócio é; a resposta fica no AvisoBancario e
 //   a conciliação pré-seleciona esse negócio quando o extrato chegar.
+// - Pix entre as contas da própria empresa (Sicredi, InfinitePay Legaus e
+//   InfinitePay Idezza — 2026-10-17): só fica registrado como movimentação
+//   entre contas (status TRANSFERENCIA), sem despesa e sem pergunta.
 // Este arquivo não fala com o Telegram: devolve a mensagem e quem envia é
 // a rota (app/api/push/*, via lib/server/push-http.ts).
 
@@ -100,12 +104,14 @@ export async function processarPushBancario(input: { conta?: ContaBancaria; titu
     .update(lido.dataHora ? `${input.titulo ?? ""}\n${input.texto}` : `${conta}\n${input.texto}\n${new Date().toISOString()}`)
     .digest("hex");
   const dataHora = lido.dataHora ? new Date(`${lido.dataHora}-03:00`) : new Date();
+  const propria = contaPropriaDoPush(lido.contraparte, lido.documento);
   let aviso;
   try {
     aviso = await prisma.avisoBancario.create({
       data: {
         hash,
         conta,
+        ...(propria && { status: "TRANSFERENCIA" as const }),
         direcao: lido.direcao,
         valorCentavos: lido.valorCentavos,
         contraparte: lido.contraparte,
@@ -123,11 +129,40 @@ export async function processarPushBancario(input: { conta?: ContaBancaria; titu
   }
 
   const identificador = `tg:${destino.telegramId}`;
-  const resposta =
-    lido.direcao === "SAIDA"
+  const resposta = propria
+    ? await avisoDeTransferencia(aviso.id, conta, lido, dataHora, propria)
+    : lido.direcao === "SAIDA"
       ? await avisoDeSaida(aviso.id, conta, lido, dataHora, destino.id, identificador)
       : await avisoDeEntrada(aviso.id, conta, lido, dataHora);
   return { status: "registrado", avisoId: aviso.id, chatId: destino.telegramId, resposta };
+}
+
+/** As duas pontas da mesma transferência (saída numa conta, entrada na outra) chegam com até isso de diferença. */
+const JANELA_OUTRA_PONTA_MS = 30 * 60 * 1000;
+
+async function avisoDeTransferencia(avisoId: string, conta: ContaBancaria, lido: PushLido, dataHora: Date, propria: ContaPropria): Promise<RespostaDespesa> {
+  const outraPonta = await prisma.avisoBancario.findFirst({
+    where: {
+      id: { not: avisoId },
+      status: "TRANSFERENCIA",
+      direcao: lido.direcao === "SAIDA" ? "ENTRADA" : "SAIDA",
+      valorCentavos: lido.valorCentavos,
+      dataHora: { gte: new Date(dataHora.getTime() - JANELA_OUTRA_PONTA_MS), lte: new Date(dataHora.getTime() + JANELA_OUTRA_PONTA_MS) },
+    },
+    select: { conta: true },
+  });
+  const quem = lido.contraparte ?? propria.nome;
+  // "do Sicredi" / "da InfinitePay"
+  const artigo = (c: ContaBancaria) => (c === "SICREDI" ? "o" : "a");
+  const movimento =
+    lido.direcao === "SAIDA"
+      ? `saiu d${artigo(conta)} ${ROTULO_CONTA[conta]} para ${quem}`
+      : `entrou n${artigo(conta)} ${ROTULO_CONTA[conta]} vindo de ${quem}`;
+  return {
+    mensagem:
+      `🔁 *Movimentação entre contas* · *${reais(lido.valorCentavos)}* ${movimento} (${quando(dataHora)}).\nNão conta como receita nem despesa.` +
+      (outraPonta ? `\nÉ a outra ponta da transferência que já chegou pel${artigo(outraPonta.conta)} ${ROTULO_CONTA[outraPonta.conta]}.` : ""),
+  };
 }
 
 async function avisoDeSaida(

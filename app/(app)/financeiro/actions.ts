@@ -10,6 +10,7 @@ import {
   classificarSaida,
   classificarEntrada,
   ignorarTransacao,
+  marcarTransferencia,
   reabrirTransacao,
   salvarRateio,
   type LinhaRateio,
@@ -76,7 +77,14 @@ export async function atualizarStatusContratoAction(contratoId: string, status: 
 
 export type AcaoImportarExtratoState = {
   error?: string;
-  success?: { totalNoArquivo: number; novasImportadas: number; duplicadasIgnoradas: number; paresProvaveis: number; entradasComSugestao: number };
+  success?: {
+    totalNoArquivo: number;
+    novasImportadas: number;
+    duplicadasIgnoradas: number;
+    paresProvaveis: number;
+    entradasComSugestao: number;
+    transferencias: number;
+  };
 };
 
 export async function importarExtratoAction(
@@ -137,6 +145,11 @@ export async function classificarEntradaAction(
 
 export async function ignorarTransacaoAction(transacaoId: string): Promise<AcaoConciliacaoState> {
   return acaoConciliacao((usuarioId) => ignorarTransacao(transacaoId, usuarioId), "Não consegui ignorar o lançamento.");
+}
+
+/** "Entre contas": movimentação entre as contas da própria empresa, fora do resultado. */
+export async function marcarTransferenciaAction(transacaoId: string): Promise<AcaoConciliacaoState> {
+  return acaoConciliacao((usuarioId) => marcarTransferencia(transacaoId, usuarioId), "Não consegui marcar como movimentação entre contas.");
 }
 
 /** "Desfazer": a linha volta a pendente e a despesa vinculada volta a aguardar. */

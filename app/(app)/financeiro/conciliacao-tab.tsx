@@ -18,6 +18,7 @@ import {
   classificarSaidaAction,
   classificarEntradaAction,
   ignorarTransacaoAction,
+  marcarTransferenciaAction,
   reabrirTransacaoAction,
   type AcaoConciliacaoState,
   type AcaoImportarExtratoState,
@@ -48,7 +49,7 @@ export type LinhaPendenteVM = LinhaBase & {
   fornecedorSugerido: string;
 };
 
-export type LinhaResolvidaVM = LinhaBase & { status: "CONCILIADA" | "IGNORADA"; despesa: DespesaParVM | null };
+export type LinhaResolvidaVM = LinhaBase & { status: "CONCILIADA" | "IGNORADA" | "TRANSFERENCIA"; despesa: DespesaParVM | null };
 
 export type ImportacaoVM = {
   id: string;
@@ -92,6 +93,22 @@ function useAcao() {
     });
   }
   return { pending, executar };
+}
+
+/** Pix entre o Sicredi e as InfinitePay da Legaus e da Idezza: registrado, fora do resultado (2026-10-17). */
+function BotaoEntreContas({ id, pending, executar }: { id: string } & ReturnType<typeof useAcao>) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      title="Movimentação entre as contas da empresa — não conta como receita nem despesa"
+      onClick={() => executar(() => marcarTransferenciaAction(id), "Marcado como movimentação entre contas.")}
+    >
+      <ArrowLeftRight className="size-3.5" />
+      Entre contas
+    </Button>
+  );
 }
 
 /**
@@ -157,6 +174,7 @@ export function ConciliacaoTab({
               {state.success.duplicadasIgnoradas > 0 && ` — ${state.success.duplicadasIgnoradas} já estava(m) no sistema e não foi(ram) duplicado(s)`}.
               {state.success.paresProvaveis > 0 && ` ${state.success.paresProvaveis} saída(s) com despesa registrada pra confirmar.`}
               {state.success.entradasComSugestao > 0 && ` ${state.success.entradasComSugestao} entrada(s) com negócio sugerido.`}
+              {state.success.transferencias > 0 && ` ${state.success.transferencias} movimentação(ões) entre contas, fora do resultado.`}
             </p>
           )}
           {state.error && <p className="text-xs text-destructive">{state.error}</p>}
@@ -420,6 +438,7 @@ function LinhaSaida({
           ) : (
             !aberto && (
               <>
+                <BotaoEntreContas id={linha.id} pending={pending} executar={executar} />
                 <Button variant="outline" size="sm" disabled={pending} onClick={() => executar(() => ignorarTransacaoAction(linha.id))}>
                   Ignorar
                 </Button>
@@ -537,6 +556,7 @@ function LinhaEntrada({
                 ))}
               </optgroup>
             </select>
+            <BotaoEntreContas id={linha.id} pending={pending} executar={executar} />
             <Button variant="outline" size="sm" disabled={pending} onClick={() => executar(() => ignorarTransacaoAction(linha.id))}>
               Ignorar
             </Button>
@@ -568,6 +588,11 @@ function LinhaResolvida({ linha, onDividir }: { linha: LinhaResolvidaVM; onDivid
         </p>
         {linha.status === "IGNORADA" ? (
           <p className="text-xs text-muted-foreground">Ignorado</p>
+        ) : linha.status === "TRANSFERENCIA" ? (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <ArrowLeftRight className="size-3" />
+            Movimentação entre contas — fora do resultado
+          </p>
         ) : d ? (
           <p className="text-xs text-muted-foreground">
             {d.fornecedor} · {d.categoriaNome ?? "Sem categoria"} · {d.centroNome ?? "Sem centro"}

@@ -1,8 +1,16 @@
 // Cálculo do resultado financeiro (regime de CAIXA: o que de fato entrou e
 // saiu no extrato) a partir dos lançamentos e do rateio deles entre projetos
 // e centros de custo. Função pura — sem banco — pra dar pra testar e reusar
-// no dashboard financeiro e no painel de reunião. Lançamento IGNORADO (ex.:
-// transferência entre contas da própria empresa) não conta.
+// no dashboard financeiro e no painel de reunião. Lançamento IGNORADO e
+// movimentação entre as contas da própria empresa (TRANSFERENCIA,
+// 2026-10-17) não contam.
+
+/** Status que ficam fora de entradas, saídas, DRE e projetos. */
+export const STATUS_FORA_DO_RESULTADO = ["IGNORADA", "TRANSFERENCIA"] as const;
+
+export function foraDoResultado(status: TransacaoParaResultado["status"]): boolean {
+  return (STATUS_FORA_DO_RESULTADO as readonly string[]).includes(status);
+}
 
 export type RateioParaResultado = {
   valorCentavos: number;
@@ -17,7 +25,7 @@ export type TransacaoParaResultado = {
   data: Date;
   valorCentavos: number;
   tipo: "ENTRADA" | "SAIDA";
-  status: "NAO_CONCILIADA" | "CONCILIADA" | "IGNORADA";
+  status: "NAO_CONCILIADA" | "CONCILIADA" | "IGNORADA" | "TRANSFERENCIA";
   rateios: RateioParaResultado[];
 };
 
@@ -77,7 +85,7 @@ export function calcularResultado(transacoes: TransacaoParaResultado[]): Resulta
   const projetos = new Map<string, { titulo: string; contatoNome: string | null; recebido: number; custos: number }>();
 
   for (const t of transacoes) {
-    if (t.status === "IGNORADA") continue;
+    if (foraDoResultado(t.status)) continue;
     const entrada = t.tipo === "ENTRADA";
     if (entrada) entradas += t.valorCentavos;
     else saidas += t.valorCentavos;
@@ -153,7 +161,7 @@ export function mesDoLancamento(data: Date): string {
 export function serieMensal(transacoes: TransacaoParaResultado[], meses: string[]) {
   const porMes = new Map(meses.map((m) => [m, { entradas: 0, saidas: 0 }]));
   for (const t of transacoes) {
-    if (t.status === "IGNORADA") continue;
+    if (foraDoResultado(t.status)) continue;
     const alvo = porMes.get(mesDoLancamento(t.data));
     if (!alvo) continue;
     if (t.tipo === "ENTRADA") alvo.entradas += t.valorCentavos;

@@ -279,7 +279,7 @@ async function ConciliacaoTabData({ resolvidosTodos }: { resolvidosTodos: boolea
       })}
       resolvidos={painel.resolvidos.map((t) => ({
         ...linhaVM(t),
-        status: t.status === "IGNORADA" ? ("IGNORADA" as const) : ("CONCILIADA" as const),
+        status: t.status === "IGNORADA" || t.status === "TRANSFERENCIA" ? t.status : ("CONCILIADA" as const),
         despesa: t.despesa ? despesaVM(t.despesa) : null,
       }))}
       importacoes={importacoes.map((i) => ({
