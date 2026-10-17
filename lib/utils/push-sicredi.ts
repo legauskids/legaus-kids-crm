@@ -69,13 +69,17 @@ export function lerPushSicredi(titulo: string | null | undefined, texto: string 
   const corpo = (texto ?? "").replace(/\r/g, "");
   const tudo = `${titulo ?? ""}\n${corpo}`;
   const valor = corpo.match(VALOR) ?? tudo.match(VALOR);
-  const direcao = direcaoDoTexto(corpo) ?? direcaoDoTexto(titulo ?? "");
+  const linhas = corpo.split("\n").map((l) => l.trim()).filter(Boolean);
+  const iValor = linhas.findIndex((l) => VALOR.test(l));
+  // A direção vem da frase do valor ("Você pagou/recebeu um Pix..."): o nome
+  // do banco da outra ponta não decide — "Cooperativa de Crédito..." fez um
+  // Pix PAGO de R$ 150,00 virar entrada (09/10/2026).
+  const direcao =
+    (iValor >= 0 ? direcaoDoTexto(linhas[iValor]) : null) ?? direcaoDoTexto(corpo) ?? direcaoDoTexto(titulo ?? "");
   if (!valor || !direcao) return null;
 
   // Depois da linha do valor e antes da data: quem (com ou sem CPF/CNPJ), o
   // banco e, se houver, a mensagem do Pix.
-  const linhas = corpo.split("\n").map((l) => l.trim()).filter(Boolean);
-  const iValor = linhas.findIndex((l) => VALOR.test(l));
   let contraparte: string | null = null;
   let documento: string | null = null;
   let banco: string | null = null;

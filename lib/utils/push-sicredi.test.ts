@@ -76,6 +76,14 @@ describe("lerPushSicredi", () => {
     });
   });
 
+  it("banco da outra ponta com 'Crédito' no nome não vira entrada (push real de 09/10/2026)", () => {
+    const texto =
+      "Sicredi Pix\nVocê pagou um Pix no valor de R$ 150,00\n56.658.463 Gilvani Tozin Da Silva CNPJ 56.658.463/0001-08\nCooperativa De Crédito E Investimento Com Interação Solidária Essência - Cresol Essência\n09/10/2026 - 10:58:40\nAproveite todas vantagens do Pix no Sicredi.";
+    expect(lerPushSicredi(null, texto)).toMatchObject({ direcao: "SAIDA", valorCentavos: 15000, documento: "56.658.463/0001-08" });
+    const recebido = texto.replace("Você pagou", "Você recebeu");
+    expect(lerPushSicredi(null, recebido)).toMatchObject({ direcao: "ENTRADA" });
+  });
+
   it("propaganda ou aviso sem movimentação não é lido", () => {
     expect(lerPushSicredi("Sicredi", "Aproveite todas vantagens do Pix no Sicredi.")).toBeNull();
     expect(lerPushSicredi("Sicredi", "Seu limite foi atualizado para R$ 5.000,00")).toBeNull();
