@@ -14,6 +14,7 @@ import {
   salvarDadosArte,
 } from "@/lib/server/marketing";
 import { comMaiuscula, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import { conversarSobrePost } from "@/lib/server/marketing-agente";
 import type { StatusPostagem } from "@prisma/client";
 
 type Resultado<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -142,4 +143,19 @@ export async function excluirPostagemAction(postagemId: string): Promise<Resulta
   await excluirPostagem(postagemId);
   revalidar();
   return { ok: true };
+}
+
+/** Mensagem pro Claude do post (assistente do Marketing): responde e pode ajustar artes e legenda. */
+export async function conversarAction(postagemId: string, texto: string): Promise<Resultado<{ resposta: string; mudou: boolean }>> {
+  const user = await requireModulo("marketing");
+  const t = texto.trim();
+  if (!t) return { ok: false, error: "Escreva o que você quer ajustar." };
+  if (t.length > 2000) return { ok: false, error: "Mensagem longa demais — resuma em até 2.000 caracteres." };
+  try {
+    const r = await conversarSobrePost({ postagemId, usuarioId: user.id, texto: t });
+    if (r.mudou) revalidar(postagemId);
+    return { ok: true, ...r };
+  } catch (e) {
+    return erro(e, "O assistente não conseguiu responder agora.");
+  }
 }

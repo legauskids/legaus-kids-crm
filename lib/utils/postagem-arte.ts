@@ -352,3 +352,37 @@ export function sanitizarDadosArte(guardada: DadosArte, enviada: Partial<DadosAr
 
 /** Story: o que fica nos 250 px de cima ou de baixo (onde ficam os botões do Instagram). */
 export const MARGEM_STORY = 250;
+
+const SELOS_PADRAO = ["Diversão Garantida", "Qualidade e Segurança"];
+
+/**
+ * Selo novo numa arte (editor ou assistente): logo abaixo do último selo, ou
+ * abaixo do título, no estilo que ainda não existe (laranja primeiro) e com
+ * um texto padrão que ainda não está na arte.
+ */
+export function seloNovo(dados: DadosArte, formato: FormatoArte, texto?: string): ElementoSelo {
+  const selos = dados.elementos.filter((e): e is ElementoSelo => e.tipo === "selo");
+  const titulo = dados.elementos.find((e): e is ElementoTitulo => e.tipo === "titulo");
+  const m = MEDIDAS[formato];
+  const ultimo = selos.at(-1);
+  const y = ultimo
+    ? ultimo.y + alturaSelo(ultimo.tam) + 12
+    : titulo
+      ? titulo.y + alturaTitulo(titulo.linhas, titulo.escala) + m.gapSelo
+      : m.tituloY;
+  return {
+    id: `selo${selos.length + 1}`,
+    tipo: "selo",
+    x: titulo?.x ?? X_TEXTOS,
+    y: Math.round(y),
+    t: comMaiuscula(texto ?? "") || (SELOS_PADRAO.find((t) => !selos.some((s) => s.t === t)) ?? "Novo selo"),
+    tam: m.tamSelo,
+    estilo: selos.some((s) => s.estilo === "laranja") ? "branco" : "laranja",
+  };
+}
+
+/** Título padrão de uma arte que não tinha (ex.: slide), na posição do padrão. */
+export function tituloNovo(formato: FormatoArte, linhas: [string, string]): ElementoTitulo | null {
+  const t = elementosDaCapa(formato, linhas, []).find((e): e is ElementoTitulo => e.tipo === "titulo");
+  return t ?? null;
+}

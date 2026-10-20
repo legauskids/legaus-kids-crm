@@ -18,6 +18,7 @@ import {
 } from "@/app/(app)/marketing/actions";
 import type { ConteudoPostagem, FormatoArte, TextosPostagem } from "@/lib/utils/postagem-arte";
 import type { StatusPostagem } from "@prisma/client";
+import { AssistentePost, type MensagemAssistente } from "@/app/(app)/marketing/[id]/assistente-post";
 
 type ArteVM = { id: string; ordem: number; formato: FormatoArte; versao: number };
 type PostVM = {
@@ -68,7 +69,7 @@ function Arte({ arte, rotulo, postId }: { arte: ArteVM; rotulo: string; postId: 
   );
 }
 
-export function PostDetalhe({ post }: { post: PostVM }) {
+export function PostDetalhe({ post, historico }: { post: PostVM; historico: MensagemAssistente[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [acao, setAcao] = useState<string | null>(null);
@@ -114,11 +115,14 @@ export function PostDetalhe({ post }: { post: PostVM }) {
             <Arte key={a.id} arte={a} postId={post.id} rotulo={i === 0 ? "1 · Capa" : `${i + 1} · Slide`} />
           ))}
           {stories.map((a) => (
-            <Arte key={a.id} arte={a} postId={post.id} rotulo="Story" />
+            // Com o número: é assim que o assistente chama cada arte ("arte 4").
+            <Arte key={a.id} arte={a} postId={post.id} rotulo={post.artes.length > 1 ? `${a.ordem + 1} · Story` : "Story"} />
           ))}
         </div>
         <p className="text-xs text-muted-foreground">Toque numa arte pra ver em tamanho real, ou em Ajustar pra arrastar título, selos, logo e enquadrar as fotos.</p>
       </section>
+
+      <AssistentePost postId={post.id} historico={historico} temLegenda={post.temLegenda} />
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-3 rounded-xl border bg-card p-4">

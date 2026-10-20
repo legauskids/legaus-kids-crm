@@ -3,18 +3,28 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { requireModulo } from "@/lib/auth/guards";
 import { buscarPostagem, SO_STORY, textosDaPostagem } from "@/lib/server/marketing";
+import { historicoDoAssistente } from "@/lib/server/marketing-agente";
 import { Badge } from "@/components/ui/badge";
 import { ROTULO_CONTEUDO } from "@/lib/utils/postagem-arte";
 import { ROTULO_STATUS_POSTAGEM, VARIANTE_STATUS_POSTAGEM } from "@/app/(app)/marketing/rotulos";
 import { PostDetalhe } from "@/app/(app)/marketing/[id]/post-detalhe";
 
-// Refazer as artes e pedir outra legenda à IA levam alguns segundos.
+// Refazer as artes, pedir outra legenda à IA e conversar com o assistente
+// (que olha as artes e ajusta) levam alguns segundos.
 export const maxDuration = 60;
+
+/** Muda quando a legenda, o status, os textos ou alguma arte mudam. */
+function versaoDoPost(p: { legenda: string | null; status: string; textos: unknown; artes: { atualizadoEm: Date }[] }): string {
+  const texto = `${p.legenda ?? ""}|${p.status}|${JSON.stringify(p.textos)}|${p.artes.map((a) => a.atualizadoEm.getTime()).join(".")}`;
+  let hash = 0;
+  for (let i = 0; i < texto.length; i++) hash = (hash * 31 + texto.charCodeAt(i)) | 0;
+  return String(hash);
+}
 
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   await requireModulo("marketing");
   const { id } = await params;
-  const p = await buscarPostagem(id);
+  const [p, historico] = await Promise.all([buscarPostagem(id), historicoDoAssistente(id)]);
   if (!p) notFound();
 
   return (
@@ -36,6 +46,12 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
         </p>
       </div>
       <PostDetalhe
+        // O assistente pode trocar a legenda, os textos e as artes: quando muda algo, a tela recomeça com o que está no banco.
+        key={versaoDoPost(p)}
+        historico={historico.flatMap((h) => [
+          { id: `${h.id}-p`, de: "voce" as const, texto: h.textoComando },
+          ...(h.resposta ? [{ id: `${h.id}-r`, de: "claude" as const, texto: h.resposta }] : []),
+        ])}
         post={{
           id: p.id,
           numero: p.numero,

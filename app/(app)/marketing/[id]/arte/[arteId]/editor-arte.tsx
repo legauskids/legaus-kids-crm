@@ -22,6 +22,7 @@ import {
   linhasDoTitulo,
   medidasSelo,
   recorteDaFoto,
+  seloNovo,
   type DadosArte,
   type ElementoArte,
   type ElementoLogo,
@@ -44,7 +45,6 @@ const FONTES = `
 @font-face { font-family: "Baloo2Marca"; src: url(/fontes-marca/Baloo2-ExtraBold.ttf) format("truetype"); font-weight: 800; font-display: block; }
 @font-face { font-family: "NunitoMarca"; src: url(/fontes-marca/Nunito-Black.ttf) format("truetype"); font-weight: 900; font-display: block; }
 `;
-const SELOS_PADRAO = ["Diversão Garantida", "Qualidade e Segurança"];
 /** Largura média de um caractere do título — só pra área de toque e o contorno de seleção. */
 const LARGURA_CARACTERE = 0.56;
 
@@ -208,17 +208,7 @@ export function EditorArte(props: {
   }
 
   function adicionarSelo() {
-    const usados = new Set(selos.map((s) => s.estilo));
-    const estilo: ElementoSelo["estilo"] = usados.has("laranja") ? "branco" : "laranja";
-    const tam = formato === "STORY" ? 30 : 27;
-    const ultimo = selos.at(-1);
-    const y = ultimo
-      ? ultimo.y + medidasSelo(ultimo.tam).h + 12
-      : titulo
-        ? titulo.y + linhasDoTitulo(titulo.linhas, titulo.escala).altura + (formato === "STORY" ? 24 : 22)
-        : formato === "STORY" ? MARGEM_STORY : 62;
-    const texto = SELOS_PADRAO.find((t) => !selos.some((s) => s.t === t)) ?? "Novo selo";
-    const novo: ElementoSelo = { id: `selo-novo-${Date.now()}`, tipo: "selo", x: titulo?.x ?? 66, y: Math.round(y), t: texto, tam, estilo };
+    const novo: ElementoSelo = { ...seloNovo(dados, formato), id: `selo-novo-${Date.now()}` };
     setDados((d) => ({ ...d, elementos: [...d.elementos.filter((e) => e.tipo !== "logo"), novo, ...d.elementos.filter((e) => e.tipo === "logo")] }));
     setSelecao({ tipo: "elemento", id: novo.id });
   }
