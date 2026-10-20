@@ -11,6 +11,30 @@ export function negocioParadoAlemDoPrazo(input: {
   return diasDesde(input.dataEntradaNaEtapa) > input.slaDias;
 }
 
+/**
+ * Negócio parado = passou do prazo (SLA) da etapa E está sem nenhuma tarefa
+ * ativa (não concluída). Com tarefa ativa alguém está cuidando dele, então
+ * não conta como parado — regra do Marcos de 2026-10-20. Vale pro dashboard,
+ * pro quadro de Negócios ("Só parados") e pro painel da reunião.
+ */
+export function negocioParado(input: { slaDias: number | null; dataEntradaNaEtapa: Date; temTarefaAtiva: boolean }): boolean {
+  return !input.temTarefaAtiva && negocioParadoAlemDoPrazo(input);
+}
+
+/**
+ * Quais negócios têm tarefa ativa: tarefa não concluída ligada ao negócio, ou
+ * ligada só ao cliente dele (sem negócio — follow-up do cliente vale pros
+ * negócios dele).
+ */
+export function negociosComTarefaAtiva(
+  negocios: { id: string; contatoId: string | null }[],
+  tarefasAtivas: { negocioId: string | null; contatoId: string | null }[],
+): Set<string> {
+  const porNegocio = new Set(tarefasAtivas.map((t) => t.negocioId).filter((id): id is string => Boolean(id)));
+  const porCliente = new Set(tarefasAtivas.filter((t) => !t.negocioId && t.contatoId).map((t) => t.contatoId as string));
+  return new Set(negocios.filter((n) => porNegocio.has(n.id) || (n.contatoId !== null && porCliente.has(n.contatoId))).map((n) => n.id));
+}
+
 export function isHoje(data: Date): boolean {
   const hoje = new Date();
   return (

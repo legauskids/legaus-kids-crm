@@ -43,7 +43,7 @@ function catalogoLinks(resumo: ResumoReuniao): Record<string, { href: string; de
   const l = resumo.links;
   return {
     funil_venda: { href: l.funilVenda, descricao: "quadro do funil de venda (negociação, fechamento)" },
-    negocios_parados: { href: l.parados, descricao: "negócios parados além do prazo da etapa" },
+    negocios_parados: { href: l.parados, descricao: "negócios parados além do prazo da etapa e sem tarefa ativa" },
     pos_venda: { href: l.funilPosVenda, descricao: "funil de pós-venda (contrato, pagamento, compras, produção, entrega)" },
     tarefas_atrasadas: { href: l.tarefasAtrasadas, descricao: "tarefas atrasadas" },
     aprovacoes: { href: l.aprovacoes, descricao: "tarefas aguardando aprovação" },
@@ -74,7 +74,7 @@ function textoResumo(r: ResumoReuniao): string {
     "SITUAÇÃO AGORA:",
     `- Funil de venda em aberto: ${r.pipeline.emNegociacao.qtd} negócios (${centavosParaReais(r.pipeline.emNegociacao.valorCentavos)}); por etapa: ${r.pipeline.etapas.map((e) => `${e.nome} ${e.qtd} (${centavosParaReais(e.valorCentavos)})`).join(", ")}`,
     `- Em fechamento: ${r.pipeline.emFechamento.qtd} (${centavosParaReais(r.pipeline.emFechamento.valorCentavos)})${neg(r.pipeline.emFechamento.itens)}`,
-    `- Parados além do prazo da etapa: ${r.pipeline.parados.qtd} (${centavosParaReais(r.pipeline.parados.valorCentavos)})${neg(r.pipeline.parados.itens)}`,
+    `- Parados além do prazo da etapa e sem tarefa ativa: ${r.pipeline.parados.qtd} (${centavosParaReais(r.pipeline.parados.valorCentavos)})${neg(r.pipeline.parados.itens)}`,
     `- Com previsão de fechamento já vencida: ${r.pipeline.previsaoVencida.qtd}${neg(r.pipeline.previsaoVencida.itens)}`,
     `- Pós-venda: ${r.posVenda.etapas.map((e) => `${e.nome} ${e.qtd}`).join(", ")}; em Pagamento: ${r.posVenda.emPagamento.qtd} (${centavosParaReais(r.posVenda.emPagamento.valorCentavos)})`,
     `- Tarefas atrasadas: ${r.tarefas.atrasadas}; aguardando aprovação: ${r.tarefas.aprovacoesPendentes}`,

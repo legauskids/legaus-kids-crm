@@ -5,7 +5,7 @@ import { URL_BASE } from "@/lib/constants/app";
 import { criarTarefa, moverTarefaStatus } from "@/lib/server/tarefas";
 import { carregarTransacoes } from "@/lib/server/resultado-financeiro";
 import { calcularResultado } from "@/lib/utils/resultado-financeiro";
-import { negocioParadoAlemDoPrazo, diasDesde, formatarDataCalendario } from "@/lib/utils/dates";
+import { negocioParado, negociosComTarefaAtiva, diasDesde, formatarDataCalendario } from "@/lib/utils/dates";
 import {
   dataCalendarioNoIntervalo,
   diaBrasilia,
@@ -57,6 +57,7 @@ export async function montarResumoReuniao(periodos: PeriodosReuniao): Promise<Re
           id: true,
           titulo: true,
           funilId: true,
+          contatoId: true,
           etapaId: true,
           valorCentavos: true,
           createdAt: true,
@@ -85,6 +86,8 @@ export async function montarResumoReuniao(periodos: PeriodosReuniao): Promise<Re
           reuniaoId: true,
           reuniao: { select: { titulo: true } },
           responsavel: { select: { nome: true } },
+          negocioId: true,
+          contatoId: true,
         },
         orderBy: { prazo: "asc" },
       }),
@@ -121,7 +124,11 @@ export async function montarResumoReuniao(periodos: PeriodosReuniao): Promise<Re
   const previstos = abertosVenda.filter((n) => n.previsaoFechamento && dataCalendarioNoIntervalo(n.previsaoFechamento, proximoInicio, proximoFim));
 
   const abertosTodos = negocios.filter((n) => n.etapa.tipo === "NORMAL");
-  const parados = abertosTodos.filter((n) => negocioParadoAlemDoPrazo({ slaDias: n.etapa.slaDias, dataEntradaNaEtapa: n.dataEntradaNaEtapa }));
+  // Parado = passou do prazo da etapa e está sem tarefa ativa (regra de 2026-10-20).
+  const comTarefaAtiva = negociosComTarefaAtiva(abertosTodos, tarefasAbertas);
+  const parados = abertosTodos.filter((n) =>
+    negocioParado({ slaDias: n.etapa.slaDias, dataEntradaNaEtapa: n.dataEntradaNaEtapa, temTarefaAtiva: comTarefaAtiva.has(n.id) }),
+  );
   const instalacoes = negocios.filter((n) => n.dataInstalacao && dataCalendarioNoIntervalo(n.dataInstalacao, proximoInicio, proximoFim));
   const producao = negocios.filter((n) => n.previsaoProducao && dataCalendarioNoIntervalo(n.previsaoProducao, proximoInicio, proximoFim));
   const abertosPosVenda = funilPosVenda ? abertosTodos.filter((n) => n.funilId === funilPosVenda.id) : [];

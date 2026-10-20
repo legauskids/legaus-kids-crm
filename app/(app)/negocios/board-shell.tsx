@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
-import { negocioParadoAlemDoPrazo } from "@/lib/utils/dates";
+import { negocioParado } from "@/lib/utils/dates";
 import { KanbanBoard, type KanbanItemDef } from "@/components/shared/kanban/board";
 import { corDoIndice } from "@/lib/utils/colors";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,8 @@ type NegocioCard = {
   responsavelNome: string;
   checklistTotal: number;
   checklistConcluidos: number;
+  /** Tem tarefa não concluída (no negócio ou no cliente): então não está parado. */
+  temTarefaAtiva: boolean;
 };
 
 export function NegociosBoardShell({
@@ -70,10 +72,12 @@ export function NegociosBoardShell({
   const etapasOrdenadas = [...funilSelecionado.etapas].sort((a, b) => a.ordem - b.ordem);
   const etapaPorId = new Map(etapasOrdenadas.map((e) => [e.id, e]));
 
+  // Parado = passou do prazo da etapa e está sem tarefa ativa (regra de 2026-10-20).
   const estaParado = (item: KanbanItemDef<NegocioCard>) =>
-    negocioParadoAlemDoPrazo({
+    negocioParado({
       slaDias: etapaPorId.get(item.columnId)?.slaDias ?? null,
       dataEntradaNaEtapa: new Date(item.data.dataEntradaNaEtapa),
+      temTarefaAtiva: item.data.temTarefaAtiva,
     });
   const qtdParados = items.filter(estaParado).length;
   const itemsVisiveis = somenteParados ? items.filter(estaParado) : items;
@@ -136,7 +140,7 @@ export function NegociosBoardShell({
             size="sm"
             variant={somenteParados ? "destructive" : "outline"}
             onClick={() => setSomenteParados((v) => !v)}
-            title="Mostrar só os negócios parados além do prazo (SLA) da etapa"
+            title="Mostrar só os negócios parados além do prazo (SLA) da etapa e sem tarefa ativa"
           >
             <PauseCircle className="size-4" />
             Só parados ({qtdParados})
@@ -172,9 +176,10 @@ export function NegociosBoardShell({
           onDrop={handleDrop}
           renderCard={(item) => {
             const etapa = etapaPorId.get(item.columnId);
-            const atrasado = negocioParadoAlemDoPrazo({
+            const atrasado = negocioParado({
               slaDias: etapa?.slaDias ?? null,
               dataEntradaNaEtapa: new Date(item.data.dataEntradaNaEtapa),
+              temTarefaAtiva: item.data.temTarefaAtiva,
             });
             const { checklistTotal, checklistConcluidos } = item.data;
             const progressoChecklist = checklistTotal > 0 ? Math.round((checklistConcluidos / checklistTotal) * 100) : 0;

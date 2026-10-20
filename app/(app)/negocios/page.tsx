@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireModulo } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
-import { listFunisComEtapas, listNegociosPorFunil } from "@/lib/server/negocios";
-import { negocioParadoAlemDoPrazo } from "@/lib/utils/dates";
+import { idsComTarefaAtiva, listFunisComEtapas, listNegociosPorFunil } from "@/lib/server/negocios";
+import { negocioParado } from "@/lib/utils/dates";
 import { Button } from "@/components/ui/button";
 import { History, Settings2 } from "lucide-react";
 import { inicioDoMesAtual } from "@/lib/server/negocios-historico";
@@ -26,11 +26,12 @@ export default async function NegociosPage({
   if (somenteParados && !funilIdParam) {
     const abertos = await prisma.negocio.findMany({
       where: { etapa: { tipo: "NORMAL" } },
-      select: { funilId: true, dataEntradaNaEtapa: true, etapa: { select: { slaDias: true } } },
+      select: { id: true, contatoId: true, funilId: true, dataEntradaNaEtapa: true, etapa: { select: { slaDias: true } } },
     });
+    const comTarefa = await idsComTarefaAtiva(abertos);
     const porFunil = new Map<string, number>();
     for (const n of abertos) {
-      if (negocioParadoAlemDoPrazo({ slaDias: n.etapa.slaDias, dataEntradaNaEtapa: n.dataEntradaNaEtapa })) {
+      if (negocioParado({ slaDias: n.etapa.slaDias, dataEntradaNaEtapa: n.dataEntradaNaEtapa, temTarefaAtiva: comTarefa.has(n.id) })) {
         porFunil.set(n.funilId, (porFunil.get(n.funilId) ?? 0) + 1);
       }
     }
@@ -44,6 +45,8 @@ export default async function NegociosPage({
     prisma.contato.findMany({ orderBy: { nome: "asc" } }),
     prisma.user.findMany({ orderBy: { nome: "asc" } }),
   ]);
+  // Negócio com tarefa ativa não conta como parado (regra de 2026-10-20).
+  const comTarefaAtiva = await idsComTarefaAtiva(negocios);
 
   return (
     <div className="flex h-full flex-col">
@@ -86,6 +89,7 @@ export default async function NegociosPage({
               responsavelNome: n.responsavel.nome,
               checklistTotal: checklistEtapaAtual.length,
               checklistConcluidos: checklistEtapaAtual.filter((c) => c.concluido).length,
+              temTarefaAtiva: comTarefaAtiva.has(n.id),
             };
           })}
           contatos={contatos.map((c) => ({ id: c.id, nome: c.nome }))}

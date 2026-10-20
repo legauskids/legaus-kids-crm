@@ -1,15 +1,24 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { negocioParadoAlemDoPrazo, tarefaAtrasada, isHoje, estaNoPeriodo } from "@/lib/utils/dates";
+import { negocioParado, negociosComTarefaAtiva, tarefaAtrasada, isHoje, estaNoPeriodo } from "@/lib/utils/dates";
+import { diaBrasilia, inicioDoDiaBrasilia } from "@/lib/utils/brasilia";
+import { inicioDoMesAtual } from "@/lib/server/negocios-historico";
 
+// O mês é o de Brasília (o servidor roda em UTC): antes, um ganho depois das
+// 21h do último dia caía no mês seguinte.
 function inicioDoMes(): Date {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+  return inicioDoMesAtual();
 }
 
 function fimDoMes(): Date {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  const { mes, ano } = mesAnoBrasilia();
+  const proximo = mes === 12 ? `${ano + 1}-01-01` : `${ano}-${String(mes + 1).padStart(2, "0")}-01`;
+  return inicioDoDiaBrasilia(proximo);
+}
+
+function mesAnoBrasilia(): { mes: number; ano: number } {
+  const [ano, mes] = diaBrasilia(new Date()).split("-").map(Number);
+  return { mes, ano };
 }
 
 export async function getDashboardData() {
@@ -47,7 +56,7 @@ export async function getDashboardData() {
       select: { id: true, responsavelId: true },
     }),
     prisma.user.findMany(),
-    prisma.meta.findFirst({ where: { mes: new Date().getMonth() + 1, ano: new Date().getFullYear() } }),
+    prisma.meta.findFirst({ where: mesAnoBrasilia() }),
     prisma.negocio.findMany({ where: { etapa: { nome: "Produção" } } }),
     prisma.negocio.findMany({ where: { dataInstalacao: { not: null } }, include: { contato: true } }),
   ]);
@@ -67,8 +76,10 @@ export async function getDashboardData() {
   const taxaConversao = totalFechadosMes > 0 ? qtdGanhoMes / totalFechadosMes : 0;
   const ticketMedioCentavos = qtdGanhoMes > 0 ? Math.round(valorGanhoMesCentavos / qtdGanhoMes) : 0;
 
+  // Parado = passou do prazo da etapa e está sem tarefa ativa (regra de 20/10).
+  const comTarefaAtiva = negociosComTarefaAtiva(negociosAbertosTodosFunis, tarefasAbertas);
   const negociosParados = negociosAbertosTodosFunis.filter((n) =>
-    negocioParadoAlemDoPrazo({ slaDias: n.etapa.slaDias, dataEntradaNaEtapa: n.dataEntradaNaEtapa }),
+    negocioParado({ slaDias: n.etapa.slaDias, dataEntradaNaEtapa: n.dataEntradaNaEtapa, temTarefaAtiva: comTarefaAtiva.has(n.id) }),
   );
 
   const tarefasAtrasadas = tarefasAbertas.filter((t) => tarefaAtrasada(t.prazo, t.status));
@@ -98,8 +109,11 @@ export async function getDashboardData() {
     })),
   ];
 
+  // Ganho e Perdido: só os do mês atual, como no quadro de Negócios (os meses
+  // anteriores ficam no Histórico) — pedido de 2026-10-20.
   const funilMini = (funilVenda?.etapas ?? []).map((etapa) => {
-    const negociosDaEtapa = negociosVenda.filter((n) => n.etapaId === etapa.id);
+    const fechada = etapa.tipo === "GANHO" || etapa.tipo === "PERDIDO";
+    const negociosDaEtapa = negociosVenda.filter((n) => n.etapaId === etapa.id && (!fechada || n.dataEntradaNaEtapa >= inicio));
     return {
       etapaId: etapa.id,
       nome: etapa.nome,
@@ -177,8 +191,7 @@ export async function getDashboardData() {
 }
 
 export async function atualizarMetaDoMes(valorCentavos: number): Promise<void> {
-  const mes = new Date().getMonth() + 1;
-  const ano = new Date().getFullYear();
+  const { mes, ano } = mesAnoBrasilia();
   await prisma.meta.upsert({
     where: { mes_ano: { mes, ano } },
     update: { valorAlvoCentavos: valorCentavos },

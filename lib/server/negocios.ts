@@ -3,6 +3,21 @@ import { prisma } from "@/lib/db";
 import { onNegocioEtapaChanged } from "@/lib/server/automations";
 import { validarDadosParaContrato } from "@/lib/server/contratos";
 import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
+import { negociosComTarefaAtiva } from "@/lib/utils/dates";
+
+/** Ids dos negócios com tarefa ativa — pra regra de negócio parado (negocioParado, lib/utils/dates.ts). */
+export async function idsComTarefaAtiva(negocios: { id: string; contatoId: string | null }[]): Promise<Set<string>> {
+  if (negocios.length === 0) return new Set();
+  const contatos = [...new Set(negocios.map((n) => n.contatoId).filter((id): id is string => Boolean(id)))];
+  const tarefas = await prisma.tarefa.findMany({
+    where: {
+      status: { not: "CONCLUIDA" },
+      OR: [{ negocioId: { in: negocios.map((n) => n.id) } }, { negocioId: null, contatoId: { in: contatos } }],
+    },
+    select: { negocioId: true, contatoId: true },
+  });
+  return negociosComTarefaAtiva(negocios, tarefas);
+}
 
 export function listFunisComEtapas() {
   return prisma.funil.findMany({
