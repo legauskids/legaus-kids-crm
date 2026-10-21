@@ -20,6 +20,7 @@ import {
 import type { ConteudoPostagem, FormatoArte, TextosPostagem } from "@/lib/utils/postagem-arte";
 import type { StatusPostagem } from "@prisma/client";
 import { AssistentePost, type MensagemAssistente } from "@/app/(app)/marketing/[id]/assistente-post";
+import { PublicacaoPost, type ConexaoPublicacaoVM, type PublicacaoVM } from "@/app/(app)/marketing/[id]/publicacao-post";
 
 type ArteVM = { id: string; ordem: number; formato: FormatoArte; versao: number };
 type PostVM = {
@@ -31,6 +32,7 @@ type PostVM = {
   temLegenda: boolean;
   textos: TextosPostagem;
   artes: ArteVM[];
+  publicacao: PublicacaoVM;
 };
 
 function urlArte(a: ArteVM, baixar = false) {
@@ -70,7 +72,7 @@ function Arte({ arte, rotulo, postId }: { arte: ArteVM; rotulo: string; postId: 
   );
 }
 
-export function PostDetalhe({ post, historico }: { post: PostVM; historico: MensagemAssistente[] }) {
+export function PostDetalhe({ post, historico, conexao }: { post: PostVM; historico: MensagemAssistente[]; conexao: ConexaoPublicacaoVM }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [acao, setAcao] = useState<string | null>(null);
@@ -84,7 +86,9 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
 
   const feed = post.artes.filter((a) => a.formato === "FEED");
   const stories = post.artes.filter((a) => a.formato === "STORY");
-  const aprovado = post.status === "APROVADO";
+  // Agendado ou com erro ao publicar continua aprovado; publicado (ou saindo agora) não volta pra revisão.
+  const aprovado = ["APROVADO", "AGENDADO", "ERRO"].includes(post.status);
+  const saiu = post.status === "PUBLICADO" || post.status === "PUBLICANDO";
 
   function executar(nome: string, fn: () => Promise<{ ok: true } | { ok: false; error: string }>, sucesso?: string, depois?: () => void) {
     setAcao(nome);
@@ -254,9 +258,25 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
         )}
       </section>
 
+      <PublicacaoPost
+        postId={post.id}
+        soStory={!post.temLegenda}
+        temArtes={post.artes.length > 0}
+        legendaPendente={legenda !== post.legenda}
+        pub={post.publicacao}
+        conexao={conexao}
+      />
+
       <section className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-4">
-        {aprovado ? (
-          <Button variant="outline" disabled={pending} onClick={() => executar("status", () => mudarStatusAction(post.id, "AGUARDANDO_APROVACAO"), "Voltou pra revisão.")}>
+        {saiu ? null : aprovado ? (
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() =>
+              (post.status !== "AGENDADO" || confirm("Voltar pra revisão desfaz o agendamento. Continuar?")) &&
+              executar("status", () => mudarStatusAction(post.id, "AGUARDANDO_APROVACAO"), "Voltou pra revisão.")
+            }
+          >
             <Undo2 className="size-4" />
             Voltar pra revisão
           </Button>
@@ -283,9 +303,6 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
           <Trash2 className="size-4" />
           Excluir
         </Button>
-        <p className="w-full text-xs text-muted-foreground sm:ml-auto sm:w-auto">
-          Publicar direto no Instagram chega na etapa 3. Por enquanto: baixe as artes e copie a legenda.
-        </p>
       </section>
     </div>
   );

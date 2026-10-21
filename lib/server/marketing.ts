@@ -144,7 +144,11 @@ export async function montarArtesDaPostagem(postagemId: string) {
     }),
     prisma.postagem.update({
       where: { id: postagemId },
-      data: { status: p.status === "RASCUNHO" ? "AGUARDANDO_APROVACAO" : p.status, headline: textos.titulo.filter(Boolean).join(" ") },
+      data: {
+        // Artes refeitas: o que foi aprovado (ou agendado) mudou — volta pra revisão.
+        ...(["RASCUNHO", "APROVADO", "AGENDADO"].includes(p.status) && { status: "AGUARDANDO_APROVACAO" as const, agendadaPara: null }),
+        headline: textos.titulo.filter(Boolean).join(" "),
+      },
     }),
   ]);
   return artes.length;
@@ -308,7 +312,10 @@ export async function trocarFotosPorSlide(postagemId: string, porSlide: FotosPor
     ...(story ? [prisma.postagemArte.update({ where: { id: story.id }, data: { ordem: slides.length + 1 } })] : []),
     prisma.postagem.update({
       where: { id: postagemId },
-      data: { textos: textos as unknown as Prisma.InputJsonValue, ...(p.status === "APROVADO" && { status: "AGUARDANDO_APROVACAO" as const }) },
+      data: {
+        textos: textos as unknown as Prisma.InputJsonValue,
+        ...((p.status === "APROVADO" || p.status === "AGENDADO") && { status: "AGUARDANDO_APROVACAO" as const, agendadaPara: null }),
+      },
     }),
   ]);
   return { slides: slides.length, foraDoCarrossel };
@@ -327,6 +334,8 @@ export function listarPostagens() {
       cliente: true,
       cidade: true,
       criadoEm: true,
+      agendadaPara: true,
+      publicadaEm: true,
       criadoPor: { select: { nome: true } },
       artes: { orderBy: { ordem: "asc" }, take: 1, select: { id: true, atualizadoEm: true } },
       _count: { select: { artes: true, imagens: true } },
@@ -349,6 +358,12 @@ export function buscarPostagem(id: string) {
       contexto: true,
       textos: true,
       criadoEm: true,
+      agendadaPara: true,
+      publicadaEm: true,
+      publicarNoInstagram: true,
+      publicarNoFacebook: true,
+      publicacao: true,
+      erroPublicacao: true,
       criadoPor: { select: { nome: true } },
       negocio: { select: { id: true, titulo: true } },
       imagens: { orderBy: { ordem: "asc" }, select: { id: true, largura: true, altura: true } },
@@ -401,10 +416,10 @@ export async function salvarDadosArte(arteId: string, enviada: Partial<DadosArte
     select: { dados: true, postagemId: true, postagem: { select: { status: true, imagens: { select: { id: true } } } } },
   });
   const dados = sanitizarDadosArte(arte.dados as unknown as DadosArte, enviada, arte.postagem.imagens.map((i) => i.id));
-  const voltaPraRevisao = arte.postagem.status === "APROVADO";
+  const voltaPraRevisao = arte.postagem.status === "APROVADO" || arte.postagem.status === "AGENDADO";
   await prisma.$transaction([
     prisma.postagemArte.update({ where: { id: arteId }, data: { dados: dados as unknown as Prisma.InputJsonValue, imagem: null, renderizadaEm: null } }),
-    ...(voltaPraRevisao ? [prisma.postagem.update({ where: { id: arte.postagemId }, data: { status: "AGUARDANDO_APROVACAO" } })] : []),
+    ...(voltaPraRevisao ? [prisma.postagem.update({ where: { id: arte.postagemId }, data: { status: "AGUARDANDO_APROVACAO", agendadaPara: null } })] : []),
   ]);
   return { postagemId: arte.postagemId, voltouPraRevisao: voltaPraRevisao };
 }
@@ -413,8 +428,13 @@ export async function atualizarLegendaPostagem(id: string, legenda: string): Pro
   await prisma.postagem.update({ where: { id }, data: { legenda } });
 }
 
-export async function atualizarStatusPostagem(id: string, status: StatusPostagem): Promise<void> {
-  await prisma.postagem.update({ where: { id }, data: { status } });
+/** Não mexe em post que está saindo agora; sair de AGENDADO desfaz o agendamento. Devolve se mudou. */
+export async function atualizarStatusPostagem(id: string, status: StatusPostagem): Promise<boolean> {
+  const r = await prisma.postagem.updateMany({
+    where: { id, status: { notIn: ["PUBLICANDO", "PUBLICADO"] } },
+    data: { status, ...(status === "AGENDADO" ? {} : { agendadaPara: null }) },
+  });
+  return r.count === 1;
 }
 
 export async function excluirPostagem(id: string): Promise<void> {

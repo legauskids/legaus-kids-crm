@@ -640,6 +640,11 @@ enum StatusPostagem {
   APROVADO
   PUBLICADO
   RECUSADO
+  // Publicação pela API da Meta (etapa 3, aprovada em 2026-10-21): esperando
+  // o horário, sendo publicada agora, ou falhou (com o motivo em erroPublicacao).
+  AGENDADO
+  PUBLICANDO
+  ERRO
 }
 
 model ModeloPostagem {
@@ -686,6 +691,15 @@ model Postagem {
   cidade       String?
   // Textos das artes: { titulo: [linha pequena, linha grande], selos, preco?, argumentos? }.
   textos       Json?
+  // Publicação pela Meta (etapa 3): quando, onde e o que já saiu. publicacao =
+  // { instagram: { feedId, feedLink, storyIds }, facebook: { postId, link } } —
+  // "tentar de novo" só publica o que ainda falta.
+  agendadaPara        DateTime?
+  publicadaEm         DateTime?
+  publicarNoInstagram Boolean   @default(true)
+  publicarNoFacebook  Boolean   @default(true)
+  publicacao          Json?
+  erroPublicacao      String?
   negocioId    String?
   negocio      Negocio?         @relation(fields: [negocioId], references: [id], onDelete: SetNull)
   criadoPorId  String
@@ -1297,4 +1311,23 @@ model AvisoBancario {
   atualizadoEm  DateTime              @updatedAt
 
   @@index([direcao, valorCentavos, dataHora])
+}
+
+// Conexão do CRM com a Página do Facebook e o Instagram da Legaus (etapa 3,
+// aprovada em 2026-10-21): uma linha só. O acesso é o da PÁGINA, que não vence
+// (tirado do acesso de longa duração de quem conectou), guardado criptografado
+// com uma chave derivada do SESSION_SECRET (lib/server/cripto.ts).
+model ConexaoMeta {
+  id               String    @id @default("principal")
+  paginaId         String
+  paginaNome       String
+  paginaToken      String
+  instagramId      String?
+  instagramUsuario String?
+  permissoes       String[]  @default([])
+  conectadoPorId   String?
+  conectadoEm      DateTime  @default(now())
+  verificadoEm     DateTime?
+  erro             String?
+  atualizadoEm     DateTime  @updatedAt
 }

@@ -4,18 +4,21 @@ import { ChevronLeft } from "lucide-react";
 import { requireModulo } from "@/lib/auth/guards";
 import { buscarPostagem, SO_STORY, textosDaPostagem } from "@/lib/server/marketing";
 import { historicoDoAssistente } from "@/lib/server/marketing-agente";
+import { resumoDaConexao } from "@/lib/server/meta";
+import { PERMISSAO_FACEBOOK, type PublicacaoMeta } from "@/lib/utils/meta-publicacao";
 import { Badge } from "@/components/ui/badge";
 import { ROTULO_CONTEUDO } from "@/lib/utils/postagem-arte";
 import { ROTULO_STATUS_POSTAGEM, VARIANTE_STATUS_POSTAGEM } from "@/app/(app)/marketing/rotulos";
 import { PostDetalhe } from "@/app/(app)/marketing/[id]/post-detalhe";
 
 // Refazer as artes, pedir outra legenda à IA e conversar com o assistente
-// (que olha as artes e ajusta) levam alguns segundos.
-export const maxDuration = 60;
+// (que olha as artes e ajusta) levam alguns segundos; "Publicar agora"
+// publica em segundo plano (after) e pode levar até uns minutos na Meta.
+export const maxDuration = 300;
 
 /** Muda quando a legenda, o status, os textos ou alguma arte mudam. */
-function versaoDoPost(p: { legenda: string | null; status: string; textos: unknown; artes: { atualizadoEm: Date }[] }): string {
-  const texto = `${p.legenda ?? ""}|${p.status}|${JSON.stringify(p.textos)}|${p.artes.map((a) => a.atualizadoEm.getTime()).join(".")}`;
+function versaoDoPost(p: { legenda: string | null; status: string; textos: unknown; agendadaPara: Date | null; artes: { atualizadoEm: Date }[] }): string {
+  const texto = `${p.legenda ?? ""}|${p.status}|${p.agendadaPara?.getTime() ?? ""}|${JSON.stringify(p.textos)}|${p.artes.map((a) => a.atualizadoEm.getTime()).join(".")}`;
   let hash = 0;
   for (let i = 0; i < texto.length; i++) hash = (hash * 31 + texto.charCodeAt(i)) | 0;
   return String(hash);
@@ -24,7 +27,7 @@ function versaoDoPost(p: { legenda: string | null; status: string; textos: unkno
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   await requireModulo("marketing");
   const { id } = await params;
-  const [p, historico] = await Promise.all([buscarPostagem(id), historicoDoAssistente(id)]);
+  const [p, historico, conexao] = await Promise.all([buscarPostagem(id), historicoDoAssistente(id), resumoDaConexao()]);
   if (!p) notFound();
 
   return (
@@ -61,7 +64,27 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
           temLegenda: !SO_STORY.includes(p.conteudo),
           textos: textosDaPostagem(p),
           artes: p.artes.map((a) => ({ id: a.id, ordem: a.ordem, formato: a.formato, versao: a.atualizadoEm.getTime() })),
+          publicacao: {
+            status: p.status,
+            agendadaPara: p.agendadaPara?.toISOString() ?? null,
+            publicadaEm: p.publicadaEm?.toISOString() ?? null,
+            publicarNoInstagram: p.publicarNoInstagram,
+            publicarNoFacebook: p.publicarNoFacebook,
+            publicacao: (p.publicacao as PublicacaoMeta | null) ?? null,
+            erroPublicacao: p.erroPublicacao,
+          },
         }}
+        conexao={
+          conexao
+            ? {
+                paginaNome: conexao.paginaNome,
+                instagramUsuario: conexao.instagramUsuario,
+                temInstagram: Boolean(conexao.instagramId),
+                podeFacebook: conexao.permissoes.includes(PERMISSAO_FACEBOOK),
+                erro: conexao.erro,
+              }
+            : null
+        }
       />
     </div>
   );

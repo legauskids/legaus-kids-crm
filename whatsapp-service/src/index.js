@@ -12,6 +12,7 @@ import { iniciarRelayDeSaida } from "./relay-saida.js";
 import { ligarRelayDeComandoAgente } from "./relay-comando-agente.js";
 import { aprenderDeContatos, registrarMapeamento } from "./lid-cache.js";
 import { avisar } from "./alertas.js";
+import { iniciarRelogioDoMarketing } from "./relogio-marketing.js";
 
 const ARQUIVO_QR = "ultimo-qr.png";
 const ARQUIVO_ESTADO = "estado-saude.json";
@@ -414,6 +415,9 @@ process.on("unhandledRejection", (erro) => {
   console.error("[whatsapp-service] Falha não tratada:", erro?.message ?? erro);
   agendarReconexao();
 });
+
+// Uma vez por processo, independente da sessão do WhatsApp (ver relogio-marketing.js).
+iniciarRelogioDoMarketing();
 
 conectar().catch((erro) => {
   console.error("[whatsapp-service] Erro fatal ao iniciar:", erro);

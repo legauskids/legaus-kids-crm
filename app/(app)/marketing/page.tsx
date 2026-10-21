@@ -58,6 +58,15 @@ export default async function MarketingPage() {
                       {ROTULO_CONTEUDO[p.conteudo]}
                       {p.cidade ? ` · ${p.cidade}` : ""} · {p.criadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                     </p>
+                    {(p.agendadaPara || p.publicadaEm) && (
+                      <p className="truncate text-xs font-medium text-primary">
+                        {p.status === "AGENDADO" && p.agendadaPara
+                          ? `Sai ${p.agendadaPara.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+                          : p.publicadaEm
+                            ? `Publicado ${p.publicadaEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+                            : null}
+                      </p>
+                    )}
                   </div>
                 </Link>
               );

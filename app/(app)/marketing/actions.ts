@@ -1,6 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { prisma } from "@/lib/db";
+import { resumoDaConexao } from "@/lib/server/meta";
+import { publicarPostagem, reivindicarParaPublicar } from "@/lib/server/meta-publicacao";
+import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { requireModulo } from "@/lib/auth/guards";
 import {
   adicionarFoto,
@@ -138,7 +143,7 @@ export async function salvarArteAction(arteId: string, dados: Partial<DadosArte>
 export async function mudarStatusAction(postagemId: string, status: StatusPostagem): Promise<Resultado> {
   await requireModulo("marketing");
   if (!["AGUARDANDO_APROVACAO", "APROVADO", "RECUSADO"].includes(status)) return { ok: false, error: "Status inválido." };
-  await atualizarStatusPostagem(postagemId, status);
+  if (!(await atualizarStatusPostagem(postagemId, status))) return { ok: false, error: "Esse post já foi publicado (ou está sendo publicado agora)." };
   revalidar(postagemId);
   return { ok: true };
 }
@@ -189,4 +194,58 @@ export async function trocarFotosPorSlideAction(postagemId: string, porSlide: 1 
   } catch (e) {
     return erro(e, "Não consegui refazer os slides.");
   }
+}
+
+type Destinos = { instagram: boolean; facebook: boolean };
+
+async function prepararPublicacao(postagemId: string, destinos: Destinos): Promise<string | null> {
+  if (!destinos.instagram && !destinos.facebook) return "Marque o Instagram, o Facebook ou os dois.";
+  if (!(await resumoDaConexao())) return "O CRM ainda não está conectado à Meta — conecte em Configurações → Instagram e Facebook.";
+  await prisma.postagem.update({ where: { id: postagemId }, data: { publicarNoInstagram: destinos.instagram, publicarNoFacebook: destinos.facebook } });
+  return null;
+}
+
+/** "Publicar agora": só post aprovado (ou agendado, ou que deu erro). Publica em segundo plano e avisa no Telegram. */
+export async function publicarAgoraAction(postagemId: string, destinos: Destinos): Promise<Resultado> {
+  await requireModulo("marketing");
+  const problema = await prepararPublicacao(postagemId, destinos);
+  if (problema) return { ok: false, error: problema };
+  if (!(await reivindicarParaPublicar(postagemId, ["APROVADO", "AGENDADO", "ERRO"]))) {
+    return { ok: false, error: "Só dá pra publicar post aprovado — aprove antes (ou ele já está sendo publicado)." };
+  }
+  after(async () => {
+    await publicarPostagem(postagemId).catch((e) => console.error(`[meta] post ${postagemId}: ${e instanceof Error ? e.message : e}`));
+    revalidar(postagemId);
+  });
+  revalidar(postagemId);
+  return { ok: true };
+}
+
+/** Agenda a publicação (o relógio do servidor da Legaus publica no horário). */
+export async function agendarPostagemAction(postagemId: string, quando: string, destinos: Destinos): Promise<Resultado<{ agendadaPara: string }>> {
+  await requireModulo("marketing");
+  let data: Date;
+  try {
+    data = dataHoraDoFormulario(quando);
+  } catch {
+    return { ok: false, error: "Escolha o dia e a hora." };
+  }
+  if (data.getTime() < Date.now() + 60_000) return { ok: false, error: "O horário tem que ser daqui a pelo menos 1 minuto." };
+  const problema = await prepararPublicacao(postagemId, destinos);
+  if (problema) return { ok: false, error: problema };
+  const r = await prisma.postagem.updateMany({
+    where: { id: postagemId, status: { in: ["APROVADO", "AGENDADO", "ERRO"] } },
+    data: { status: "AGENDADO", agendadaPara: data, erroPublicacao: null },
+  });
+  if (r.count !== 1) return { ok: false, error: "Só dá pra agendar post aprovado — aprove antes." };
+  revalidar(postagemId);
+  return { ok: true, agendadaPara: data.toISOString() };
+}
+
+export async function cancelarAgendamentoAction(postagemId: string): Promise<Resultado> {
+  await requireModulo("marketing");
+  const r = await prisma.postagem.updateMany({ where: { id: postagemId, status: "AGENDADO" }, data: { status: "APROVADO", agendadaPara: null } });
+  if (r.count !== 1) return { ok: false, error: "Esse post não está agendado (pode já ter sido publicado)." };
+  revalidar(postagemId);
+  return { ok: true };
 }

@@ -7,10 +7,13 @@ import { CompromissosTab } from "@/app/(app)/configuracoes/compromissos-tab";
 import { listCompromissosConfig } from "@/lib/server/compromissos-config";
 import { inicioDoPeriodo, versaoVigente } from "@/lib/utils/compromissos";
 import { prisma } from "@/lib/db";
+import { metaConfigurada, resumoDaConexao } from "@/lib/server/meta";
+import { MetaTab } from "@/app/(app)/configuracoes/meta-tab";
 
 const ABAS = [
   { id: "compromissos", label: "Compromissos", href: "/configuracoes?aba=compromissos" },
   { id: "categorias", label: "Categorias de tarefa", href: "/configuracoes?aba=categorias" },
+  { id: "meta", label: "Instagram e Facebook", href: "/configuracoes?aba=meta" },
 ] as const;
 
 export default async function ConfiguracoesPage({ searchParams }: { searchParams: Promise<{ aba?: string }> }) {
@@ -22,7 +25,7 @@ export default async function ConfiguracoesPage({ searchParams }: { searchParams
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="border-b bg-card px-6 py-3.5 shadow-xs">
         <h1 className="text-xl font-bold tracking-tight text-foreground">Configurações</h1>
-        <p className="text-sm text-muted-foreground">Categorias de tarefa e compromissos (metas de hábitos de gestão). Só administradores.</p>
+        <p className="text-sm text-muted-foreground">Categorias de tarefa, compromissos (metas de hábitos de gestão) e a conexão com o Instagram e o Facebook. Só administradores.</p>
         <div className="mt-3 flex flex-wrap gap-1">
           {ABAS.map((a) => (
             <Link
@@ -41,6 +44,7 @@ export default async function ConfiguracoesPage({ searchParams }: { searchParams
       <div className="flex-1 p-6">
         {abaAtual === "compromissos" && <CompromissosTabData />}
         {abaAtual === "categorias" && <CategoriasTabData />}
+        {abaAtual === "meta" && <MetaTabData />}
       </div>
     </div>
   );
@@ -104,6 +108,27 @@ async function CompromissosTabData() {
       categorias={categorias}
       usuarios={usuarios}
       diariosPorCategoria={compromissos.filter((c) => c.frequencia === "DIARIA" && c.regra === "CATEGORIA").map((c) => ({ id: c.id, nome: c.nome }))}
+    />
+  );
+}
+
+async function MetaTabData() {
+  const conexao = await resumoDaConexao();
+  return (
+    <MetaTab
+      appConfigurado={metaConfigurada()}
+      conexao={
+        conexao
+          ? {
+              paginaNome: conexao.paginaNome,
+              instagramUsuario: conexao.instagramUsuario,
+              permissoes: conexao.permissoes,
+              conectadoEm: conexao.conectadoEm.toISOString(),
+              verificadoEm: conexao.verificadoEm?.toISOString() ?? null,
+              erro: conexao.erro,
+            }
+          : null
+      }
     />
   );
 }
