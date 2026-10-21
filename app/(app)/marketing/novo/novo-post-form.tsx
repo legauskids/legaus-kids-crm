@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus, Loader2, X } from "lucide-react";
+import { ClipboardPaste, ImagePlus, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +53,7 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
   const [preco, setPreco] = useState("");
   const [argumentos, setArgumentos] = useState("");
   const [contexto, setContexto] = useState("");
+  const [local, setLocal] = useState("");
   const [fotos, setFotos] = useState<File[]>([]);
   const [progresso, setProgresso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -67,18 +68,58 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
     if (n?.cidade && !cidade) setCidade(n.cidade);
   }
 
-  function adicionar(lista: FileList | null) {
+  const adicionar = useCallback((lista: FileList | File[] | null) => {
     if (!lista) return;
-    const novas = [...fotos, ...Array.from(lista).filter((f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name))];
-    setFotos(novas.slice(0, MAX_FOTOS));
-    if (novas.length > MAX_FOTOS) setErro(`No máximo ${MAX_FOTOS} fotos por post — fiquei com as primeiras.`);
+    const imagens = Array.from(lista).filter((f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name));
+    if (imagens.length === 0) return;
+    setFotos((atuais) => {
+      const novas = [...atuais, ...imagens];
+      if (novas.length > MAX_FOTOS) setErro(`No máximo ${MAX_FOTOS} fotos por post — fiquei com as primeiras.`);
+      return novas.slice(0, MAX_FOTOS);
+    });
+  }, []);
+
+  // Colar com Ctrl+V em qualquer lugar da tela (foto copiada do WhatsApp, do
+  // navegador, um print) — pedido do Marcos de 2026-10-21: antes só dava pra
+  // escolher na galeria.
+  const ocupadoRef = useRef(false);
+  useEffect(() => {
+    function colar(e: ClipboardEvent) {
+      if (ocupadoRef.current) return;
+      const imagens = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+      if (imagens.length === 0) return;
+      e.preventDefault();
+      adicionar(imagens);
+    }
+    window.addEventListener("paste", colar);
+    return () => window.removeEventListener("paste", colar);
+  }, [adicionar]);
+
+  /** Botão "Colar" (celular não tem Ctrl+V): lê as imagens da área de transferência. */
+  async function colarDaAreaDeTransferencia() {
+    setErro(null);
+    try {
+      const itens = await navigator.clipboard.read();
+      const imagens: File[] = [];
+      for (const item of itens) {
+        const tipo = item.types.find((t) => t.startsWith("image/"));
+        if (tipo) {
+          const blob = await item.getType(tipo);
+          imagens.push(new File([blob], `colada-${Date.now()}-${imagens.length + 1}.${tipo.split("/")[1] || "png"}`, { type: tipo }));
+        }
+      }
+      if (imagens.length === 0) setErro("Não tem imagem copiada agora — copie a foto (segure em cima dela → Copiar) e toque em Colar de novo.");
+      else adicionar(imagens);
+    } catch {
+      setErro("Este navegador não deixou ler a área de transferência — no computador, use Ctrl+V nesta tela.");
+    }
   }
 
   async function criar() {
     setErro(null);
     if (fotos.length === 0) return setErro("Escolha as fotos da obra.");
     setProgresso("Criando o post...");
-    const r = await criarPostagemAction({ conteudo, produto, cliente, cidade, negocioId, preco, argumentos, contexto });
+    const r = await criarPostagemAction({ conteudo, produto, cliente, cidade, negocioId, preco, argumentos, contexto, local });
     if (!r.ok) {
       setProgresso(null);
       return setErro(r.error);
@@ -108,6 +149,10 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
   }
 
   const ocupado = progresso !== null;
+  useEffect(() => {
+    ocupadoRef.current = ocupado;
+  }, [ocupado]);
+  const [arrastando, setArrastando] = useState(false);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5 p-4 sm:p-6">
@@ -170,7 +215,11 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
           <Label htmlFor="cidade">Cidade (opcional)</Label>
           <Input id="cidade" value={cidade} onChange={(e) => setCidade(e.target.value)} disabled={ocupado} />
         </div>
-        <p className="text-xs text-muted-foreground sm:col-span-2">Cliente e cidade só aparecem na legenda se você preencher — a IA não inventa.</p>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="local">Local da obra (opcional — vira um selo com pino)</Label>
+          <Input id="local" value={local} onChange={(e) => setLocal(e.target.value)} placeholder="Ex.: Bob's Vacaria" disabled={ocupado} />
+        </div>
+        <p className="text-xs text-muted-foreground sm:col-span-2">Cliente, cidade e local só aparecem se você preencher — a IA não inventa.</p>
       </div>
 
       <div className="space-y-1.5">
@@ -178,8 +227,29 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
         <Textarea id="contexto" value={contexto} onChange={(e) => setContexto(e.target.value)} rows={2} placeholder="Ex.: torre com escorregador e tubo, balanço duplo" disabled={ocupado} />
       </div>
 
-      <div className="space-y-2">
-        <Label>Fotos ({fotos.length})</Label>
+      <div
+        className={`space-y-2 rounded-lg ${arrastando ? "outline-2 outline-offset-4 outline-dashed outline-primary" : ""}`}
+        onDragOver={(e) => {
+          if (ocupado || !e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          setArrastando(true);
+        }}
+        onDragLeave={() => setArrastando(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setArrastando(false);
+          if (!ocupado) adicionar(e.dataTransfer.files);
+        }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <Label>Fotos ({fotos.length})</Label>
+          {fotos.length < MAX_FOTOS && !ocupado && (
+            <Button type="button" variant="outline" size="sm" onClick={colarDaAreaDeTransferencia}>
+              <ClipboardPaste className="size-4" />
+              Colar
+            </Button>
+          )}
+        </div>
         <input ref={entrada} type="file" accept="image/*" multiple className="hidden" onChange={(e) => adicionar(e.target.files)} />
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {previas.map((url, i) => (
@@ -210,7 +280,10 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
             </button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">A primeira foto em pé vira a capa e o story; as deitadas vão de 2 em 2 nos slides.</p>
+        <p className="text-xs text-muted-foreground">
+          Escolha da galeria, cole (Ctrl+V ou o botão Colar) ou arraste as fotos pra cá. A primeira foto em pé vira a capa e o story; as deitadas vão de 2 em 2
+          nos slides.
+        </p>
       </div>
 
       {erro && <p className="text-sm text-destructive">{erro}</p>}

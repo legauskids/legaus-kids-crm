@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/marketing";
 import { comMaiuscula, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 import { conversarSobrePost } from "@/lib/server/marketing-agente";
+import { transcreverAudio } from "@/lib/server/transcricao";
 import type { StatusPostagem } from "@prisma/client";
 
 type Resultado<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -39,6 +40,7 @@ export type NovaPostagemInput = {
   preco?: string;
   argumentos?: string;
   contexto?: string;
+  local?: string;
 };
 
 export async function criarPostagemAction(input: NovaPostagemInput): Promise<Resultado<{ id: string }>> {
@@ -106,6 +108,7 @@ export async function salvarTextosAction(postagemId: string, textos: TextosPosta
     selos: textos.selos.map(comMaiuscula).filter(Boolean).slice(0, 2),
     preco: textos.preco?.trim() || null,
     argumentos: (textos.argumentos ?? []).map(comMaiuscula).filter(Boolean),
+    local: textos.local?.trim() || null,
   };
   if (!limpos.titulo[0] && !limpos.titulo[1]) return { ok: false, error: "O título não pode ficar vazio." };
   try {
@@ -157,5 +160,19 @@ export async function conversarAction(postagemId: string, texto: string): Promis
     return { ok: true, ...r };
   } catch (e) {
     return erro(e, "O assistente não conseguiu responder agora.");
+  }
+}
+
+/** Áudio gravado no painel do assistente (comando de voz, pedido de 2026-10-21): devolve o texto falado. */
+export async function transcreverAudioAction(formData: FormData): Promise<Resultado<{ texto: string }>> {
+  await requireModulo("marketing");
+  const audio = formData.get("audio");
+  if (!(audio instanceof File) || audio.size === 0) return { ok: false, error: "Não chegou áudio nenhum." };
+  if (audio.size > 4 * 1024 * 1024) return { ok: false, error: "Áudio longo demais — fale em até 1 minuto." };
+  try {
+    const texto = (await transcreverAudio(Buffer.from(await audio.arrayBuffer()), audio.type || "audio/webm")).trim();
+    return texto ? { ok: true, texto } : { ok: false, error: "Não entendi o áudio — fale de novo, mais perto do microfone." };
+  } catch (e) {
+    return erro(e, "Não consegui transcrever o áudio.");
   }
 }

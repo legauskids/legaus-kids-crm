@@ -4,7 +4,7 @@ import sharp from "sharp";
 import type { ConteudoPostagem, Prisma, StatusPostagem } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { renderizarArte, tratarFoto } from "@/lib/server/postagem-render";
-import { montarArtes, sanitizarDadosArte, textosPadrao, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import { montarArtes, sanitizarDadosArte, selosComLocal, textosPadrao, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 
 // Posts do Instagram (padrão da marca de 2026-10-16, reconstruído em
 // 2026-10-17 sobre o módulo Marketing antigo, que nunca foi usado). Fluxo:
@@ -27,6 +27,12 @@ export type DadosNovaPostagem = {
   preco?: string | null;
   argumentos?: string[];
   contexto?: string | null;
+  /** Selo de localização ("Bob's Vacaria") — entra no lugar do segundo selo. */
+  local?: string | null;
+  /** Linha pequena do título, se não for a padrão do tipo ("Entrega de"). */
+  tituloLinha1?: string | null;
+  /** Selos no lugar dos padrão do tipo. */
+  selos?: string[] | null;
   criadoPorId: string;
 };
 
@@ -38,10 +44,13 @@ function limpo(texto: string | null | undefined): string | null {
 export async function criarPostagem(d: DadosNovaPostagem) {
   const produto = limpo(d.produto);
   const padrao = textosPadrao(d.conteudo, produto ?? "", d.preco);
+  const selos = (d.selos ?? []).map((x) => x.trim()).filter(Boolean);
   const textos: TextosPostagem = {
-    ...padrao,
+    titulo: [limpo(d.tituloLinha1) ?? padrao.titulo[0], padrao.titulo[1]],
+    selos: selos.length ? selos.slice(0, 2) : padrao.selos,
     preco: limpo(d.preco),
     argumentos: (d.argumentos ?? []).map((a) => a.trim()).filter(Boolean),
+    local: limpo(d.local),
   };
   return prisma.postagem.create({
     data: {
@@ -62,9 +71,10 @@ export async function criarPostagem(d: DadosNovaPostagem) {
 }
 
 /** Uma foto por vez (o limite de envio da Vercel é ~4,5 MB por chamada). */
-export async function adicionarFoto(postagemId: string, original: Buffer, mime: string) {
+/** ordemFixa: quem manda várias fotos ao mesmo tempo diz a posição de cada uma (contar daria corrida). */
+export async function adicionarFoto(postagemId: string, original: Buffer, mime: string, ordemFixa?: number) {
   const tratada = await tratarFoto(original);
-  const ordem = await prisma.postagemImagem.count({ where: { postagemId } });
+  const ordem = ordemFixa ?? (await prisma.postagemImagem.count({ where: { postagemId } }));
   return prisma.postagemImagem.create({
     data: {
       postagemId,
@@ -87,6 +97,7 @@ function textosDa(p: { textos: Prisma.JsonValue; conteudo: ConteudoPostagem; pro
     selos: Array.isArray(t?.selos) ? t.selos.map(String) : padrao.selos,
     preco: t?.preco ?? null,
     argumentos: Array.isArray(t?.argumentos) ? t.argumentos.map(String) : [],
+    local: typeof t?.local === "string" && t.local.trim() ? t.local.trim() : null,
   };
 }
 
@@ -109,7 +120,7 @@ export async function montarArtesDaPostagem(postagemId: string) {
     conteudo: p.conteudo,
     fotos: p.imagens.map((i) => ({ id: i.id, largura: i.largura ?? 1, altura: i.altura ?? 1 })),
     titulo: textos.titulo,
-    selos: textos.selos,
+    selos: selosComLocal(textos.selos, textos.local),
     argumentos: textos.argumentos,
   });
   await prisma.$transaction([
@@ -198,6 +209,7 @@ export async function gerarLegendaDaPostagem(postagemId: string): Promise<string
     p.produto && `O que é: ${p.produto}`,
     p.cliente && `Cliente: ${p.cliente}`,
     p.cidade && `Cidade: ${p.cidade}`,
+    textos.local && `Local da obra (vai num selo da arte): ${textos.local}`,
     textos.preco && `Preço: ${textos.preco}`,
     textos.argumentos?.length && `Argumentos dos slides: ${textos.argumentos.join("; ")}`,
     p.contexto && `Observações de quem enviou: ${p.contexto}`,

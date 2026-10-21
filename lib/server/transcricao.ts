@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
+import { ehEcoDoVocabulario } from "@/lib/utils/transcricao-eco";
 
 export function transcricaoConfigurada(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
@@ -77,11 +78,19 @@ export async function transcreverAudio(audio: Buffer, mimetype: string): Promise
   const modelo = process.env.TRANSCRICAO_MODELO?.trim() || MODELO_PADRAO;
   const negocios = await nomesDeNegociosRecentes();
   const vocabulario = negocios.length ? `${VOCABULARIO} Negócios: ${negocios.join(", ")}.` : VOCABULARIO;
+  let texto: string;
   try {
-    return await transcreverCom(modelo, audio, mimetype, apiKey, vocabulario);
+    texto = await transcreverCom(modelo, audio, mimetype, apiKey, vocabulario);
   } catch (erro) {
     if (modelo === MODELO_RESERVA) throw erro;
     console.warn(`[transcricao] ${erro instanceof Error ? erro.message : erro} — tentando ${MODELO_RESERVA}.`);
-    return transcreverCom(MODELO_RESERVA, audio, mimetype, apiKey, vocabulario);
+    texto = await transcreverCom(MODELO_RESERVA, audio, mimetype, apiKey, vocabulario);
   }
+  // Áudio mudo: o modelo devolve o próprio vocabulário como se fosse a fala.
+  // Vazio = "não entendi" pra quem chamou (todos tratam).
+  if (ehEcoDoVocabulario(texto, vocabulario)) {
+    console.warn("[transcricao] o modelo devolveu o vocabulário (áudio sem fala) — tratado como vazio.");
+    return "";
+  }
+  return texto;
 }

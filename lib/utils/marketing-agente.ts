@@ -35,6 +35,8 @@ export type AjusteArte = {
   texto?: string;
   tam?: number;
   estilo?: "laranja" | "branco";
+  /** Selo: ícone de check (padrão) ou de localização (pino). */
+  icone?: "check" | "local";
   /** Logo: largura, centro horizontal e borda de baixo. */
   larg?: number;
   cx?: number;
@@ -175,20 +177,22 @@ export function aplicarAjuste(dados: DadosArte, formato: FormatoArte, a: AjusteA
   if (a.remover) return selo ? { ok: true, dados: trocar(dados, selo.id, null), feito: `tirou o selo ${i + 1}` } : { ok: false, erro: `Essa arte não tem o selo ${i + 1}.` };
   if (!selo) {
     if (selos.length >= 2) return { ok: false, erro: "Já tem 2 selos — no máximo 3 informações por imagem (título + 2 selos)." };
-    const novo = seloNovo(dados, formato, a.texto);
+    const novo = seloNovo(dados, formato, a.texto, a.icone);
     return {
       ok: true,
       dados: inserir(dados, posicao({ ...novo, tam: Math.round(num(a.tam) ?? novo.tam), estilo: a.estilo ?? novo.estilo }, a)),
       feito: `pôs o selo "${novo.t}"`,
     };
   }
-  const novo: ElementoSelo = posicao({ ...selo, t: a.texto !== undefined ? comMaiuscula(a.texto) : selo.t, tam: Math.round(num(a.tam) ?? selo.tam), estilo: a.estilo ?? selo.estilo }, a);
+  const icone = a.icone === undefined ? selo.icone : a.icone === "local" ? "local" : undefined;
+  const novo: ElementoSelo = posicao({ ...selo, t: a.texto !== undefined ? comMaiuscula(a.texto) : selo.t, tam: Math.round(num(a.tam) ?? selo.tam), estilo: a.estilo ?? selo.estilo, icone }, a);
   const mudancas = [
     novo.t !== selo.t && `texto "${selo.t}"→"${novo.t}"`,
     novo.x !== selo.x && `x ${selo.x}→${novo.x}`,
     novo.y !== selo.y && `y ${selo.y}→${novo.y}`,
     novo.tam !== selo.tam && `tam ${selo.tam}→${novo.tam}`,
     novo.estilo !== selo.estilo && `estilo ${selo.estilo}→${novo.estilo}`,
+    (novo.icone ?? "check") !== (selo.icone ?? "check") && `ícone ${selo.icone ?? "check"}→${novo.icone ?? "check"}`,
   ].filter(Boolean);
   return { ok: true, dados: trocar(dados, selo.id, novo), feito: `selo ${i + 1}: ${mudancas.join(", ") || "sem mudança"}` };
 }
@@ -208,7 +212,7 @@ export function resumoDasArtes(artes: { ordem: number; formato: FormatoArte; dad
       titulo: titulo ? { x: titulo.x, y: titulo.y, escala: titulo.escala, linhas: titulo.linhas.map((l) => `${l.t} (${l.tam}px, ${l.cor})`) } : null,
       selos: a.dados.elementos
         .filter((e): e is ElementoSelo => e.tipo === "selo")
-        .map((s, i) => ({ elemento: `selo${i + 1}`, texto: s.t, x: s.x, y: s.y, tam: s.tam, estilo: s.estilo })),
+        .map((s, i) => ({ elemento: `selo${i + 1}`, texto: s.t, x: s.x, y: s.y, tam: s.tam, estilo: s.estilo, icone: s.icone ?? "check" })),
       logo: logo ? { cx: logo.cx, base: logo.base, larg: logo.larg } : null,
     };
   });

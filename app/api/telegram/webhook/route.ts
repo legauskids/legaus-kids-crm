@@ -5,7 +5,9 @@ import { processarUpdateTelegram, segredoConfere, telegramConfigurado } from "@/
 // /api/telegram/configurar). Responde 200 na hora e processa depois: o
 // Telegram reenvia o update que não recebe 200 a tempo, e o agente pode
 // levar dezenas de segundos. Reenvio não duplica (ComandoAgente.externalId).
-export const maxDuration = 60;
+// 120 s: o álbum que vira post do Marketing (tratar fotos, legenda e desenhar
+// as artes) passava perto dos 60 s (2026-10-21).
+export const maxDuration = 120;
 
 export async function POST(request: Request) {
   if (!telegramConfigurado()) return new Response("Telegram não configurado", { status: 503 });

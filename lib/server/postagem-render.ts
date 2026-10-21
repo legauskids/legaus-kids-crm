@@ -10,7 +10,7 @@ import {
   RAIO_FOTO,
   contornoTitulo,
   coresSelo,
-  iconeCheckSvg,
+  iconeSeloSvg,
   linhasDoTitulo,
   medidasSelo,
   recorteDaFoto,
@@ -126,7 +126,7 @@ function noSelo(e: ElementoSelo): No {
       boxShadow: "0px 10px 12px rgba(0,0,0,0.27)",
     },
     children: [
-      no("img", "check", { src: dataUri(Buffer.from(iconeCheckSvg(m.raioIcone, texto, fundo)), "image/svg+xml"), width: m.raioIcone * 2, height: m.raioIcone * 2 }),
+      no("img", "check", { src: dataUri(Buffer.from(iconeSeloSvg(e.icone, m.raioIcone, texto, fundo)), "image/svg+xml"), width: m.raioIcone * 2, height: m.raioIcone * 2 }),
       no("div", "texto", { style: { display: "flex", fontFamily: "Nunito", fontSize: e.tam, color: texto, lineHeight: 1, whiteSpace: "nowrap" }, children: e.t }),
     ],
   });

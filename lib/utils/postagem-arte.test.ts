@@ -5,6 +5,8 @@ import {
   montarArtes,
   recorteDaFoto,
   sanitizarDadosArte,
+  selosComLocal,
+  iconeSeloSvg,
   tamanhoQueCabe,
   textosPadrao,
   type ElementoLogo,
@@ -134,5 +136,24 @@ describe("recorteDaFoto", () => {
     expect(r).toMatchObject({ w: 1000, h: 1000, rw: 2000, rh: 1000, left: 0, top: 0 });
     expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 1, fy: 0.5, zoom: 1 }).left).toBe(1000);
     expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 0.5, fy: 0.5, zoom: 2 })).toMatchObject({ rw: 4000, rh: 2000, left: 1500, top: 500 });
+  });
+});
+
+describe("selo de localização (pedido de 21/10 — \"Bob's Vacaria\")", () => {
+  it("o local entra no lugar do segundo selo, com ícone de pino", () => {
+    expect(selosComLocal(["Diversão Garantida", "Qualidade e Segurança"], "Bob's Vacaria")).toEqual(["Diversão Garantida", { t: "Bob's Vacaria", icone: "local" }]);
+    expect(selosComLocal([], "Bob's Vacaria")).toEqual([{ t: "Bob's Vacaria", icone: "local" }]);
+    expect(selosComLocal(["A", "B"], "  ")).toEqual(["A", "B"]);
+  });
+  it("a capa leva o selo de local com o ícone, e a validação do editor mantém o ícone", () => {
+    const e = elementosDaCapa("FEED", ["Entrega de", "Kidplay"], selosComLocal(["Diversão Garantida", "Qualidade e Segurança"], "Bob's Vacaria"));
+    const local = e.filter((x): x is ElementoSelo => x.tipo === "selo")[1];
+    expect(local).toMatchObject({ t: "Bob's Vacaria", estilo: "branco", icone: "local" });
+    const dados = { w: 1080, h: 1350, fotos: [], elementos: e };
+    expect(sanitizarDadosArte(dados, dados, []).elementos.find((x) => x.id === "selo2")).toMatchObject({ icone: "local" });
+  });
+  it("o ícone de pino é um SVG diferente do check", () => {
+    expect(iconeSeloSvg("local", 15, "#fff", "#000")).toContain("<path");
+    expect(iconeSeloSvg(undefined, 15, "#fff", "#000")).toContain("<polyline");
   });
 });

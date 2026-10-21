@@ -78,3 +78,13 @@ describe("título e selos andam juntos (teste de 20/10)", () => {
     expect(selos(d).map((s) => s.y)).toEqual(selos(capa).map((s) => s.y));
   });
 });
+
+describe("selo de localização pelo assistente (21/10)", () => {
+  it("cria o selo com pino e troca o ícone de um selo existente", () => {
+    const sem = ok(aplicarAjuste(capa, "FEED", { elemento: "selo2", remover: true }, fotos));
+    const d = ok(aplicarAjuste(sem, "FEED", { elemento: "selo2", texto: "Bob's Vacaria", icone: "local" }, fotos));
+    expect(selos(d)[1]).toMatchObject({ t: "Bob's Vacaria", icone: "local" });
+    const r = aplicarAjuste(capa, "FEED", { elemento: "selo1", icone: "local", texto: "Praça Central" }, fotos);
+    expect(r.ok && r.feito).toContain("ícone check→local");
+  });
+});

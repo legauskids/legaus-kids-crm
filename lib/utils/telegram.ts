@@ -26,6 +26,8 @@ type MensagemTelegram = {
   audio?: ArquivoBruto;
   photo?: ArquivoBruto[];
   document?: ArquivoBruto;
+  /** Fotos mandadas juntas (álbum) chegam em updates separados com o mesmo id. */
+  media_group_id?: string;
   reply_markup?: TecladoTelegram;
 };
 export type UpdateTelegram = {
@@ -55,6 +57,8 @@ export type UpdateLido = {
   /** Texto do botão tocado, pro registro da conversa. */
   botaoTexto: string | null;
   arquivo: ArquivoTelegram | null;
+  /** Álbum: as fotos chegam em updates separados com o mesmo id (só a que tem legenda traz o texto). */
+  grupoMidia: string | null;
 };
 
 function arquivo(a: ArquivoBruto | undefined, mimePadrao: string | null = null): ArquivoTelegram | null {
@@ -83,12 +87,16 @@ export function lerUpdate(bruto: unknown): UpdateLido | null {
       mensagemId: cb.message?.message_id ?? null,
       botaoTexto: botao?.text ?? null,
       arquivo: null,
+      grupoMidia: null,
     };
   }
 
   const m = update.message;
   if (!m?.from) return null;
-  const tipo: TipoMensagemTelegram = m.voice || m.audio ? "audio" : m.photo?.length ? "foto" : m.document ? "documento" : m.text ? "texto" : "outro";
+  // Foto mandada "como arquivo" (qualidade total) também é foto.
+  const imagemComoArquivo = Boolean(m.document?.mime_type?.startsWith("image/"));
+  const tipo: TipoMensagemTelegram =
+    m.voice || m.audio ? "audio" : m.photo?.length || imagemComoArquivo ? "foto" : m.document ? "documento" : m.text ? "texto" : "outro";
   return {
     updateId: update.update_id,
     fromId: String(m.from.id),
@@ -103,5 +111,6 @@ export function lerUpdate(bruto: unknown): UpdateLido | null {
     botaoTexto: null,
     // Foto vem em vários tamanhos, do menor pro maior: a última é a original.
     arquivo: arquivo(m.voice, "audio/ogg") ?? arquivo(m.audio, "audio/mpeg") ?? arquivo(m.photo?.at(-1), "image/jpeg") ?? arquivo(m.document),
+    grupoMidia: m.media_group_id ?? null,
   };
 }

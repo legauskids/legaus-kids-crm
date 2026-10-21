@@ -48,7 +48,7 @@ const SISTEMA = `Você é o Claude, assistente de marketing dentro do CRM da Leg
 
 Regras da marca (inegociáveis):
 1. A logo e as cores nunca mudam. A logo só muda de tamanho e de posição e nunca sai da arte.
-2. Só as cores da marca. Título: linha pequena verde-azulada, linha grande laranja. Selos: laranja (texto branco) ou branco (texto verde-azulado).
+2. Só as cores da marca. Título: linha pequena verde-azulada, linha grande laranja. Selos: laranja (texto branco) ou branco (texto verde-azulado), com ícone de check ou de localização (pino — use icone "local" pra local da obra, ex.: "Bob's Vacaria").
 3. Só fotos reais: você não cria nem edita imagem — só escolhe, enquadra e dá zoom nas fotos do próprio post.
 4. Todo título, frase e selo começa com letra maiúscula.
 5. No máximo 3 informações por imagem: o título e 2 selos.
@@ -109,6 +109,7 @@ const FERRAMENTAS: Anthropic.Tool[] = [
               texto: { type: "string", description: "Selo: texto" },
               tam: { type: "number", description: "Selo: tamanho da letra (18 a 48)" },
               estilo: { type: "string", enum: ["laranja", "branco"] },
+              icone: { type: "string", enum: ["check", "local"], description: "Selo: check (padrão) ou local (pino, pra localização da obra)" },
               larg: { type: "number", description: "Logo: largura (120 a 640)" },
               cx: { type: "number" },
               base: { type: "number" },
@@ -269,7 +270,13 @@ function resumoEntrada(entrada: unknown): string {
 }
 
 /** Uma mensagem do Marcos pro assistente do post: responde e, se for o caso, ajusta as artes. */
-export async function conversarSobrePost(input: { postagemId: string; usuarioId: string; texto: string }): Promise<{ resposta: string; mudou: boolean }> {
+export async function conversarSobrePost(input: {
+  postagemId: string;
+  usuarioId: string;
+  texto: string;
+  /** Chamado de dentro de outro agente (Telegram), que divide os mesmos 60 s: prazo menor. */
+  prazoMs?: number;
+}): Promise<{ resposta: string; mudou: boolean }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { resposta: "O assistente está sem a chave da IA configurada.", mudou: false };
   const inicio = Date.now();
@@ -310,7 +317,7 @@ export async function conversarSobrePost(input: { postagemId: string; usuarioId:
         resposta = texto || "Feito.";
         break;
       }
-      if (Date.now() - inicio > PRAZO_MS) {
+      if (Date.now() - inicio > (input.prazoMs ?? PRAZO_MS)) {
         resposta = `${texto ? `${texto}\n\n` : ""}Parei aqui pra não estourar o tempo — mande "continua" que eu sigo.`;
         break;
       }

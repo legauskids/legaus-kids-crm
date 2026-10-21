@@ -7,6 +7,7 @@ import { importarExtratoDaMensagem } from "@/lib/server/conciliacao-bancaria";
 import { tokenPush } from "@/lib/server/push-bancario";
 import { URL_BASE } from "@/lib/constants/app";
 import { transcreverAudio } from "@/lib/server/transcricao";
+import { guardarFotoDaConversa } from "@/lib/server/agente-fotos";
 import { agenteLigado, dividirMensagem, paraHtmlTelegram, type Botoes } from "@/lib/utils/agente-canal";
 import { gerarArquivoParaEnviar, type ArquivoGerado, type ArquivoParaEnviar } from "@/lib/server/agente-arquivos";
 import { idsAutorizados, lerUpdate, type UpdateLido } from "@/lib/utils/telegram";
@@ -195,6 +196,45 @@ function instrucoesDoPush(): string {
 }
 type Resposta = { mensagem: string; botoes?: Botoes; arquivos?: ArquivoParaEnviar[] };
 
+/** Quanto esperar as outras fotos de um álbum chegarem (vêm em updates separados, em ~1 s). */
+const ESPERA_ALBUM_MS = 3500;
+
+function esperar(ms: number): Promise<void> {
+  return new Promise((ok) => setTimeout(ok, ms));
+}
+
+/** Marca provisória do registro de uma foto de álbum (ver fotoDeAlbumSemLegenda). */
+function marcaDoAlbum(grupo: string, comLegenda: boolean): string {
+  return `[álbum ${grupo}${comLegenda ? " com legenda" : ""}]`;
+}
+
+/**
+ * Foto de álbum sem legenda: só guarda (fica na memória de fotos da conversa
+ * por 30 min) e não responde — o pedido vem na legenda de outra foto do
+ * álbum, ou numa mensagem depois. Se o álbum inteiro veio sem legenda, só a
+ * primeira foto responde, uma vez, perguntando o que fazer.
+ */
+async function fotoDeAlbumSemLegenda(u: UpdateLido, identificador: string, comandoId: string, bytes: Buffer): Promise<{ resposta: Resposta | null; gravado: boolean }> {
+  const grupo = u.grupoMidia as string;
+  await prisma.comandoAgente.update({ where: { id: comandoId }, data: { textoComando: `[foto do álbum ${grupo}]` } });
+  await guardarFotoDaConversa(comandoId, bytes);
+  await esperar(ESPERA_ALBUM_MS);
+  const doAlbum = await prisma.comandoAgente.findMany({
+    where: {
+      identificador,
+      criadoEm: { gte: new Date(Date.now() - 5 * 60 * 1000) },
+      OR: [{ textoComando: `[foto do álbum ${grupo}]` }, { textoComando: marcaDoAlbum(grupo, false) }, { textoComando: marcaDoAlbum(grupo, true) }],
+    },
+    select: { textoComando: true, externalId: true },
+  });
+  const temLegenda = doAlbum.some((c) => c.textoComando === marcaDoAlbum(grupo, true));
+  const primeiro = Math.min(...doAlbum.map((c) => Number(c.externalId?.replace("tg:", "") ?? Infinity)));
+  if (temLegenda || primeiro !== u.updateId) return { resposta: null, gravado: true };
+  const resposta = `📷 Recebi ${doAlbum.length} foto${doAlbum.length > 1 ? "s" : ""}. O que eu faço com ${doAlbum.length > 1 ? "elas" : "ela"}? Ex.: *prepara o post de entrega do Kidplay* — eu monto as artes no Marketing.`;
+  await prisma.comandoAgente.update({ where: { id: comandoId }, data: { resposta } });
+  return { resposta: { mensagem: resposta }, gravado: true };
+}
+
 /**
  * O que fazer com o update de quem está autorizado. `gravado` = o núcleo
  * já registrou o resultado no ComandoAgente do update (comandoId).
@@ -237,6 +277,11 @@ async function responderUpdate(u: UpdateLido, usuario: Usuario, identificador: s
   }
 
   if (u.tipo === "foto" && bytes) {
+    if (u.grupoMidia && !texto) return fotoDeAlbumSemLegenda(u, identificador, comandoId, bytes);
+    // Álbum: as outras fotos chegam em updates separados, quase juntas — espera
+    // elas ficarem guardadas antes de tratar o pedido da legenda, pra ele ver
+    // todas (21/10: o álbum do Kidplay virou 4 respostas, uma por foto).
+    if (u.grupoMidia) await esperar(ESPERA_ALBUM_MS);
     const r = await processarComandoAgente({
       ...base,
       texto: texto || "Segue a imagem anexada.",
@@ -285,8 +330,9 @@ export async function processarUpdateTelegram(bruto: unknown): Promise<void> {
         identificador,
         usuarioId: usuario?.id,
         // Provisório até o núcleo gravar o texto de verdade (não conta como
-        // repetição na proteção contra loop).
-        textoComando: `[recebendo ${u.tipo}]`,
+        // repetição na proteção contra loop). Foto de álbum leva a marca do
+        // álbum (ver fotoDeAlbumSemLegenda).
+        textoComando: u.grupoMidia && u.tipo === "foto" ? marcaDoAlbum(u.grupoMidia, Boolean(u.texto?.trim())) : `[recebendo ${u.tipo}]`,
         externalId: `tg:${u.updateId}`,
       },
     });

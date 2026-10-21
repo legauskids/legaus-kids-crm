@@ -46,6 +46,9 @@ import {
   buscarContratosSimilarIds,
 } from "@/lib/server/busca-similar";
 import { buscarConversasAtendimento, conversaDoAtendimento } from "@/lib/server/busca-conversas";
+import { adicionarFoto, criarPostagem, gerarLegendaDaPostagem, imagemDaArte, montarArtesDaPostagem } from "@/lib/server/marketing";
+import { conversarSobrePost } from "@/lib/server/marketing-agente";
+import type { ConteudoPostagem } from "@/lib/utils/postagem-arte";
 import { calcularCotacao, type MaoDeObraItem } from "@/lib/utils/cotacao-precificacao";
 import { buscarCotacaoPorId } from "@/lib/server/cotacoes";
 import { listarContratos, criarContratoDeOrcamentoAntigo } from "@/lib/server/contratos";
@@ -277,6 +280,16 @@ function telefoneDeIdentificador(identificador: string): string | undefined {
 /** Conversa pelo Telegram: "pra mim"/"aqui" é o próprio chat, não um WhatsApp. */
 function conversaNoTelegram(ctx: CtxFerramenta): boolean {
   return Boolean(ctx.identificador?.startsWith("tg:"));
+}
+
+/**
+ * Artes de um post pra mostrar no chat: a capa, até 2 slides e o story —
+ * desenhar cada uma leva uns segundos e o Telegram corta em 60 s.
+ */
+function previaDasArtes<T extends { formato: string }>(artes: T[]): T[] {
+  const feed = artes.filter((a) => a.formato !== "STORY").slice(0, 3);
+  const story = artes.filter((a) => a.formato === "STORY").slice(0, 1);
+  return [...feed, ...story];
 }
 
 /** Entrega o arquivo pra quem pediu, no chat do Telegram (ver ArquivoParaEnviar). */
@@ -2105,6 +2118,134 @@ const FERRAMENTAS: Ferramenta[] = [
     },
   },
   {
+    // Fotos da obra mandadas pelo Telegram/WhatsApp viram post do Marketing
+    // pronto pra aprovar (pedido do Marcos de 2026-10-21: o álbum do Kidplay
+    // do Bob's Vacaria não tinha pra onde ir).
+    name: "criar_post_marketing",
+    description:
+      "Cria um post do Instagram/Facebook no módulo Marketing com as fotos que o Marcos mandou nesta conversa (a desta mensagem e as dos últimos 15 minutos, inclusive álbum): trata as fotos (luz e cor), monta as artes no padrão da marca (carrossel e/ou story conforme o tipo), escreve a legenda e deixa o post aguardando aprovação no CRM. No Telegram as artes chegam aqui no chat. Use quando pedirem pra preparar fotos pra postagem/Instagram/Facebook, criar post ou mandar pro marketing. Produto, cliente, cidade e local só se o Marcos disse.",
+    input_schema: {
+      type: "object",
+      properties: {
+        conteudo: {
+          type: "string",
+          enum: ["ENTREGA", "INSTALACAO", "TBT", "PRODUTO", "BENEFICIOS"],
+          description: "ENTREGA = obra pronta (padrão), INSTALACAO = em andamento (story), TBT (story), PRODUTO = oferta com preço, BENEFICIOS",
+        },
+        produto: { type: "string", description: "O que é — linha grande do título. \"Entrega de Kidplay\" → \"Kidplay\"" },
+        tituloLinha1: { type: "string", description: "Linha pequena do título, só se não for a padrão do tipo (entrega: \"Entrega de\")" },
+        local: { type: "string", description: "Local da obra pro selo de localização com pino (ex.: \"Bob's Vacaria\")" },
+        selos: { type: "array", items: { type: "string" }, description: "Até 2 selos no lugar dos padrão (com local, só 1 + o local)" },
+        cliente: { type: "string" },
+        cidade: { type: "string" },
+        preco: { type: "string", description: "Produto/oferta: preço pro selo (ex.: \"R$ 18.893,04\")" },
+        argumentos: { type: "array", items: { type: "string" }, description: "Benefícios: um argumento por slide" },
+        observacoes: { type: "string", description: "Fatos pra legenda (itens do brinquedo, etc.)" },
+        negocio: { type: "string", description: "Nome do negócio/cliente pra ligar o post (opcional)" },
+      },
+    },
+    async executar(args, ctx) {
+      const a = args as {
+        conteudo?: ConteudoPostagem;
+        produto?: string;
+        tituloLinha1?: string;
+        local?: string;
+        selos?: string[];
+        cliente?: string;
+        cidade?: string;
+        preco?: string;
+        argumentos?: string[];
+        observacoes?: string;
+        negocio?: string;
+      };
+      // A foto desta mensagem primeiro (no álbum é a que traz a legenda), depois
+      // as guardadas da conversa nos últimos 15 min, da mais antiga pra mais nova.
+      const recentes = ctx.identificador
+        ? (await fotosRecentesDaConversa(ctx.identificador, 19)).filter((f) => Date.now() - f.recebidaEm.getTime() < 15 * 60 * 1000).reverse()
+        : [];
+      const fotos = [...(ctx.anexoImagem ? [ctx.anexoImagem.bytes] : []), ...recentes.map((f) => f.bytes)].slice(0, 19);
+      if (fotos.length === 0) return "Não achei fotos nesta conversa nos últimos 15 minutos — mande as fotos (pode ser em álbum) junto com o pedido.";
+
+      let negocioId: string | null = null;
+      let avisoNegocio: string | null = null;
+      if (a.negocio?.trim()) {
+        const ids = await buscarNegociosSimilarIds(a.negocio.trim(), 3);
+        if (ids.length === 1) negocioId = ids[0];
+        else avisoNegocio = ids.length ? "Achei mais de um negócio com esse nome — não liguei o post a nenhum." : "Não achei o negócio — o post ficou sem ligação.";
+      }
+
+      const post = await criarPostagem({
+        conteudo: a.conteudo ?? "ENTREGA",
+        produto: a.produto,
+        tituloLinha1: a.tituloLinha1,
+        local: a.local,
+        selos: a.selos,
+        cliente: a.cliente,
+        cidade: a.cidade,
+        preco: a.preco,
+        argumentos: a.argumentos,
+        contexto: a.observacoes,
+        negocioId,
+        criadoPorId: ctx.usuarioId,
+      });
+      await Promise.all(fotos.map((bytes, i) => adicionarFoto(post.id, bytes, "image/jpeg", i)));
+      await montarArtesDaPostagem(post.id);
+      const artes = await prisma.postagemArte.findMany({ where: { postagemId: post.id }, orderBy: { ordem: "asc" }, select: { id: true, formato: true } });
+      const previa = conversaNoTelegram(ctx) ? previaDasArtes(artes) : [];
+      // Desenha as artes do chat enquanto a IA escreve a legenda (uma é CPU,
+      // a outra é rede): o álbum de 4 fotos levava 54 s dos 60 do Telegram.
+      const [legenda] = await Promise.all([
+        gerarLegendaDaPostagem(post.id),
+        (async () => {
+          for (const arte of previa) await imagemDaArte(arte.id);
+        })(),
+      ]);
+      // As fotos viraram post: saem da memória da conversa (não vão parar num produto depois).
+      if (ctx.anexoImagem) ctx.imagemConsumida = true;
+      for (const f of recentes) await esquecerFotoDaConversa(f.comandoId);
+      for (const arte of previa) entregarNoChat(ctx, { tipo: "arte-post", arteId: arte.id });
+      return {
+        post: post.numero,
+        link: `${URL_BASE}/marketing/${post.id}`,
+        fotos_usadas: fotos.length,
+        artes: artes.map((x, i) => `${i + 1}: ${x.formato === "STORY" ? "story" : i === 0 ? "capa" : "slide"}`).join(", "),
+        artes_enviadas_no_chat: conversaNoTelegram(ctx) ? previaDasArtes(artes).length : 0,
+        legenda: legenda ?? "(a IA não escreveu a legenda agora — dá pra gerar no CRM)",
+        status: "aguardando aprovação no CRM (o Marcos aprova no botão Aprovar)",
+        ...(avisoNegocio && { aviso: avisoNegocio }),
+        qualidade:
+          "As fotos passaram pelo tratamento leve (luz e cor). Foto mandada como foto no Telegram chega comprimida; pra qualidade máxima, mande como arquivo. Não existe edição/geração de imagem por IA (regra da marca).",
+      };
+    },
+  },
+  {
+    name: "ajustar_post_marketing",
+    description:
+      "Repassa um pedido de ajuste ao assistente do Marketing para um post (o último criado por quem pediu, ou o número informado): título, selos (inclusive o de localização), logo, enquadramento, trocar foto, legenda. Ex.: \"aumenta a logo\", \"troca a capa pela foto 3\", \"legenda mais curta\". No Telegram, as artes que mudarem chegam aqui de novo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pedido: { type: "string", description: "O pedido do Marcos, com as palavras dele" },
+        numero: { type: "integer", description: "Número do post (#), se ele disse" },
+      },
+      required: ["pedido"],
+    },
+    async executar(args, ctx) {
+      const { pedido, numero } = args as { pedido: string; numero?: number };
+      const post = numero
+        ? await prisma.postagem.findUnique({ where: { numero }, select: { id: true, numero: true } })
+        : await prisma.postagem.findFirst({ where: { criadoPorId: ctx.usuarioId }, orderBy: { criadoEm: "desc" }, select: { id: true, numero: true } });
+      if (!post) return numero ? `Não achei o post #${numero}.` : "Não achei nenhum post seu no Marketing.";
+      const antes = new Map((await prisma.postagemArte.findMany({ where: { postagemId: post.id }, select: { id: true, atualizadoEm: true } })).map((x) => [x.id, x.atualizadoEm.getTime()]));
+      // Prazo menor: este agente e o do Marketing dividem os 60 s do Telegram.
+      const r = await conversarSobrePost({ postagemId: post.id, usuarioId: ctx.usuarioId, texto: pedido, prazoMs: 25_000 });
+      const depois = await prisma.postagemArte.findMany({ where: { postagemId: post.id }, orderBy: { ordem: "asc" }, select: { id: true, formato: true, atualizadoEm: true } });
+      const mudaram = depois.filter((x) => antes.get(x.id) !== x.atualizadoEm.getTime());
+      if (conversaNoTelegram(ctx)) for (const arte of previaDasArtes(mudaram)) entregarNoChat(ctx, { tipo: "arte-post", arteId: arte.id });
+      return { post: post.numero, link: `${URL_BASE}/marketing/${post.id}`, resposta_do_marketing: r.resposta, artes_que_mudaram: mudaram.length };
+    },
+  },
+  {
     name: "buscar_conversas",
     description:
       "Procura nas conversas do Atendimento (o WhatsApp dos clientes), inclusive de quem ainda não foi salvo (o nome é o próprio telefone). Filtros, combináveis: final do telefone (últimos 4+ dígitos) ou número inteiro; trecho do nome ou de qualquer mensagem (ex.: 'escorregador', 'São Francisco'); período (conversas com mensagem hoje/ontem/semana/mês). Sem filtro nenhum = conversas com mensagem hoje. Devolve contatoId e conversaId, nome, se o nome já está salvo, telefone, as últimas mensagens e os negócios/tarefas abertos do contato. Use quando falarem de alguém que está sendo atendido ('o contato com final 6980', 'quem chamou hoje', 'a cliente que pediu o playground de 2 torres', 'busca no atendimento/nas conversas') — depois use os IDs em atualizar_cliente (salvar o nome), criar_negocio e criar_tarefa (passando conversaId).",
@@ -2354,6 +2495,7 @@ Regras:
 - Reuniões de gestão (semanal/mensal, painel Reuniões): "prepara a pauta da reunião (de amanhã)" → preparar_pauta_reuniao; responda com a pauta numerada, a pergunta de cada item e o link, pedindo as opiniões. Quando responderem opinando sobre itens ("item 2: ...", "no 3 acho que..."), registre cada uma com opinar_pauta_reuniao.
 - Se o Marcos disser que um cliente/contato "está duplicado" ou "é o mesmo", use mesclar_clientes (nunca crie/edite tentando contornar) — ela junta o histórico dos dois (conversas, negócios, orçamentos, tarefas, notas fiscais) no que for mantido e apaga o duplicado. Pra apagar um cadastro de cliente sem nada vinculado, use excluir_cliente. Antes de dizer que não consegue fazer alguma ação de cliente/contato (corrigir, editar, apagar, mesclar), confira se não existe ferramenta pra isso — você tem criar_cliente, atualizar_cliente, excluir_cliente e mesclar_clientes.
 - Quando vier um PDF anexado (cartão CNPJ, orçamento de terceiro, cotação escaneada etc.), leia o conteúdo de verdade e use os dados extraídos pra executar o que o Marcos pediu — ex: cartão CNPJ + "cadastra esse cliente" = extrair razão social, CNPJ, endereço e chamar criar_cliente/atualizar_cliente com esses dados, sem pedir pro Marcos digitar de novo o que já está no PDF. Se algum dado importante não estiver legível/presente no PDF, pergunte só esse dado específico.
+- Fotos pra postagem (Instagram, Facebook, "prepara essas fotos pra postar", "cria o post da entrega", "manda pro marketing"): use criar_post_marketing — ela pega a foto desta mensagem e as da conversa dos últimos 15 min (inclusive o álbum inteiro) e deixa o post pronto no Marketing, aguardando aprovação. "Entrega de X" → conteudo ENTREGA e produto X; "selo de localização (Y)"/"local Y" → local Y. Não é cadastro de produto: foto de obra com pedido de postagem nunca vai pra criar_produto. Não prometa editar imagem nem aumentar resolução: o tratamento é só luz e cor (regra da marca: só fotos reais). Na resposta, diga o número do post, o que foi montado, mostre a legenda e lembre que a aprovação é no CRM (as artes já foram aqui no chat). Pedidos de ajuste depois ("aumenta a logo", "troca a capa", "legenda mais curta") → ajustar_post_marketing.
 - Se vier um ORÇAMENTO ANTIGO anexado (PDF ou foto) pedindo pra "virar contrato"/"transformar em contrato" — um orçamento de venda que nunca entrou no CRM —, use gerar_contrato_de_orcamento_antigo. Ela cria o negócio E o contrato de uma vez. Pergunte qual empresa emitiu (Legaus Kids ou Idezza) se não estiver claro no pedido ou no documento.
 - Contrato pode ser emitido em nome da Legaus Kids OU da Idezza — duas pessoas jurídicas diferentes que a Legaus Kids usa pra vender. Sempre que for gerar/mencionar um contrato novo (inclusive gerar_contrato_de_orcamento_antigo), confirme qual das duas antes, não assuma Legaus por padrão sem perguntar quando não estiver óbvio pelo contexto.
 - Quando vier uma imagem anexada (foto de produto, print, etc.), você consegue ver ela de verdade. Se o pedido for pra salvar/anexar/trocar a foto de um produto do catálogo ("anexa essa foto no produto X", "troca a imagem desse produto"), use anexar_foto_produto. A foto NÃO precisa vir na mesma mensagem: a ferramenta usa a foto desta mensagem ou, se não tiver, a mais recente da conversa (até 30 min) — então nunca diga que a foto "veio em outra mensagem" nem peça pra reenviar sem antes chamar a ferramenta; só peça a foto se a ferramenta disser que não tem nenhuma. Se ela responder precisaEscolherFoto, pergunte qual das fotos (a última ou a penúltima, com o horário). Trocar a foto de um produto que já tem foto pede confirmação sozinho; pra voltar a foto anterior ("desfaz", "essa foto era de outro produto") use desfazer_foto_produto.
@@ -2448,6 +2590,8 @@ const MODULO_DA_FERRAMENTA: Partial<Record<string, ModuloKey>> = {
   sugerir_resposta_cliente: "atendimento",
   resumo_leads: "atendimento",
   buscar_conversas: "atendimento",
+  criar_post_marketing: "marketing",
+  ajustar_post_marketing: "marketing",
   buscar_funis_etapas: "negocios",
   buscar_negocios: "negocios",
   criar_negocio: "negocios",

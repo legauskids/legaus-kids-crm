@@ -79,6 +79,7 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
   const [selo1, setSelo1] = useState(post.textos.selos[0] ?? "");
   const [selo2, setSelo2] = useState(post.textos.selos[1] ?? "");
   const [argumentos, setArgumentos] = useState((post.textos.argumentos ?? []).join("\n"));
+  const [local, setLocal] = useState(post.textos.local ?? "");
 
   const feed = post.artes.filter((a) => a.formato === "FEED");
   const stories = post.artes.filter((a) => a.formato === "STORY");
@@ -104,7 +105,8 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
     titulo2 !== post.textos.titulo[1] ||
     selo1 !== (post.textos.selos[0] ?? "") ||
     selo2 !== (post.textos.selos[1] ?? "") ||
-    argumentos !== (post.textos.argumentos ?? []).join("\n");
+    argumentos !== (post.textos.argumentos ?? []).join("\n") ||
+    local !== (post.textos.local ?? "");
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -144,7 +146,11 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="s2">Selo branco</Label>
-                  <Input id="s2" value={selo2} onChange={(e) => setSelo2(e.target.value)} placeholder="Sem selo" />
+                  <Input id="s2" value={selo2} onChange={(e) => setSelo2(e.target.value)} placeholder="Sem selo" disabled={Boolean(local.trim())} />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="local">Local da obra (selo com pino, no lugar do selo branco)</Label>
+                  <Input id="local" value={local} onChange={(e) => setLocal(e.target.value)} placeholder="Ex.: Bob's Vacaria" />
                 </div>
               </>
             )}
@@ -172,6 +178,7 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
                     selos: [selo1, selo2],
                     preco: post.textos.preco,
                     argumentos: argumentos.split("\n"),
+                    local,
                   }),
                 "Artes refeitas.",
               )

@@ -38,7 +38,11 @@ export const ROTULO_CONTEUDO: Record<ConteudoPostagem, string> = {
 export type LinhaTitulo = { t: string; tam: number; cor: CorMarca };
 
 export type ElementoTitulo = { id: string; tipo: "titulo"; x: number; y: number; escala: number; linhas: LinhaTitulo[] };
-export type ElementoSelo = { id: string; tipo: "selo"; x: number; y: number; t: string; tam: number; estilo: "laranja" | "branco" };
+export type IconeSelo = "check" | "local";
+/** Selo: ícone de check (padrão) ou de localização (pino — "Bob's Vacaria", pedido de 2026-10-21). */
+export type ElementoSelo = { id: string; tipo: "selo"; x: number; y: number; t: string; tam: number; estilo: "laranja" | "branco"; icone?: IconeSelo };
+/** Selo pedido na montagem: só o texto (check) ou texto + ícone. */
+export type SeloPedido = string | { t: string; icone?: IconeSelo };
 /** Logo: centro horizontal (cx), borda de baixo (base) e largura. Só tamanho e posição mudam. */
 export type ElementoLogo = { id: string; tipo: "logo"; cx: number; base: number; larg: number };
 export type ElementoArte = ElementoTitulo | ElementoSelo | ElementoLogo;
@@ -105,6 +109,18 @@ export function iconeCheckSvg(raio: number, fundo: string, traco: string): strin
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}"><circle cx="${raio}" cy="${raio}" r="${raio}" fill="${fundo}"/><polyline points="${raio * 0.55},${raio * 1.02} ${raio * 0.88},${raio * 1.35} ${raio * 1.48},${raio * 0.68}" fill="none" stroke="${traco}" stroke-width="${Math.max(4, Math.round(raio * 0.28))}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
+/** Ícone de localização (pino) do selo de local, no mesmo círculo do check. */
+export function iconePinoSvg(raio: number, fundo: string, traco: string): string {
+  const d = raio * 2;
+  const r = (k: number) => +(raio * k).toFixed(2);
+  const pino = `M ${r(1)} ${r(1.56)} C ${r(0.74)} ${r(1.24)} ${r(0.6)} ${r(1.04)} ${r(0.6)} ${r(0.82)} A ${r(0.4)} ${r(0.4)} 0 1 1 ${r(1.4)} ${r(0.82)} C ${r(1.4)} ${r(1.04)} ${r(1.26)} ${r(1.24)} ${r(1)} ${r(1.56)} Z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}"><circle cx="${raio}" cy="${raio}" r="${raio}" fill="${fundo}"/><path d="${pino}" fill="${traco}"/><circle cx="${raio}" cy="${r(0.82)}" r="${r(0.15)}" fill="${fundo}"/></svg>`;
+}
+
+export function iconeSeloSvg(icone: IconeSelo | undefined, raio: number, fundo: string, traco: string): string {
+  return icone === "local" ? iconePinoSvg(raio, fundo, traco) : iconeCheckSvg(raio, fundo, traco);
+}
+
 /** Cores do selo: laranja com texto branco, ou branco com texto verde-azulado. */
 export function coresSelo(estilo: ElementoSelo["estilo"]): { fundo: string; texto: string } {
   return estilo === "laranja" ? { fundo: CORES_MARCA.laranja, texto: CORES_MARCA.branco } : { fundo: CORES_MARCA.branco, texto: CORES_MARCA.teal };
@@ -152,7 +168,7 @@ export function tamanhoQueCabe(texto: string, tam: number, largura = LARGURA_TIT
 }
 
 /** Título (2 linhas: pequena verde-azulada, grande laranja) + até 2 selos + logo, nas posições do padrão. */
-export function elementosDaCapa(formato: FormatoArte, titulo: [string, string], selos: string[]): ElementoArte[] {
+export function elementosDaCapa(formato: FormatoArte, titulo: [string, string], selos: SeloPedido[]): ElementoArte[] {
   const m = MEDIDAS[formato];
   const linhas = (
     [
@@ -167,11 +183,11 @@ export function elementosDaCapa(formato: FormatoArte, titulo: [string, string], 
     y += alturaTitulo(linhas) + m.gapSelo;
   }
   selos
-    .map(comMaiuscula)
-    .filter(Boolean)
+    .map((s) => (typeof s === "string" ? { t: comMaiuscula(s), icone: undefined } : { t: comMaiuscula(s.t), icone: s.icone }))
+    .filter((s) => s.t)
     .slice(0, 2)
-    .forEach((t, i) => {
-      elementos.push({ id: `selo${i + 1}`, tipo: "selo", x: X_TEXTOS, y, t, tam: m.tamSelo, estilo: i === 0 ? "laranja" : "branco" });
+    .forEach(({ t, icone }, i) => {
+      elementos.push({ id: `selo${i + 1}`, tipo: "selo", x: X_TEXTOS, y, t, tam: m.tamSelo, estilo: i === 0 ? "laranja" : "branco", ...(icone === "local" && { icone }) });
       y += alturaSelo(m.tamSelo) + 12;
     });
   elementos.push({ id: "logo", tipo: "logo", cx: 540, base: m.logoBase, larg: m.logoLarg });
@@ -201,7 +217,7 @@ function slide(fotos: FotoDoPost[]): DadosArte {
   };
 }
 
-function capa(formato: FormatoArte, foto: FotoDoPost, titulo: [string, string], selos: string[]): DadosArte {
+function capa(formato: FormatoArte, foto: FotoDoPost, titulo: [string, string], selos: SeloPedido[]): DadosArte {
   const { w, h } = TAMANHO_ARTE[formato];
   return { w, h, fotos: [{ imagemId: foto.id, box: caixaInteira(formato), fx: 0.5, fy: formato === "FEED" ? 0.42 : 0.5, zoom: 1 }], elementos: elementosDaCapa(formato, titulo, selos) };
 }
@@ -213,7 +229,7 @@ export type PedidoArtes = {
   fotos: FotoDoPost[];
   /** Linha pequena e linha grande do título. */
   titulo: [string, string];
-  selos: string[];
+  selos: SeloPedido[];
   /** Benefícios: um argumento por slide. */
   argumentos?: string[];
 };
@@ -262,7 +278,17 @@ export function montarArtes(p: PedidoArtes): ArteMontada[] {
 }
 
 /** Textos das artes de um post (Postagem.textos). */
-export type TextosPostagem = { titulo: [string, string]; selos: string[]; preco?: string | null; argumentos?: string[] };
+export type TextosPostagem = { titulo: [string, string]; selos: string[]; preco?: string | null; argumentos?: string[]; local?: string | null };
+
+/**
+ * Selos das artes com o selo de localização: o local entra no lugar do
+ * segundo selo (no máximo 3 informações por imagem: título + 2 selos).
+ */
+export function selosComLocal(selos: string[], local?: string | null): SeloPedido[] {
+  const lugar = local?.trim();
+  const comTexto = selos.map((s) => s.trim()).filter(Boolean);
+  return lugar ? [...comTexto.slice(0, 1), { t: lugar, icone: "local" }] : comTexto.slice(0, 2);
+}
 
 /** Título e selos padrão de cada tipo — o Marcos troca na tela. Produto/oferta leva o preço no selo laranja. */
 export function textosPadrao(conteudo: ConteudoPostagem, produto: string, preco?: string | null): { titulo: [string, string]; selos: string[] } {
@@ -339,6 +365,7 @@ export function sanitizarDadosArte(guardada: DadosArte, enviada: Partial<DadosAr
         t: s.t,
         tam: Math.round(limitar(s.tam, 18, 48)),
         estilo: s.estilo === "branco" ? "branco" : "laranja",
+        ...(s.icone === "local" && { icone: "local" as const }),
       });
     });
   const logo = enviados.find((x): x is ElementoLogo => x?.tipo === "logo") ?? guardada.elementos.find((x): x is ElementoLogo => x.tipo === "logo");
@@ -360,7 +387,7 @@ const SELOS_PADRAO = ["Diversão Garantida", "Qualidade e Segurança"];
  * abaixo do título, no estilo que ainda não existe (laranja primeiro) e com
  * um texto padrão que ainda não está na arte.
  */
-export function seloNovo(dados: DadosArte, formato: FormatoArte, texto?: string): ElementoSelo {
+export function seloNovo(dados: DadosArte, formato: FormatoArte, texto?: string, icone?: IconeSelo): ElementoSelo {
   const selos = dados.elementos.filter((e): e is ElementoSelo => e.tipo === "selo");
   const titulo = dados.elementos.find((e): e is ElementoTitulo => e.tipo === "titulo");
   const m = MEDIDAS[formato];
@@ -378,6 +405,7 @@ export function seloNovo(dados: DadosArte, formato: FormatoArte, texto?: string)
     t: comMaiuscula(texto ?? "") || (SELOS_PADRAO.find((t) => !selos.some((s) => s.t === t)) ?? "Novo selo"),
     tam: m.tamSelo,
     estilo: selos.some((s) => s.estilo === "laranja") ? "branco" : "laranja",
+    ...(icone === "local" && { icone }),
   };
 }
 

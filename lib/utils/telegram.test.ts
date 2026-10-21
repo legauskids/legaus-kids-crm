@@ -24,6 +24,16 @@ describe("lerUpdate", () => {
     expect(lerUpdate({ update_id: 3, message: { message_id: 3, from: de, chat, document: { mime_type: "application/pdf" } } })?.tipo).toBe("documento");
   });
 
+  it("álbum: cada foto traz o id do grupo; foto mandada como arquivo é foto (21/10)", () => {
+    const chat = { id: 1, type: "private" };
+    const foto = lerUpdate({ update_id: 5, message: { message_id: 5, from: de, chat, photo: [{ file_id: "p" }], media_group_id: "123", caption: "post da entrega" } });
+    expect(foto).toMatchObject({ tipo: "foto", grupoMidia: "123", texto: "post da entrega" });
+    expect(lerUpdate({ update_id: 6, message: { message_id: 6, from: de, chat, photo: [{ file_id: "q" }], media_group_id: "123" } })).toMatchObject({ grupoMidia: "123", texto: null });
+    const comoArquivo = lerUpdate({ update_id: 7, message: { message_id: 7, from: de, chat, document: { file_id: "d", mime_type: "image/jpeg", file_name: "obra.jpg" } } });
+    expect(comoArquivo).toMatchObject({ tipo: "foto", arquivo: { fileId: "d", mime: "image/jpeg" } });
+    expect(lerUpdate({ update_id: 8, message: { message_id: 8, from: de, chat, text: "oi" } })?.grupoMidia).toBeNull();
+  });
+
   it("mensagem de grupo não é conversa privada", () => {
     const u = lerUpdate({ update_id: 4, message: { message_id: 4, from: de, chat: { id: -100, type: "group" }, text: "oi" } });
     expect(u?.chatPrivado).toBe(false);

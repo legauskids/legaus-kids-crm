@@ -18,7 +18,7 @@ import {
   comMaiuscula,
   contornoTitulo,
   coresSelo,
-  iconeCheckSvg,
+  iconeSeloSvg,
   linhasDoTitulo,
   medidasSelo,
   recorteDaFoto,
@@ -99,7 +99,7 @@ function SeloPrevia({ e }: { e: ElementoSelo }) {
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={svgUri(iconeCheckSvg(m.raioIcone, texto, fundo))} alt="" width={m.raioIcone * 2} height={m.raioIcone * 2} draggable={false} />
+      <img src={svgUri(iconeSeloSvg(e.icone, m.raioIcone, texto, fundo))} alt="" width={m.raioIcone * 2} height={m.raioIcone * 2} draggable={false} />
       <span style={{ fontFamily: "NunitoMarca", fontWeight: 900, fontSize: e.tam, color: texto, lineHeight: 1, whiteSpace: "nowrap" }}>{e.t}</span>
     </div>
   );
