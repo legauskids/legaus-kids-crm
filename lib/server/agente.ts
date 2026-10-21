@@ -2142,6 +2142,7 @@ const FERRAMENTAS: Ferramenta[] = [
         argumentos: { type: "array", items: { type: "string" }, description: "Benefícios: um argumento por slide" },
         observacoes: { type: "string", description: "Fatos pra legenda (itens do brinquedo, etc.)" },
         negocio: { type: "string", description: "Nome do negócio/cliente pra ligar o post (opcional)" },
+        fotosPorSlide: { type: "integer", enum: [1, 2], description: "Entrega: 1 = um slide pra cada foto; 2 = duas fotos empilhadas por slide (padrão)" },
       },
     },
     async executar(args, ctx) {
@@ -2157,6 +2158,7 @@ const FERRAMENTAS: Ferramenta[] = [
         argumentos?: string[];
         observacoes?: string;
         negocio?: string;
+        fotosPorSlide?: 1 | 2;
       };
       // A foto desta mensagem primeiro (no álbum é a que traz a legenda), depois
       // as guardadas da conversa nos últimos 15 min, da mais antiga pra mais nova.
@@ -2186,6 +2188,7 @@ const FERRAMENTAS: Ferramenta[] = [
         argumentos: a.argumentos,
         contexto: a.observacoes,
         negocioId,
+        fotosPorSlide: a.fotosPorSlide === 1 ? 1 : 2,
         criadoPorId: ctx.usuarioId,
       });
       await Promise.all(fotos.map((bytes, i) => adicionarFoto(post.id, bytes, "image/jpeg", i)));
@@ -2739,6 +2742,7 @@ async function rodarAgenteClaude(
   // pareceRespostaDeDespesa abaixo.
   let ferramentaObrigatoria: "registrar_despesa" | "corrigir_despesa" | null = null;
   let jaForcouDespesa = false;
+  let jaPediuTexto = false;
 
   // 8 turnos (não 5) porque um único áudio costuma emendar várias tarefas
   // diferentes ("cria isso, muda aquilo, e já lembra de ligar pro fulano") —
@@ -2748,7 +2752,8 @@ async function rodarAgenteClaude(
     try {
       resposta = await client.messages.create({
         model: MODELO,
-        max_tokens: 1024,
+        // Folga pro raciocínio da IA (com 1.024 ela podia gastar tudo pensando e voltar sem texto).
+        max_tokens: 4000,
         system,
         tools,
         messages,
@@ -2794,7 +2799,20 @@ async function rodarAgenteClaude(
         });
         continue;
       }
-      return { texto: textoFinal || "Feito.", ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida, acoes };
+      // Sem texto (a IA gastou o limite pensando — 21/10, o "Feito." falso do
+      // Marketing): uma volta a mais pedindo o resumo do que foi feito.
+      if (!textoFinal && !jaPediuTexto) {
+        jaPediuTexto = true;
+        messages.push({
+          role: "user",
+          content: "Sistema: sua resposta veio vazia. Responda em 1 a 3 frases o que foi feito de verdade (pelas ferramentas) ou, se não deu, que não conseguiu e por quê.",
+        });
+        continue;
+      }
+      const semTexto = acoes.some((a) => a.ok && !a.pendente)
+        ? "Fiz o que as ferramentas mostram no registro, mas não consegui escrever o resumo — confira no CRM."
+        : "Não consegui concluir esse pedido — pode repetir de outro jeito?";
+      return { texto: textoFinal || semTexto, ferramentaPendente, ferramentasChamadas, tokensEntrada, tokensSaida, acoes };
     }
 
     const resultadosFerramenta: Anthropic.ToolResultBlockParam[] = [];

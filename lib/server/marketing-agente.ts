@@ -12,8 +12,9 @@ import {
   imagemDaArte,
   salvarDadosArte,
   textosDaPostagem,
+  trocarFotosPorSlide,
 } from "@/lib/server/marketing";
-import { aplicarAjuste, resumoDasArtes, type AjusteArte, type FotoParaAssistente } from "@/lib/utils/marketing-agente";
+import { afirmaQueFez, aplicarAjuste, respostaHonesta, resumoDasArtes, type AjusteArte, type FotoParaAssistente } from "@/lib/utils/marketing-agente";
 import { ROTULO_CONTEUDO, type DadosArte, type FormatoArte } from "@/lib/utils/postagem-arte";
 
 // Assistente do Marketing (pedido do Marcos de 2026-10-20): o Claude dentro
@@ -67,7 +68,9 @@ Como trabalhar:
 - Pra escolher outra foto (ex.: capa), use ver_fotos pra ver as fotos do post e troque com ajustar_arte (elemento foto1, campo foto).
 - refazer_artes volta TODAS as artes ao padrão e apaga os ajustes feitos (no editor ou por você) — só quando o Marcos pedir pra recomeçar ou trocar os textos de todas.
 - Legenda: gancho → o que foi entregue (só fatos) → chamada "Chama no WhatsApp!" → 4 a 6 hashtags, sempre com #LegausKids #BrincadeiraLevadaASerio. Tom alegre, frases curtas, no máximo 1 ou 2 emojis. Use alterar_legenda com o texto pronto. Story não tem legenda.
+- Slides do carrossel com 1 foto cada ou 2 empilhadas: organizar_slides (a capa e o story ficam como estão).
 - Você não aprova nem publica: quem aprova é o Marcos, no botão Aprovar da tela.
+- Honestidade acima de tudo: só diga que fez o que uma ferramenta de fato fez (está no resultado dela). Se nenhuma ferramenta faz o que ele pediu, ou se algo deu erro, diga claramente "não consegui" e por quê, e sugira o que dá pra fazer. Nunca responda "feito" sem ter feito.
 - Resposta final curta: o que você fez (ou sugere) em 1 a 3 frases, sem markdown.`;
 
 const FERRAMENTAS: Anthropic.Tool[] = [
@@ -129,6 +132,12 @@ const FERRAMENTAS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "organizar_slides",
+    description:
+      "Post de entrega: refaz os slides do carrossel com 1 foto por slide (cada foto num slide inteiro) ou 2 fotos empilhadas por slide. A capa e o story ficam como estão. Use pra \"um slide pra cada foto\", \"não quero slide dividido\", \"uma imagem só por slide\" (1) ou \"junta 2 fotos por slide\" (2).",
+    input_schema: { type: "object", properties: { fotosPorSlide: { type: "integer", enum: [1, 2] } }, required: ["fotosPorSlide"] },
+  },
+  {
     name: "alterar_legenda",
     description: "Troca a legenda do post pelo texto pronto (seguindo as regras da legenda).",
     input_schema: { type: "object", properties: { legenda: { type: "string" } }, required: ["legenda"] },
@@ -188,7 +197,13 @@ async function miniatura(buffer: Buffer, largura: number): Promise<string> {
 
 type ConteudoResultado = string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>;
 
-async function executar(nome: string, entrada: Record<string, unknown>, postagemId: string, estado: { atual: Estado }): Promise<{ conteudo: ConteudoResultado; mudou: boolean }> {
+/** feitos: o que mudou de verdade, em português, pra lista "O que mudou" da resposta final. */
+async function executar(
+  nome: string,
+  entrada: Record<string, unknown>,
+  postagemId: string,
+  estado: { atual: Estado },
+): Promise<{ conteudo: ConteudoResultado; mudou: boolean; feitos?: string[] }> {
   const e = estado.atual;
   if (nome === "ver_artes") {
     const numeros = ((entrada.artes as number[]) ?? []).slice(0, MAX_IMAGENS_POR_VEZ);
@@ -217,6 +232,7 @@ async function executar(nome: string, entrada: Record<string, unknown>, postagem
     const numeros = (entrada.artes as number[]) ?? [];
     const ajustes = (entrada.ajustes as AjusteArte[]) ?? [];
     const linhas: string[] = [];
+    const mudancas: string[] = [];
     let mudou = false;
     for (const n of numeros) {
       const arte = e.artes[n - 1];
@@ -233,22 +249,25 @@ async function executar(nome: string, entrada: Record<string, unknown>, postagem
           feitos.push(r.feito);
         } else feitos.push(`não deu (${r.erro})`);
       }
-      if (feitos.some((f) => !f.startsWith("não deu"))) {
+      const certos = feitos.filter((f) => !f.startsWith("não deu"));
+      if (certos.length) {
         await salvarDadosArte(arte.id, dados);
         mudou = true;
+        mudancas.push(`Arte ${n}: ${certos.join("; ")}`);
       }
       linhas.push(`Arte ${n}: ${feitos.join("; ")}.`);
     }
     if (mudou) estado.atual = await carregarEstado(postagemId);
-    return { conteudo: `${linhas.join("\n")}\nEstado novo: ${JSON.stringify(resumoDasArtes(estado.atual.artes.map((a) => ({ ordem: a.ordem, formato: a.formato as FormatoArte, dados: a.dados as unknown as DadosArte })), fotosDo(estado.atual)))}`, mudou };
+    return { conteudo: `${linhas.join("\n")}\nEstado novo: ${JSON.stringify(resumoDasArtes(estado.atual.artes.map((a) => ({ ordem: a.ordem, formato: a.formato as FormatoArte, dados: a.dados as unknown as DadosArte })), fotosDo(estado.atual)))}`, mudou, feitos: mudancas };
   }
   if (nome === "alterar_legenda") {
     if (SO_STORY.includes(e.conteudo)) return { conteudo: "Esse post é só story — não tem legenda.", mudou: false };
     const legenda = String(entrada.legenda ?? "").trim();
     if (!legenda) return { conteudo: "Legenda vazia — nada mudou.", mudou: false };
+    if (legenda === (e.legenda ?? "").trim()) return { conteudo: "A legenda nova é igual à atual — nada mudou.", mudou: false };
     await atualizarLegendaPostagem(postagemId, legenda);
     estado.atual = await carregarEstado(postagemId);
-    return { conteudo: "Legenda trocada.", mudou: true };
+    return { conteudo: "Legenda trocada.", mudou: true, feitos: ["Legenda trocada"] };
   }
   if (nome === "refazer_artes") {
     const atuais = textosDaPostagem(e);
@@ -259,7 +278,14 @@ async function executar(nome: string, entrada: Record<string, unknown>, postagem
       selos,
     });
     estado.atual = await carregarEstado(postagemId);
-    return { conteudo: `Refiz as ${n} artes no padrão.`, mudou: true };
+    return { conteudo: `Refiz as ${n} artes no padrão.`, mudou: true, feitos: [`Todas as ${n} artes refeitas no padrão (ajustes anteriores perdidos)`] };
+  }
+  if (nome === "organizar_slides") {
+    const porSlide = entrada.fotosPorSlide === 1 ? 1 : 2;
+    const r = await trocarFotosPorSlide(postagemId, porSlide);
+    estado.atual = await carregarEstado(postagemId);
+    const texto = `${r.slides} slide${r.slides === 1 ? "" : "s"} com ${porSlide === 1 ? "1 foto" : "2 fotos"} cada (capa e story mantidos)${r.foraDoCarrossel ? `; ${r.foraDoCarrossel} foto(s) ficaram de fora — o carrossel tem no máximo 10 itens` : ""}`;
+    return { conteudo: `Slides refeitos: ${texto}.`, mudou: true, feitos: [`Slides refeitos: ${texto}`] };
   }
   return { conteudo: `Ferramenta desconhecida: ${nome}`, mudou: false };
 }
@@ -292,6 +318,8 @@ export async function conversarSobrePost(input: {
 
   const client = new Anthropic({ apiKey });
   const acoes: { ferramenta: string; entrada: string; ok: boolean }[] = [];
+  const feitos: string[] = [];
+  let cobrouHonestidade = false;
   let mudou = false;
   let tokensEntrada = 0;
   let tokensSaida = 0;
@@ -301,7 +329,9 @@ export async function conversarSobrePost(input: {
     for (let turno = 0; turno < MAX_TURNOS; turno++) {
       const r = await client.messages.create({
         model: MODELO,
-        max_tokens: 1200,
+        // Folga pro raciocínio da IA: com 1.200 ela gastava tudo pensando e
+        // voltava sem texto (o "Feito." falso de 21/10).
+        max_tokens: 4000,
         system: [
           { type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } },
           { type: "text", text: contexto(estado.atual) },
@@ -314,11 +344,24 @@ export async function conversarSobrePost(input: {
       const texto = r.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
       const usos = r.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
       if (r.stop_reason !== "tool_use" || usos.length === 0) {
-        resposta = texto || "Feito.";
+        // Sem texto, ou dizendo que fez sem nenhuma mudança: uma chance de se
+        // corrigir antes de responder.
+        if (!cobrouHonestidade && turno < MAX_TURNOS - 1 && (!texto || (feitos.length === 0 && afirmaQueFez(texto)))) {
+          cobrouHonestidade = true;
+          if (r.content.length) mensagens.push({ role: "assistant", content: r.content });
+          mensagens.push({
+            role: "user",
+            content:
+              "Sistema: nenhuma alteração foi feita até agora nesta mensagem (nenhuma ferramenta mudou nada). Se dá pra fazer o pedido com as ferramentas, faça agora. Se não dá, responda em 1 a 2 frases dizendo claramente que não conseguiu e por quê — sem dizer que fez.",
+          });
+          continue;
+        }
+        resposta = respostaHonesta(texto, feitos);
+        acoes.push({ ferramenta: "(fim)", entrada: String(r.stop_reason), ok: true });
         break;
       }
       if (Date.now() - inicio > (input.prazoMs ?? PRAZO_MS)) {
-        resposta = `${texto ? `${texto}\n\n` : ""}Parei aqui pra não estourar o tempo — mande "continua" que eu sigo.`;
+        resposta = `${respostaHonesta(texto, feitos)}\n\nParei aqui pra não estourar o tempo — mande "continua" que eu sigo.`;
         break;
       }
       mensagens.push({ role: "assistant", content: r.content });
@@ -327,6 +370,7 @@ export async function conversarSobrePost(input: {
         try {
           const res = await executar(uso.name, uso.input as Record<string, unknown>, input.postagemId, estado);
           mudou ||= res.mudou;
+          if (res.feitos?.length) feitos.push(...res.feitos);
           acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(uso.input), ok: true });
           resultados.push({ type: "tool_result", tool_use_id: uso.id, content: res.conteudo });
         } catch (erro) {
@@ -335,7 +379,7 @@ export async function conversarSobrePost(input: {
         }
       }
       mensagens.push({ role: "user", content: resultados });
-      if (turno === MAX_TURNOS - 1) resposta = texto || "Fiz os ajustes — confira as artes.";
+      if (turno === MAX_TURNOS - 1) resposta = respostaHonesta(texto, feitos);
     }
   } catch (erro) {
     resposta = mensagemErroAnthropic(erro);

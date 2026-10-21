@@ -62,12 +62,24 @@ async function main() {
     console.log(`  legenda nova: ${legenda.replace(/\n/g, " ⏎ ")}`);
     checar(r4.mudou && legenda.length < 260 && legenda.includes("#LegausKids") && legenda.includes("#BrincadeiraLevadaASerio"), "legenda mais curta, com as hashtags fixas");
 
+    // O pedido real do Marcos de 21/10 (antes respondia "Feito." sem fazer nada).
+    const capaAntes = JSON.stringify((await artesDe())[0].dados);
+    const r6 = await fala("não quero slide divididos, então além da capa crie um slide para cada imagem enviada");
+    const depois6 = await artesDe();
+    const slides = depois6.filter((a) => a.formato === "FEED").slice(1);
+    checar(slides.length === 4 && slides.every((a) => (a.dados as unknown as DadosArte).fotos.length === 1), `um slide pra cada foto (${slides.length} slides com 1 foto)`);
+    checar(JSON.stringify(depois6[0].dados) === capaAntes && depois6.at(-1)?.formato === "STORY", "a capa e o story ficaram como estavam");
+    checar(r6.resposta.includes("✔️ O que mudou") && /slides refeitos/i.test(r6.resposta), "a resposta mostra o que mudou de verdade");
+
+    const r7 = await fala("Muda a fonte do título pra Comic Sans.");
+    checar(!r7.mudou && !/^feito/i.test(r7.resposta.trim()) && /não (consigo|consegui|dá|é possível|tenho)/i.test(r7.resposta), "pedido impossível: diz que não consegue, sem dizer feito");
+
     const r5 = await fala("Pode aprovar o post.");
     const status = (await prisma.postagem.findUniqueOrThrow({ where: { id: post.id }, select: { status: true } })).status;
     checar(status !== "APROVADO" && /aprova/i.test(r5.resposta), "ele não aprova sozinho — manda usar o botão");
 
     const conversa = await prisma.comandoAgente.count({ where: { identificador: identificadorDoPost(post.id) } });
-    checar(conversa === 5, `conversa guardada (${conversa} mensagens)`);
+    checar(conversa === 7, `conversa guardada (${conversa} mensagens)`);
   } finally {
     await prisma.comandoAgente.deleteMany({ where: { identificador: identificadorDoPost(post.id) } });
     await excluirPostagem(post.id);

@@ -15,6 +15,7 @@ import {
   mudarStatusAction,
   salvarLegendaAction,
   salvarTextosAction,
+  trocarFotosPorSlideAction,
 } from "@/app/(app)/marketing/actions";
 import type { ConteudoPostagem, FormatoArte, TextosPostagem } from "@/lib/utils/postagem-arte";
 import type { StatusPostagem } from "@prisma/client";
@@ -111,7 +112,32 @@ export function PostDetalhe({ post, historico }: { post: PostVM; historico: Mens
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold">{post.conteudo === "INSTALACAO" || post.conteudo === "TBT" ? "Story" : `Carrossel (${feed.length})`}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">{post.conteudo === "INSTALACAO" || post.conteudo === "TBT" ? "Story" : `Carrossel (${feed.length})`}</h2>
+          {post.conteudo === "ENTREGA" && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Fotos por slide:
+              {([1, 2] as const).map((n) => (
+                <Button
+                  key={n}
+                  size="sm"
+                  variant={(post.textos.fotosPorSlide ?? 2) === n ? "default" : "outline"}
+                  disabled={pending || (post.textos.fotosPorSlide ?? 2) === n}
+                  onClick={() =>
+                    executar(
+                      `slides${n}`,
+                      () => trocarFotosPorSlideAction(post.id, n),
+                      `Slides refeitos com ${n === 1 ? "1 foto" : "2 fotos"} cada — a capa e o story ficaram como estavam.`,
+                    )
+                  }
+                >
+                  {acao === `slides${n}` ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                  {n}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {feed.map((a, i) => (
             <Arte key={a.id} arte={a} postId={post.id} rotulo={i === 0 ? "1 · Capa" : `${i + 1} · Slide`} />

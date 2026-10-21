@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aplicarAjuste, resumoDasArtes } from "./marketing-agente";
+import { afirmaQueFez, aplicarAjuste, respostaHonesta, resumoDasArtes } from "./marketing-agente";
 import { montarArtes, type DadosArte, type ElementoLogo, type ElementoSelo, type ElementoTitulo, type FotoDoPost } from "./postagem-arte";
 
 const fotos: FotoDoPost[] = [
@@ -86,5 +86,22 @@ describe("selo de localização pelo assistente (21/10)", () => {
     expect(selos(d)[1]).toMatchObject({ t: "Bob's Vacaria", icone: "local" });
     const r = aplicarAjuste(capa, "FEED", { elemento: "selo1", icone: "local", texto: "Praça Central" }, fotos);
     expect(r.ok && r.feito).toContain("ícone check→local");
+  });
+});
+
+describe("respostaHonesta (21/10: \"Feito.\" sem ter feito nada)", () => {
+  it("com mudança, mostra o que mudou de verdade", () => {
+    const r = respostaHonesta("Pronto, deixei uma foto por slide.", ["Slides refeitos: 3 com 1 foto cada"]);
+    expect(r).toContain("✔️ O que mudou:");
+    expect(r).toContain("• Slides refeitos: 3 com 1 foto cada");
+  });
+  it("sem mudança, \"Feito.\" ou texto vazio viram \"não consegui\"", () => {
+    expect(respostaHonesta("Feito.", [])).toMatch(/^⚠️ Não consegui/);
+    expect(respostaHonesta("", [])).toMatch(/^⚠️ Não consegui/);
+    expect(respostaHonesta("Troquei a capa pela foto 2.", [])).toMatch(/^⚠️ Não consegui/);
+  });
+  it("opinião ou pergunta sem mudança passa como veio", () => {
+    expect(respostaHonesta("O título não cobre o brinquedo — está no céu.", [])).toBe("O título não cobre o brinquedo — está no céu.");
+    expect(afirmaQueFez("Quer que eu aumente a logo?")).toBe(false);
   });
 });

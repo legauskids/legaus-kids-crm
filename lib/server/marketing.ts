@@ -4,7 +4,16 @@ import sharp from "sharp";
 import type { ConteudoPostagem, Prisma, StatusPostagem } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { renderizarArte, tratarFoto } from "@/lib/server/postagem-render";
-import { montarArtes, sanitizarDadosArte, selosComLocal, textosPadrao, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import {
+  montarArtes,
+  sanitizarDadosArte,
+  selosComLocal,
+  slidesDasFotos,
+  textosPadrao,
+  type DadosArte,
+  type FotosPorSlide,
+  type TextosPostagem,
+} from "@/lib/utils/postagem-arte";
 
 // Posts do Instagram (padrão da marca de 2026-10-16, reconstruído em
 // 2026-10-17 sobre o módulo Marketing antigo, que nunca foi usado). Fluxo:
@@ -33,6 +42,8 @@ export type DadosNovaPostagem = {
   tituloLinha1?: string | null;
   /** Selos no lugar dos padrão do tipo. */
   selos?: string[] | null;
+  /** Entrega: fotos por slide do carrossel (padrão 2). */
+  fotosPorSlide?: FotosPorSlide | null;
   criadoPorId: string;
 };
 
@@ -51,6 +62,7 @@ export async function criarPostagem(d: DadosNovaPostagem) {
     preco: limpo(d.preco),
     argumentos: (d.argumentos ?? []).map((a) => a.trim()).filter(Boolean),
     local: limpo(d.local),
+    ...(d.fotosPorSlide === 1 && { fotosPorSlide: 1 as const }),
   };
   return prisma.postagem.create({
     data: {
@@ -98,6 +110,7 @@ function textosDa(p: { textos: Prisma.JsonValue; conteudo: ConteudoPostagem; pro
     preco: t?.preco ?? null,
     argumentos: Array.isArray(t?.argumentos) ? t.argumentos.map(String) : [],
     local: typeof t?.local === "string" && t.local.trim() ? t.local.trim() : null,
+    fotosPorSlide: t?.fotosPorSlide === 1 ? 1 : 2,
   };
 }
 
@@ -122,6 +135,7 @@ export async function montarArtesDaPostagem(postagemId: string) {
     titulo: textos.titulo,
     selos: selosComLocal(textos.selos, textos.local),
     argumentos: textos.argumentos,
+    fotosPorSlide: textos.fotosPorSlide,
   });
   await prisma.$transaction([
     prisma.postagemArte.deleteMany({ where: { postagemId } }),
@@ -254,6 +268,50 @@ export async function gerarLegendaDaPostagem(postagemId: string): Promise<string
 export async function atualizarTextosPostagem(postagemId: string, textos: TextosPostagem) {
   await prisma.postagem.update({ where: { id: postagemId }, data: { textos: textos as unknown as Prisma.InputJsonValue } });
   return montarArtesDaPostagem(postagemId);
+}
+
+/**
+ * Refaz só os slides do carrossel com 1 ou 2 fotos cada (pedido do Marcos de
+ * 2026-10-21: "um slide pra cada foto") — a capa e o story ficam como estão,
+ * com os ajustes feitos. Entram nos slides todas as fotos do post menos a da
+ * capa. Post aprovado volta pra revisão.
+ */
+export async function trocarFotosPorSlide(postagemId: string, porSlide: FotosPorSlide): Promise<{ slides: number; foraDoCarrossel: number }> {
+  const p = await prisma.postagem.findUniqueOrThrow({
+    where: { id: postagemId },
+    select: {
+      conteudo: true,
+      produto: true,
+      status: true,
+      textos: true,
+      imagens: { orderBy: { ordem: "asc" }, select: { id: true, largura: true, altura: true } },
+      artes: { orderBy: { ordem: "asc" }, select: { id: true, formato: true, dados: true } },
+    },
+  });
+  if (p.conteudo !== "ENTREGA") throw new Error("Só o post de entrega tem slides com as fotos da obra.");
+  const capa = p.artes.find((a) => a.formato === "FEED");
+  const story = p.artes.find((a) => a.formato === "STORY");
+  if (!capa) throw new Error("O post está sem capa — refaça as artes.");
+  const capaId = (capa.dados as unknown as DadosArte).fotos[0]?.imagemId ?? "";
+  const { slides, foraDoCarrossel } = slidesDasFotos(
+    p.imagens.map((i) => ({ id: i.id, largura: i.largura ?? 1, altura: i.altura ?? 1 })),
+    capaId,
+    porSlide,
+  );
+  const textos = { ...textosDa(p), fotosPorSlide: porSlide };
+  const antigos = p.artes.filter((a) => a.formato === "FEED" && a.id !== capa.id).map((a) => a.id);
+  await prisma.$transaction([
+    prisma.postagemArte.deleteMany({ where: { id: { in: antigos } } }),
+    prisma.postagemArte.createMany({
+      data: slides.map((dados, i) => ({ postagemId, ordem: i + 1, formato: "FEED" as const, dados: dados as unknown as Prisma.InputJsonValue })),
+    }),
+    ...(story ? [prisma.postagemArte.update({ where: { id: story.id }, data: { ordem: slides.length + 1 } })] : []),
+    prisma.postagem.update({
+      where: { id: postagemId },
+      data: { textos: textos as unknown as Prisma.InputJsonValue, ...(p.status === "APROVADO" && { status: "AGUARDANDO_APROVACAO" as const }) },
+    }),
+  ]);
+  return { slides: slides.length, foraDoCarrossel };
 }
 
 export function listarPostagens() {

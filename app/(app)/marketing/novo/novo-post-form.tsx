@@ -14,7 +14,7 @@ type NegocioVM = { id: string; titulo: string; cliente: string | null; cidade: s
 
 const CONTEUDOS = Object.keys(ROTULO_CONTEUDO) as ConteudoPostagem[];
 const SAIDA: Record<ConteudoPostagem, string> = {
-  ENTREGA: "Carrossel 4:5 (capa + slides com 2 fotos) e 1 story",
+  ENTREGA: "Carrossel 4:5 (capa + slides com 1 ou 2 fotos) e 1 story",
   INSTALACAO: "Só story",
   TBT: "Só story",
   PRODUTO: "Feed 4:5 e story, com o preço no selo",
@@ -54,6 +54,7 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
   const [argumentos, setArgumentos] = useState("");
   const [contexto, setContexto] = useState("");
   const [local, setLocal] = useState("");
+  const [fotosPorSlide, setFotosPorSlide] = useState<1 | 2>(2);
   const [fotos, setFotos] = useState<File[]>([]);
   const [progresso, setProgresso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -119,7 +120,7 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
     setErro(null);
     if (fotos.length === 0) return setErro("Escolha as fotos da obra.");
     setProgresso("Criando o post...");
-    const r = await criarPostagemAction({ conteudo, produto, cliente, cidade, negocioId, preco, argumentos, contexto, local });
+    const r = await criarPostagemAction({ conteudo, produto, cliente, cidade, negocioId, preco, argumentos, contexto, local, fotosPorSlide });
     if (!r.ok) {
       setProgresso(null);
       return setErro(r.error);
@@ -172,6 +173,19 @@ export function NovoPostForm({ negocios }: { negocios: NegocioVM[] }) {
         <div className="space-y-1.5">
           <Label htmlFor="produto">O que é (vai no título)</Label>
           <Input id="produto" value={produto} onChange={(e) => setProduto(e.target.value)} placeholder="Playground, Gangorra, Casinha..." disabled={ocupado} />
+        </div>
+      )}
+
+      {conteudo === "ENTREGA" && (
+        <div className="space-y-1.5">
+          <Label>Fotos em cada slide do carrossel</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {([2, 1] as const).map((n) => (
+              <Button key={n} type="button" variant={fotosPorSlide === n ? "default" : "outline"} onClick={() => setFotosPorSlide(n)} disabled={ocupado}>
+                {n === 2 ? "2 fotos (empilhadas)" : "1 foto (slide inteiro)"}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 

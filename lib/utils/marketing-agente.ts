@@ -118,7 +118,12 @@ export function aplicarAjuste(dados: DadosArte, formato: FormatoArte, a: AjusteA
     const cx = a.centralizar ? w / 2 : num(a.cx) ?? logo.cx + (num(a.dx) ?? 0);
     const base = num(a.base) ?? logo.base + (num(a.dy) ?? 0);
     const nova = { ...logo, larg, cx: Math.round(cx), base: Math.round(base) };
-    return { ok: true, dados: trocar(dados, logo.id, nova), feito: `logo: larg ${logo.larg}→${nova.larg}, cx ${logo.cx}→${nova.cx}, base ${logo.base}→${nova.base}` };
+    const mudancas = [
+      nova.larg !== logo.larg && `largura ${logo.larg}→${nova.larg}`,
+      nova.cx !== logo.cx && `centro x ${logo.cx}→${nova.cx}`,
+      nova.base !== logo.base && `base ${logo.base}→${nova.base}`,
+    ].filter(Boolean);
+    return { ok: true, dados: trocar(dados, logo.id, nova), feito: `logo: ${mudancas.join(", ") || "sem mudança"}` };
   }
 
   if (a.elemento === "titulo") {
@@ -216,4 +221,31 @@ export function resumoDasArtes(artes: { ordem: number; formato: FormatoArte; dad
       logo: logo ? { cx: logo.cx, base: logo.base, larg: logo.larg } : null,
     };
   });
+}
+
+// Resposta honesta (pedido do Marcos de 2026-10-21): o assistente respondia
+// "Feito." sem ter feito nada — a IA gastava o limite pensando, voltava sem
+// texto e o código completava com "Feito.". Agora a resposta final sempre
+// mostra o que mudou de verdade (tirado do resultado das ferramentas) ou diz
+// que nada mudou.
+
+const VERBOS_DE_FEITO =
+  /\b(feito|pronto|prontinho|fiz|ajustei|troquei|mudei|coloquei|alterei|atualizei|deixei|aumentei|diminu[ií]|desci|subi|tirei|removi|apliquei|criei|refiz|separei|dividi|movi|centralizei|reduzi|enquadrei|reposicionei|organizei|posicionei)\b/i;
+
+/** O texto diz que alguma coisa foi feita? */
+export function afirmaQueFez(texto: string): boolean {
+  return VERBOS_DE_FEITO.test(texto);
+}
+
+/**
+ * Texto final pro Marcos: o da IA + a lista do que mudou de verdade. Sem
+ * mudança nenhuma, uma resposta que diz que fez vira "não consegui".
+ */
+export function respostaHonesta(texto: string, feitos: string[]): string {
+  const limpo = texto.trim();
+  if (feitos.length > 0) {
+    return `${limpo || "Fiz o seguinte:"}\n\n✔️ O que mudou:\n${feitos.map((f) => `• ${f}`).join("\n")}`;
+  }
+  if (!limpo || afirmaQueFez(limpo)) return "⚠️ Não consegui fazer esse pedido — nada foi alterado nas artes nem na legenda. Me diga de outro jeito ou ajuste em Ajustar/Textos das artes.";
+  return limpo;
 }

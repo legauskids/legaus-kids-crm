@@ -12,6 +12,7 @@ import {
   gerarLegendaDaPostagem,
   montarArtesDaPostagem,
   salvarDadosArte,
+  trocarFotosPorSlide,
 } from "@/lib/server/marketing";
 import { comMaiuscula, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 import { conversarSobrePost } from "@/lib/server/marketing-agente";
@@ -41,6 +42,7 @@ export type NovaPostagemInput = {
   argumentos?: string;
   contexto?: string;
   local?: string;
+  fotosPorSlide?: 1 | 2;
 };
 
 export async function criarPostagemAction(input: NovaPostagemInput): Promise<Resultado<{ id: string }>> {
@@ -174,5 +176,17 @@ export async function transcreverAudioAction(formData: FormData): Promise<Result
     return texto ? { ok: true, texto } : { ok: false, error: "Não entendi o áudio — fale de novo, mais perto do microfone." };
   } catch (e) {
     return erro(e, "Não consegui transcrever o áudio.");
+  }
+}
+
+/** Slides do carrossel com 1 ou 2 fotos cada — a capa e o story ficam como estão. */
+export async function trocarFotosPorSlideAction(postagemId: string, porSlide: 1 | 2): Promise<Resultado<{ slides: number; foraDoCarrossel: number }>> {
+  await requireModulo("marketing");
+  try {
+    const r = await trocarFotosPorSlide(postagemId, porSlide === 1 ? 1 : 2);
+    revalidar(postagemId);
+    return { ok: true, ...r };
+  } catch (e) {
+    return erro(e, "Não consegui refazer os slides.");
   }
 }

@@ -6,6 +6,7 @@ import {
   recorteDaFoto,
   sanitizarDadosArte,
   selosComLocal,
+  slidesDasFotos,
   iconeSeloSvg,
   tamanhoQueCabe,
   textosPadrao,
@@ -155,5 +156,28 @@ describe("selo de localização (pedido de 21/10 — \"Bob's Vacaria\")", () => 
   it("o ícone de pino é um SVG diferente do check", () => {
     expect(iconeSeloSvg("local", 15, "#fff", "#000")).toContain("<path");
     expect(iconeSeloSvg(undefined, 15, "#fff", "#000")).toContain("<polyline");
+  });
+});
+
+describe("fotos por slide (21/10: \"um slide pra cada foto\")", () => {
+  const fotos5 = [empe("capa"), deitada("a"), deitada("b"), empe("c"), deitada("d")];
+  it("1 por slide: cada foto num slide inteiro, na ordem em que vieram, sem a da capa", () => {
+    const { slides, foraDoCarrossel } = slidesDasFotos(fotos5, "capa", 1);
+    expect(slides.map((s) => s.fotos.map((f) => f.imagemId))).toEqual([["a"], ["b"], ["c"], ["d"]]);
+    expect(slides[0].fotos[0].box).toEqual([32, 32, 1048, 1318]);
+    expect(foraDoCarrossel).toBe(0);
+  });
+  it("2 por slide continua igual (deitadas primeiro)", () => {
+    expect(slidesDasFotos(fotos5, "capa", 2).slides.map((s) => s.fotos.map((f) => f.imagemId))).toEqual([["a", "b"], ["d", "c"]]);
+  });
+  it("carrossel até 10: com 1 por slide, o que passar de 9 slides fica de fora", () => {
+    const muitas = [empe("capa"), ...Array.from({ length: 12 }, (_, i) => deitada(`f${i}`))];
+    const r = slidesDasFotos(muitas, "capa", 1);
+    expect(r.slides).toHaveLength(9);
+    expect(r.foraDoCarrossel).toBe(3);
+  });
+  it("montarArtes da entrega respeita fotosPorSlide", () => {
+    const artes = montarArtes({ conteudo: "ENTREGA", fotos: fotos5, titulo: ["Entrega de", "Kidplay"], selos: [], fotosPorSlide: 1 });
+    expect(artes.map((a) => a.formato)).toEqual(["FEED", "FEED", "FEED", "FEED", "FEED", "STORY"]);
   });
 });

@@ -232,10 +232,33 @@ export type PedidoArtes = {
   selos: SeloPedido[];
   /** Benefícios: um argumento por slide. */
   argumentos?: string[];
+  /** Entrega: 2 fotos empilhadas por slide (padrão) ou 1 foto por slide. */
+  fotosPorSlide?: FotosPorSlide;
 };
 
+export type FotosPorSlide = 1 | 2;
+
 /** Carrossel tem no máximo 10 itens (capa + 9). */
-const MAX_CARROSSEL = 10;
+export const MAX_CARROSSEL = 10;
+
+/**
+ * Fotos dos slides de uma entrega, fora a da capa. Com 2 por slide, as
+ * deitadas vão primeiro (ficam melhores empilhadas); com 1 por slide, na
+ * ordem em que vieram (pedido do Marcos de 2026-10-21: "um slide pra cada
+ * foto"). No máximo 9 slides (carrossel de 10 com a capa).
+ */
+export function slidesDasFotos(fotos: FotoDoPost[], capaId: string, porSlide: FotosPorSlide): { slides: DadosArte[]; foraDoCarrossel: number } {
+  const resto = fotos.filter((f) => f.id !== capaId);
+  const ordem = porSlide === 2 ? [...resto.filter((f) => !vertical(f)), ...resto.filter(vertical)] : resto;
+  const slides: DadosArte[] = [];
+  let usadas = 0;
+  for (let i = 0; i < ordem.length && slides.length < MAX_CARROSSEL - 1; i += porSlide) {
+    const grupo = ordem.slice(i, i + porSlide);
+    slides.push(slide(grupo));
+    usadas += grupo.length;
+  }
+  return { slides, foraDoCarrossel: ordem.length - usadas };
+}
 
 /**
  * Artes iniciais de um post (seção 3, "Formatos por tipo de post"): foto
@@ -266,11 +289,8 @@ export function montarArtes(p: PedidoArtes): ArteMontada[] {
     case "ENTREGA":
     default: {
       const artes: ArteMontada[] = [{ formato: "FEED", dados: capa("FEED", principal, p.titulo, p.selos) }];
-      // Largas primeiro (ficam melhores empilhadas), na ordem em que vieram.
-      const paraSlides = [...resto.filter((f) => !vertical(f)), ...resto.filter(vertical)];
-      for (let i = 0; i < paraSlides.length && artes.length < MAX_CARROSSEL; i += 2) {
-        artes.push({ formato: "FEED", dados: slide(paraSlides.slice(i, i + 2)) });
-      }
+      // Slides: 2 fotos empilhadas (padrão) ou 1 por slide.
+      for (const dados of slidesDasFotos(p.fotos, principal.id, p.fotosPorSlide ?? 2).slides) artes.push({ formato: "FEED", dados });
       artes.push(story());
       return artes;
     }
@@ -278,7 +298,15 @@ export function montarArtes(p: PedidoArtes): ArteMontada[] {
 }
 
 /** Textos das artes de um post (Postagem.textos). */
-export type TextosPostagem = { titulo: [string, string]; selos: string[]; preco?: string | null; argumentos?: string[]; local?: string | null };
+export type TextosPostagem = {
+  titulo: [string, string];
+  selos: string[];
+  preco?: string | null;
+  argumentos?: string[];
+  local?: string | null;
+  /** Entrega: fotos por slide do carrossel (padrão 2). */
+  fotosPorSlide?: FotosPorSlide;
+};
 
 /**
  * Selos das artes com o selo de localização: o local entra no lugar do
