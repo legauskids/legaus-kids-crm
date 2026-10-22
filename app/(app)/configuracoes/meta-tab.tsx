@@ -19,7 +19,7 @@ export type ConexaoMetaVM = {
   erro: string | null;
 } | null;
 
-const PERMISSOES_PRA_MARCAR = [...PERMISSOES_INSTAGRAM, "business_management", PERMISSAO_FACEBOOK];
+const PERMISSOES_PRA_MARCAR = [...PERMISSOES_INSTAGRAM, PERMISSAO_FACEBOOK, "business_management"];
 
 function quando(iso: string | null) {
   return iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -145,10 +145,11 @@ export function MetaTab({ conexao, appConfigurado }: { conexao: ConexaoMetaVM; a
               Em <b>App da Meta</b>, escolha <b>Legaus Kids CRM</b>.
             </li>
             <li>
-              Em <b>Usuário ou Página</b>, escolha <b>Obter token de acesso do usuário</b>.
+              Em <b>Usuário ou Página</b>, deixe <b>Obter token</b>, abra a aba <b>Configurations</b> e escolha <b>CRM Legaus</b>.
             </li>
             <li>
-              Em <b>Permissões</b>, adicione: {PERMISSOES_PRA_MARCAR.map((p, i) => (
+              Confira se a configuração tem estas permissões (se faltar alguma, edite em developers.facebook.com → Legaus Kids CRM → Login do Facebook para
+              Empresas → Configurações): {PERMISSOES_PRA_MARCAR.map((p, i) => (
                 <span key={p}>
                   <code className="rounded bg-muted px-1 text-xs">{p}</code>
                   {i < PERMISSOES_PRA_MARCAR.length - 1 ? ", " : "."}
@@ -164,7 +165,8 @@ export function MetaTab({ conexao, appConfigurado }: { conexao: ConexaoMetaVM; a
             <Label htmlFor="token-meta">Token de acesso</Label>
             <Textarea id="token-meta" value={token} onChange={(e) => setToken(e.target.value)} rows={3} placeholder="EAA..." className="font-mono text-xs" disabled={pending} />
             <p className="text-xs text-muted-foreground">
-              O CRM troca esse token por um acesso da Página que não vence e guarda criptografado. O token colado não fica salvo.
+              O CRM troca esse token por um acesso da Página que não vence e guarda criptografado. O token colado não fica salvo. Também aceita o token de
+              um usuário do sistema do Meta Business Suite.
             </p>
           </div>
           {paginas && (

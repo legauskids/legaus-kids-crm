@@ -55,7 +55,8 @@ async function graphFalsa(url: URL, init?: RequestInit): Promise<Response> {
         { id: "PAG2", name: "Outra Página", access_token: "TOKEN-OUTRA", ...(cenario.outraPaginaComInstagram ? { instagram_business_account: { id: "IG2", username: "outra" } } : {}) },
       ],
     });
-  if (caminho === "/debug_token") return json({ data: { is_valid: cenario.tokenValido, expires_at: 0 } });
+  if (caminho === "/debug_token")
+    return json({ data: { is_valid: cenario.tokenValido, expires_at: 0, type: p.input_token?.startsWith("SISTEMA") ? "SYSTEM_USER" : p.input_token?.startsWith("EAA") ? "USER" : "PAGE" } });
   if (caminho === "/IG1/media" && metodo === "POST") return json({ id: `cont-${++seq}` });
   if (caminho === "/IG1/media_publish") return json({ id: `igpost-${++seq}` });
   if (caminho === "/IG1") return json({ id: "IG1", username: "legauskids" });
@@ -113,6 +114,9 @@ async function main() {
     checar("ok" in r3 && r3.paginaNome === "Legaus Kids", "só uma das Páginas tem Instagram: escolhe ela sozinho");
     const guardada = await prisma.conexaoMeta.findUniqueOrThrow({ where: { id: "principal" } });
     checar(!guardada.paginaToken.includes("TOKEN-PAGINA") && guardada.paginaToken.startsWith("v1:"), "o acesso da Página fica cifrado no banco");
+    const trocasAntes = chamadas.filter((c) => c.caminho === "/oauth/access_token").length;
+    const sistema = await conectarMeta("SISTEMA-token-do-business-suite-0123", marcos.id);
+    checar("ok" in sistema && sistema.paginaNome === "Legaus Kids" && chamadas.filter((c) => c.caminho === "/oauth/access_token").length === trocasAntes, "token de usuário do sistema (Business Suite): conecta direto, sem troca");
     const conexao = await obterConexao();
     checar(conexao?.token === "TOKEN-PAGINA-LEGAUS" && conexao.podeFacebook && conexao.instagramId === "IG1", "e volta decifrado só pra quem publica");
     const troca = chamadas.find((c) => c.caminho === "/oauth/access_token");

@@ -56,7 +56,9 @@ export type ResultadoConexao =
   | { erro: string };
 
 /**
- * Conecta com o acesso gerado no Explorador da Graph API (curta duração).
+ * Conecta com o acesso gerado no Explorador da Graph API (curta duração) ou
+ * com o token de um usuário do sistema do Meta Business Suite (já não vence,
+ * usado direto — plano B de 22/10, quando a janela de login da Meta falhou).
  * Mais de uma Página candidata: devolve a lista pra escolher e é chamada de
  * novo com paginaId (o mesmo acesso curto ainda vale por ~1 h).
  */
@@ -64,12 +66,17 @@ export async function conectarMeta(tokenCurto: string, usuarioId: string, pagina
   const app = credenciaisDoApp();
   const curto = tokenCurto.trim();
   if (curto.length < 20) return { erro: "Cole o acesso inteiro (é um texto longo, que começa com \"EAA\")." };
-  const longo = await graph<{ access_token: string }>("/oauth/access_token", {
-    grant_type: "fb_exchange_token",
-    client_id: app.id,
-    client_secret: app.segredo,
-    fb_exchange_token: curto,
-  });
+  const colado = await graph<{ data: { is_valid: boolean; type?: string } }>("/debug_token", { input_token: curto, access_token: app.tokenDoApp });
+  if (!colado.data.is_valid) return { erro: "A Meta disse que esse acesso não é válido (ou já venceu) — gere de novo." };
+  const longo =
+    colado.data.type === "SYSTEM_USER"
+      ? { access_token: curto }
+      : await graph<{ access_token: string }>("/oauth/access_token", {
+          grant_type: "fb_exchange_token",
+          client_id: app.id,
+          client_secret: app.segredo,
+          fb_exchange_token: curto,
+        });
   const [permissoes, contas] = await Promise.all([
     graph<{ data: { permission: string; status: string }[] }>("/me/permissions", { access_token: longo.access_token }),
     graph<{ data: ContaDaPagina[] }>("/me/accounts", { fields: "id,name,access_token,instagram_business_account{id,username}", limit: "100", access_token: longo.access_token }),
