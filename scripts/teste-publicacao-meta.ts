@@ -29,7 +29,11 @@ const cenario = {
   tokenValido: true,
   outraPaginaComInstagram: true,
   acessoRevogado: false,
+  listaComumVazia: false,
+  escoposComPagina: false,
+  paginaNoPortfolio: false,
 };
+const PAGINA_LEGAUS = { id: "PAG1", name: "Legaus Kids", access_token: "TOKEN-PAGINA-LEGAUS", instagram_business_account: { id: "IG1", username: "legauskids" } };
 let seq = 0;
 const statusConsultado = new Set<string>();
 const fetchOriginal = globalThis.fetch;
@@ -48,6 +52,11 @@ async function graphFalsa(url: URL, init?: RequestInit): Promise<Response> {
   if (cenario.acessoRevogado && caminho !== "/debug_token") return json({ error: { message: "Error validating access token: The session has been invalidated", code: 190 } }, 400);
   if (caminho === "/oauth/access_token") return json({ access_token: "LONGO-123", token_type: "bearer", expires_in: 5184000 });
   if (caminho === "/me/permissions") return json({ data: cenario.permissoes.map((permission) => ({ permission, status: "granted" })) });
+  if (caminho === "/me/accounts" && cenario.listaComumVazia) return json({ data: [] });
+  if (caminho === "/me/businesses") return json({ data: cenario.paginaNoPortfolio ? [{ id: "BIZ1" }] : [] });
+  if (caminho === "/BIZ1/owned_pages") return json({ data: [PAGINA_LEGAUS] });
+  if (caminho === "/BIZ1/client_pages") return json({ data: [] });
+  if (caminho === "/PAG1" && metodo === "GET" && p.fields?.includes("access_token")) return json(PAGINA_LEGAUS);
   if (caminho === "/me/accounts")
     return json({
       data: [
@@ -56,7 +65,10 @@ async function graphFalsa(url: URL, init?: RequestInit): Promise<Response> {
       ],
     });
   if (caminho === "/debug_token")
-    return json({ data: { is_valid: cenario.tokenValido, expires_at: 0, type: p.input_token?.startsWith("SISTEMA") ? "SYSTEM_USER" : p.input_token?.startsWith("EAA") ? "USER" : "PAGE" } });
+    return json({ data: { is_valid: cenario.tokenValido, expires_at: 0, type: p.input_token?.startsWith("SISTEMA") ? "SYSTEM_USER" : p.input_token?.startsWith("EAA") ? "USER" : "PAGE",
+        granular_scopes: cenario.escoposComPagina ? [{ scope: "pages_show_list", target_ids: ["PAG1"] }, { scope: "business_management" }] : [],
+      },
+    });
   if (caminho === "/IG1/media" && metodo === "POST") return json({ id: `cont-${++seq}` });
   if (caminho === "/IG1/media_publish") return json({ id: `igpost-${++seq}` });
   if (caminho === "/IG1") return json({ id: "IG1", username: "legauskids" });
@@ -114,6 +126,19 @@ async function main() {
     checar("ok" in r3 && r3.paginaNome === "Legaus Kids", "só uma das Páginas tem Instagram: escolhe ela sozinho");
     const guardada = await prisma.conexaoMeta.findUniqueOrThrow({ where: { id: "principal" } });
     checar(!guardada.paginaToken.includes("TOKEN-PAGINA") && guardada.paginaToken.startsWith("v1:"), "o acesso da Página fica cifrado no banco");
+    // Login do Facebook para Empresas (22/10): /me/accounts veio vazio com a Página escolhida na janela.
+    cenario.listaComumVazia = true;
+    cenario.escoposComPagina = true;
+    const e1 = await conectarMeta("EAA-curto-de-teste-0123456789", marcos.id);
+    checar("ok" in e1 && e1.paginaNome === "Legaus Kids" && e1.instagramUsuario === "legauskids", "lista comum vazia: acha a Página pelos escopos do acesso");
+    cenario.escoposComPagina = false;
+    cenario.paginaNoPortfolio = true;
+    const e2 = await conectarMeta("EAA-curto-de-teste-0123456789", marcos.id);
+    checar("ok" in e2 && e2.paginaNome === "Legaus Kids", "lista comum vazia: acha a Página pelo portfólio de negócios");
+    cenario.paginaNoPortfolio = false;
+    const e3 = await conectarMeta("EAA-curto-de-teste-0123456789", marcos.id);
+    checar("erro" in e3 && e3.erro.includes("Diagnóstico: lista comum: 0") && e3.erro.includes("pages_manage_posts"), "sem Página nenhuma: erro com o diagnóstico e as permissões");
+    cenario.listaComumVazia = false;
     const trocasAntes = chamadas.filter((c) => c.caminho === "/oauth/access_token").length;
     const sistema = await conectarMeta("SISTEMA-token-do-business-suite-0123", marcos.id);
     checar("ok" in sistema && sistema.paginaNome === "Legaus Kids" && chamadas.filter((c) => c.caminho === "/oauth/access_token").length === trocasAntes, "token de usuário do sistema (Business Suite): conecta direto, sem troca");
