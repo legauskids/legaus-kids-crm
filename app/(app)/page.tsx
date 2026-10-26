@@ -45,7 +45,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               painel={painelCompromissos}
               pessoas={pessoas}
               usuarios={usuarios}
-              negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? "Sem contato" }))}
+              negocios={negocios.map((n) => ({
+        id: n.id,
+        titulo: n.titulo,
+        contatoNome: n.contato?.nome ?? "Sem contato",
+        contato: n.contato ? { nome: n.contato.nome, telefone: n.contato.telefone } : null,
+      }))}
             />
           </div>
         )}

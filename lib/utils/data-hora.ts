@@ -15,3 +15,8 @@ export function dataHoraDoFormulario(valor: string): Date {
   if (isNaN(data.getTime())) throw new Error("Data/hora inválida.");
   return data;
 }
+
+/** O inverso: um instante → valor de <input type="datetime-local"> no horário de Brasília (-03:00 fixo). */
+export function valorDataHoraBrasilia(data: Date): string {
+  return new Date(data.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 16);
+}

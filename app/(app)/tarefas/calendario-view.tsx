@@ -36,7 +36,7 @@ export function CalendarioView({
 }: {
   tarefas: TarefaVM[];
   usuarios: { id: string; nome: string }[];
-  negocios: { id: string; titulo: string; contatoNome: string }[];
+  negocios: { id: string; titulo: string; contatoNome: string; contato?: { nome: string; telefone: string | null } | null }[];
 }) {
   const [mesAtual, setMesAtual] = useState(() => new Date());
   // Guarda o id (não a tarefa): assim o diálogo acompanha o checklist e o que mais mudar depois de salvar.

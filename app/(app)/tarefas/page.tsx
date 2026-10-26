@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { TarefasShell } from "@/app/(app)/tarefas/tarefas-shell";
 import { getFiltroTarefasCompromisso } from "@/lib/server/compromissos";
 import { diaBrasilia } from "@/lib/utils/brasilia";
+import { mensagensDasTarefas } from "@/lib/server/tarefa-mensagem";
 
 export default async function TarefasPage({
   searchParams,
@@ -36,6 +37,8 @@ export default async function TarefasPage({
     }),
   ]);
 
+  const mensagens = await mensagensDasTarefas(tarefas.map((t) => t.id));
+
   return (
     <TarefasShell
       statusInicial={statusInicial}
@@ -60,6 +63,10 @@ export default async function TarefasPage({
         reuniaoTitulo: t.reuniao?.titulo ?? null,
         categoriaId: t.categoriaId,
         link: t.link,
+        mensagens: {
+          destino: mensagens[t.id]?.destino ?? null,
+          agendadas: (mensagens[t.id]?.agendadas ?? []).map((a) => ({ ...a, agendadaPara: a.agendadaPara.toISOString() })),
+        },
       }))}
       funis={funis.map((f) => ({
         id: f.id,
@@ -67,7 +74,12 @@ export default async function TarefasPage({
         etapas: f.etapas.map((e) => ({ id: e.id, nome: e.nome })),
       }))}
       usuarios={usuarios.map((u) => ({ id: u.id, nome: u.nome }))}
-      negocios={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? "Sem contato" }))}
+      negocios={negocios.map((n) => ({
+        id: n.id,
+        titulo: n.titulo,
+        contatoNome: n.contato?.nome ?? "Sem contato",
+        contato: n.contato ? { nome: n.contato.nome, telefone: n.contato.telefone } : null,
+      }))}
     />
   );
 }

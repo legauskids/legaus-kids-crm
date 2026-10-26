@@ -1,3 +1,5 @@
+import type { MensagensDaTarefaVM } from "@/components/tarefas/mensagens-da-tarefa";
+
 export type ItemChecklistVM = {
   id: string;
   texto: string;
@@ -25,6 +27,8 @@ export type TarefaVM = {
   /** Categoria de compromisso (módulo Compromissos) e link opcional (ex.: da postagem). */
   categoriaId: string | null;
   link: string | null;
+  /** Mensagem de WhatsApp agendada pro contato da tarefa (26/10). */
+  mensagens: MensagensDaTarefaVM;
 };
 
 export const STATUS_LABEL: Record<string, string> = {

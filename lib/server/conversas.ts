@@ -247,12 +247,33 @@ export function criarMensagemAgendada(input: {
   texto: string;
   agendadaPara: Date;
   criadaPorId: string;
+  /** Agendada a partir de uma tarefa (a tarefa mostra só as dela). */
+  tarefaId?: string | null;
 }) {
   return prisma.mensagemAgendada.create({ data: input });
 }
 
 export function cancelarMensagemAgendada(id: string) {
   return prisma.mensagemAgendada.update({ where: { id }, data: { status: "CANCELADA" } });
+}
+
+/** Cancela só se ainda não saiu. Devolve se cancelou. */
+export async function cancelarMensagemAgendadaPendente(id: string): Promise<boolean> {
+  const r = await prisma.mensagemAgendada.updateMany({ where: { id, status: "PENDENTE" }, data: { status: "CANCELADA" } });
+  return r.count === 1;
+}
+
+/**
+ * A conversa de um contato já cadastrado (a mais antiga), criando na fila do
+ * Atendimento/Pré-vendas se ele nunca conversou — pra agendar mensagem a
+ * partir de uma tarefa (26/10). Pelo id, não pelo telefone: não cai num
+ * cadastro duplicado com o mesmo celular em outro formato.
+ */
+export async function encontrarOuCriarConversaDoContato(contatoId: string) {
+  const existente = await prisma.conversa.findFirst({ where: { contatoId }, orderBy: { createdAt: "asc" } });
+  if (existente) return existente;
+  const setorPadrao = await prisma.setor.findFirstOrThrow({ where: { nome: "Atendimento/Pré-vendas" } });
+  return prisma.conversa.create({ data: { contatoId, setorId: setorPadrao.id } });
 }
 
 /** Mensagens agendadas pendentes de um contato pelo telefone (extensão de WhatsApp). */

@@ -16,6 +16,8 @@ import { criarTarefaSchema } from "@/lib/validators/tarefa";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { itensDoChecklist } from "@/lib/utils/checklist";
 import { categoriaDoFormulario } from "@/lib/utils/categoria-tarefa";
+import { mensagemDoFormulario } from "@/lib/utils/mensagem-tarefa";
+import { agendarMensagemDaTarefa, conferirMensagemDeNovaTarefa } from "@/lib/server/tarefa-mensagem";
 
 // Tarefas e o Painel (card de Compromissos conta as tarefas concluídas e planejadas).
 function revalidarTarefas() {
@@ -45,9 +47,20 @@ export async function criarTarefaAction(
     return { error: "Prazo inválido." };
   }
 
-  await criarTarefa({
+  // "Agendar mensagem no WhatsApp" marcado: confere tudo antes de criar a tarefa.
+  const negocioId = parsed.data.negocioId || null;
+  const mensagem = mensagemDoFormulario(formData);
+  if (mensagem && "erro" in mensagem) return { error: mensagem.erro };
+  if (mensagem) {
+    const problema = await conferirMensagemDeNovaTarefa({ ...mensagem, prazo, negocioId });
+    if (problema) return { error: problema };
+  }
+
+  const tarefa = await criarTarefa({
     titulo: parsed.data.titulo,
-    negocioId: parsed.data.negocioId || null,
+    negocioId,
+    // Tarefa avulsa com mensagem: o contato escolhido passa a ser o dela.
+    contatoId: mensagem && !negocioId ? mensagem.contatoId : null,
     responsavelId: parsed.data.responsavelId,
     solicitanteId: user.id,
     prazo,
@@ -56,6 +69,15 @@ export async function criarTarefaAction(
     checklist,
     ...categoriaDoFormulario(formData),
   });
+
+  if (mensagem) {
+    const r = await agendarMensagemDaTarefa({ tarefaId: tarefa.id, texto: mensagem.texto, quando: mensagem.quando, usuarioId: user.id });
+    revalidatePath("/atendimento");
+    if (!r.ok) {
+      revalidarTarefas();
+      return { error: `A tarefa foi criada, mas a mensagem não foi agendada: ${r.error}` };
+    }
+  }
 
   revalidarTarefas();
   return { success: true };

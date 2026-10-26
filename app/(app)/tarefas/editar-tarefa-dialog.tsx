@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { atualizarTarefaAction, type AtualizarTarefaState } from "@/app/(app)/tarefas/actions";
 import { ChecklistTarefa } from "@/app/(app)/tarefas/checklist-tarefa";
+import { MensagensDaTarefa } from "@/components/tarefas/mensagens-da-tarefa";
 import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
 import type { TarefaVM } from "@/app/(app)/tarefas/types";
 
@@ -36,7 +37,7 @@ export function EditarTarefaDialog({
   tarefa: TarefaVM | null;
   onOpenChange: (open: boolean) => void;
   usuarios: { id: string; nome: string }[];
-  negocios: { id: string; titulo: string; contatoNome: string }[];
+  negocios: { id: string; titulo: string; contatoNome: string; contato?: { nome: string; telefone: string | null } | null }[];
 }) {
   const atualizarComId = atualizarTarefaAction.bind(null, tarefa?.id ?? "");
   const [state, formAction, pending] = useActionState(atualizarComId, initialState);
@@ -52,7 +53,7 @@ export function EditarTarefaDialog({
 
   return (
     <Dialog open={!!tarefa} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Editar tarefa</DialogTitle>
         </DialogHeader>
@@ -140,6 +141,10 @@ export function EditarTarefaDialog({
 
         <div className="border-t pt-4">
           <ChecklistTarefa tarefaId={tarefa.id} checklist={tarefa.checklist} />
+        </div>
+
+        <div className="border-t pt-4">
+          <MensagensDaTarefa tarefaId={tarefa.id} prazo={tarefa.prazo} dados={tarefa.mensagens} />
         </div>
       </DialogContent>
     </Dialog>

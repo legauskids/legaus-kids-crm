@@ -6,7 +6,8 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, ThumbsUp, Pencil, Link2 } from "lucide-react";
+import { Check, ThumbsUp, Pencil, Link2, MessageCircle } from "lucide-react";
+import { quandoMensagem } from "@/components/tarefas/mensagens-da-tarefa";
 import { EtiquetaCategoria } from "@/components/tarefas/etiqueta-categoria";
 import { corPrazoTarefa } from "@/lib/utils/dates";
 import { moverTarefaAction, aprovarTarefaAction, atualizarPrazoTarefaAction } from "@/app/(app)/tarefas/actions";
@@ -101,6 +102,13 @@ export function TaskCard({
       )}
 
       {tarefa.descricao && <p className="text-xs text-muted-foreground">{tarefa.descricao}</p>}
+
+      {tarefa.mensagens.agendadas.some((a) => a.status === "PENDENTE") && (
+        <p className="flex items-center gap-1 text-xs font-medium text-primary" title="Mensagem de WhatsApp agendada pro contato da tarefa">
+          <MessageCircle className="size-3.5 shrink-0" />
+          Mensagem sai {quandoMensagem(tarefa.mensagens.agendadas.find((a) => a.status === "PENDENTE")!.agendadaPara)}
+        </p>
+      )}
 
       {totalChecklist > 0 && (
         <div className="flex items-center gap-2">

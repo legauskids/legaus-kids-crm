@@ -298,6 +298,12 @@ model MensagemAgendada {
   status       StatusMensagemAgendada @default(PENDENTE)
   criadaPorId  String
   criadaEm     DateTime               @default(now())
+  // Agendada a partir de uma tarefa (26/10/2026): a tarefa mostra só as dela.
+  // Vazio = marcada pelo Atendimento. Apagar a tarefa não cancela a mensagem.
+  tarefaId     String?
+  tarefa       Tarefa?                @relation(fields: [tarefaId], references: [id], onDelete: SetNull)
+
+  @@index([tarefaId])
 }
 
 model Funil {
@@ -475,8 +481,9 @@ model Tarefa {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  lembretes Lembrete[]
-  checklist ItemChecklistTarefa[]
+  lembretes          Lembrete[]
+  checklist          ItemChecklistTarefa[]
+  mensagensAgendadas MensagemAgendada[]
 
   @@index([reuniaoId])
   @@index([categoriaId, concluidaEm])

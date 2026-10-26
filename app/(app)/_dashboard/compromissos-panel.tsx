@@ -95,7 +95,7 @@ export function CompromissosPanel({
   /** Pro administrador trocar de pessoa (vazio = sem seletor). */
   pessoas: { id: string; nome: string }[];
   usuarios: { id: string; nome: string }[];
-  negocios: { id: string; titulo: string; contatoNome: string }[];
+  negocios: { id: string; titulo: string; contatoNome: string; contato?: { nome: string; telefone: string | null } | null }[];
 }) {
   const router = useRouter();
   const [planejarAberto, setPlanejarAberto] = useState(false);

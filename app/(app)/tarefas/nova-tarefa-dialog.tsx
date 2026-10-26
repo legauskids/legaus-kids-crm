@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import {
 import { criarTarefaAction, type CriarTarefaState } from "@/app/(app)/tarefas/actions";
 import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
 import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
+import { CamposMensagemNovaTarefa } from "@/components/tarefas/campos-mensagem-nova-tarefa";
 
 const initialState: CriarTarefaState = {};
 const SEM_NEGOCIO = "__nenhum__";
@@ -35,11 +36,14 @@ export function NovaTarefaDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   usuarios: { id: string; nome: string }[];
-  negocios: { id: string; titulo: string; contatoNome: string }[];
+  negocios: { id: string; titulo: string; contatoNome: string; contato?: { nome: string; telefone: string | null } | null }[];
   /** Pré-preenchimento (ex.: "Planejar amanhã" do Painel: categoria Gerar Receita + próximo dia útil). */
   valoresIniciais?: { categoriaId?: string; prazo?: string; responsavelId?: string; titulo?: string };
 }) {
   const [state, formAction, pending] = useActionState(criarTarefaAction, initialState);
+  const [negocioId, setNegocioId] = useState(SEM_NEGOCIO);
+  const negocio = negocios.find((n) => n.id === negocioId);
+  const destinoMensagem = !negocio ? "escolher" : negocio.contato ? negocio.contato : "sem-contato";
 
   // Depende do objeto de estado (novo a cada envio), não só de state.success —
   // senão, da 2ª vez em diante (true→true), o diálogo não fechava.
@@ -50,7 +54,7 @@ export function NovaTarefaDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{valoresIniciais?.prazo ? "Planejar tarefa" : "Nova tarefa"}</DialogTitle>
         </DialogHeader>
@@ -84,7 +88,7 @@ export function NovaTarefaDialog({
 
           <div className="space-y-2">
             <Label htmlFor="negocioId">Negócio vinculado (opcional)</Label>
-            <Select name="negocioId" defaultValue={SEM_NEGOCIO}>
+            <Select name="negocioId" value={negocioId} onValueChange={setNegocioId}>
               <SelectTrigger id="negocioId" className="w-full">
                 <SelectValue placeholder="Nenhum" />
               </SelectTrigger>
@@ -117,6 +121,8 @@ export function NovaTarefaDialog({
           <CamposCategoriaTarefa idPrefixo="nova" categoriaIdInicial={valoresIniciais?.categoriaId} />
 
           <ChecklistNovaTarefa />
+
+          <CamposMensagemNovaTarefa key={negocioId} idPrefixo="nova" destino={destinoMensagem} />
 
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 

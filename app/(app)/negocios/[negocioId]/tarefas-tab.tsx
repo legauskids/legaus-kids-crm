@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Check, Plus } from "lucide-react";
+import { Check, MessageCircle, Plus } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -22,6 +22,8 @@ import {
 import { ChecklistNovaTarefa } from "@/app/(app)/tarefas/checklist-nova-tarefa";
 import { CamposCategoriaTarefa } from "@/components/tarefas/campos-categoria-tarefa";
 import { EtiquetaCategoria } from "@/components/tarefas/etiqueta-categoria";
+import { CamposMensagemNovaTarefa } from "@/components/tarefas/campos-mensagem-nova-tarefa";
+import { MensagensDaTarefa, quandoMensagem, type MensagensDaTarefaVM } from "@/components/tarefas/mensagens-da-tarefa";
 
 type Tarefa = {
   id: string;
@@ -32,6 +34,7 @@ type Tarefa = {
   automatica: boolean;
   categoriaId: string | null;
   responsavel: { nome: string };
+  mensagens: MensagensDaTarefaVM;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -44,11 +47,13 @@ const STATUS_LABEL: Record<string, string> = {
 export function TarefasTab({
   negocioId,
   tarefas,
+  contatoDoNegocio,
   usuarios,
   abrirFormularioInicialmente = false,
 }: {
   negocioId: string;
   tarefas: Tarefa[];
+  contatoDoNegocio: { nome: string; telefone: string | null } | null;
   usuarios: { id: string; nome: string }[];
   abrirFormularioInicialmente?: boolean;
 }) {
@@ -59,6 +64,7 @@ export function TarefasTab({
     initialState,
   );
   const [, startTransition] = useTransition();
+  const [mensagemAberta, setMensagemAberta] = useState<string | null>(null);
   // Compara o objeto (cada envio devolve um novo): só com state.success, a partir
   // da 2ª tarefa criada o valor ficava true→true e o formulário não fechava.
   const [estadoAnterior, setEstadoAnterior] = useState(state);
@@ -89,18 +95,40 @@ export function TarefasTab({
                   <p className="text-xs text-muted-foreground">
                     {tarefa.responsavel.nome} · prazo {tarefa.prazo.toLocaleString("pt-BR")}
                   </p>
+                  {tarefa.mensagens.agendadas.some((a) => a.status === "PENDENTE") && (
+                    <p className="flex items-center gap-1 text-xs font-medium text-primary">
+                      <MessageCircle className="size-3.5 shrink-0" />
+                      Mensagem sai {quandoMensagem(tarefa.mensagens.agendadas.find((a) => a.status === "PENDENTE")!.agendadaPara)}
+                    </p>
+                  )}
                 </div>
-                {tarefa.status !== "CONCLUIDA" && (
+                <div className="flex shrink-0 gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
-                    onClick={() => startTransition(() => concluirTarefaRapidaAction(negocioId, tarefa.id))}
+                    variant={mensagemAberta === tarefa.id ? "secondary" : "ghost"}
+                    onClick={() => setMensagemAberta(mensagemAberta === tarefa.id ? null : tarefa.id)}
+                    title="Agendar mensagem no WhatsApp"
                   >
-                    <Check className="size-4" />
-                    Concluir
+                    <MessageCircle className="size-4" />
+                    Mensagem
                   </Button>
-                )}
+                  {tarefa.status !== "CONCLUIDA" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => startTransition(() => concluirTarefaRapidaAction(negocioId, tarefa.id))}
+                    >
+                      <Check className="size-4" />
+                      Concluir
+                    </Button>
+                  )}
+                </div>
               </CardContent>
+              {mensagemAberta === tarefa.id && (
+                <CardContent className="border-t pt-3 pb-3">
+                  <MensagensDaTarefa tarefaId={tarefa.id} prazo={tarefa.prazo.toISOString()} dados={tarefa.mensagens} />
+                </CardContent>
+              )}
             </Card>
           </li>
         ))}
@@ -137,6 +165,7 @@ export function TarefasTab({
               </div>
               <CamposCategoriaTarefa idPrefixo="negocio" placeholderDescricao="" />
               <ChecklistNovaTarefa id="checklist-negocio" />
+              <CamposMensagemNovaTarefa idPrefixo="negocio" destino={contatoDoNegocio ?? "sem-contato"} />
               {state.error && <p className="text-sm text-destructive">{state.error}</p>}
               <div className="flex gap-2">
                 <Button type="submit" disabled={pending}>

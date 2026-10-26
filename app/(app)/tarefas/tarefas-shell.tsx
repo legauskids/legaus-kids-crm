@@ -46,7 +46,7 @@ export function TarefasShell({
   tarefas: TarefaVM[];
   funis: Funil[];
   usuarios: { id: string; nome: string }[];
-  negocios: { id: string; titulo: string; contatoNome: string }[];
+  negocios: { id: string; titulo: string; contatoNome: string; contato?: { nome: string; telefone: string | null } | null }[];
   /** Filtro de status já aplicado ao abrir (ex.: ?status=ATRASADA vindo do dashboard). */
   statusInicial?: string;
   /** Categoria já filtrada ao abrir (?categoria=<id>). */

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireModulo } from "@/lib/auth/guards";
 import { getNegocioDetalhado } from "@/lib/server/negocios";
+import { mensagensDasTarefas } from "@/lib/server/tarefa-mensagem";
 import { prisma } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,9 +27,10 @@ export default async function NegocioDetalhePage({
   const negocio = await getNegocioDetalhado(negocioId);
   if (!negocio) notFound();
 
-  const [usuarios, contatos] = await Promise.all([
+  const [usuarios, contatos, mensagens] = await Promise.all([
     prisma.user.findMany({ orderBy: { nome: "asc" } }),
     prisma.contato.findMany({ select: { id: true, nome: true }, orderBy: { nome: "asc" } }),
+    mensagensDasTarefas(negocio.tarefas.map((t) => t.id)),
   ]);
   const isFunilVenda = negocio.funil.nome === "Funil de venda";
   const isFunilPosVenda = negocio.funil.nome === "Funil de pós-venda";
@@ -102,7 +104,14 @@ export default async function NegocioDetalhePage({
         <TabsContent value="tarefas">
           <TarefasTab
             negocioId={negocio.id}
-            tarefas={negocio.tarefas}
+            tarefas={negocio.tarefas.map((t) => ({
+              ...t,
+              mensagens: {
+                destino: mensagens[t.id]?.destino ?? null,
+                agendadas: (mensagens[t.id]?.agendadas ?? []).map((a) => ({ ...a, agendadaPara: a.agendadaPara.toISOString() })),
+              },
+            }))}
+            contatoDoNegocio={negocio.contato ? { nome: negocio.contato.nome, telefone: negocio.contato.telefone } : null}
             usuarios={usuarios}
             abrirFormularioInicialmente={abrirTarefa === "1"}
           />
