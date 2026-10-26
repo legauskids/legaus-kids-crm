@@ -9,11 +9,14 @@ import {
   atualizarLegendaPostagem,
   atualizarTextosPostagem,
   buscarFotoDoPost,
+  enquadrarBrinquedosNasArtes,
   imagemDaArte,
+  restaurarFotosOriginais,
   salvarDadosArte,
   textosDaPostagem,
   trocarFotosPorSlide,
 } from "@/lib/server/marketing";
+import { editarFotosEmSegundoPlano, podeEditarFotoComIA } from "@/lib/server/marketing-edicao";
 import { afirmaQueFez, aplicarAjuste, respostaHonesta, resumoDasArtes, type AjusteArte, type FotoParaAssistente } from "@/lib/utils/marketing-agente";
 import { ROTULO_CONTEUDO, type DadosArte, type FormatoArte } from "@/lib/utils/postagem-arte";
 
@@ -50,13 +53,13 @@ const SISTEMA = `Você é o Claude, assistente de marketing dentro do CRM da Leg
 Regras da marca (inegociáveis):
 1. A logo e as cores nunca mudam. A logo só muda de tamanho e de posição e nunca sai da arte.
 2. Só as cores da marca. Título: linha pequena verde-azulada, linha grande laranja. Selos: laranja (texto branco) ou branco (texto verde-azulado), com ícone de check ou de localização (pino — use icone "local" pra local da obra, ex.: "Bob's Vacaria").
-3. Só fotos reais: você não cria nem edita imagem — só escolhe, enquadra e dá zoom nas fotos do próprio post.
+3. Fotos: só as do próprio post — você escolhe, enquadra e dá zoom. Mudar o CONTEÚDO de uma foto (trocar terra por grama, tirar um objeto ou sujeira do chão) só com editar_foto_ia e SÓ quando o Marcos pedir isso explicitamente: nunca por iniciativa própria, nem como sugestão já aplicada. Os brinquedos entregues nunca podem ser alterados, e a logo e a marca nunca passam por edição de IA.
 4. Todo título, frase e selo começa com letra maiúscula.
 5. No máximo 3 informações por imagem: o título e 2 selos.
 6. Story: nada importante nos 250 px de cima nem nos 250 px de baixo (botões do Instagram).
 7. Não invente fatos (cliente, cidade, preço, itens) — nem na arte, nem na legenda.
 
-Coordenadas, em pixels da arte (feed 1080×1350, story 1080×1920): x da esquerda pra direita, y de cima pra baixo. Título e selos: x,y = canto de cima à esquerda. O título padrão do feed tem ≈ 230 px de altura (linhas de 58 e 100 px, escala 1); o do story ≈ 260 px. Selo: altura = 2 × tam. Logo: cx = centro horizontal, base = borda de baixo, larg = largura (altura ≈ 0,64 × larg). Foto: fx/fy = ponto focal (0 = mostra a esquerda/o topo, 1 = a direita/a base), zoom de 1 (foto inteira cobrindo a caixa) a 4.
+Coordenadas, em pixels da arte (feed 1080×1350, story 1080×1920): x da esquerda pra direita, y de cima pra baixo. Título e selos: x,y = canto de cima à esquerda. O título padrão do feed tem ≈ 230 px de altura (linhas de 58 e 100 px, escala 1); o do story ≈ 260 px. Selo: altura = 2 × tam. Logo: cx = centro horizontal, base = borda de baixo, larg = largura (altura ≈ 0,64 × larg). Foto: fx/fy = ponto focal (0 = mostra a esquerda/o topo, 1 = a direita/a base). zoom 1 = a foto cobre a caixa (corta o que sobra); menor que 1 = a foto diminui até aparecer inteira, com fundo da própria foto desfocado; até 4 = aproxima.
 
 Como trabalhar:
 - Só mude alguma coisa quando o Marcos pedir uma mudança. Se ele só perguntar ou pedir opinião ("o que acha?", "está bom?", "me diz se..."), olhe, responda e sugira — sem alterar nada; ele decide.
@@ -66,6 +69,8 @@ Como trabalhar:
 - Antes de opinar sobre composição (título em cima do brinquedo, foto mal enquadrada, logo pequena), use ver_artes pra OLHAR. Depois de ajustar, olhe pra conferir só se algo pode ter ficado cortado ou sobreposto; se ficou, avise e sugira — não saia mexendo além do pedido.
 - Pra mexer, use ajustar_arte; pode aplicar os mesmos ajustes em várias artes de uma vez. Prefira ajustes pontuais a refazer tudo.
 - Pra escolher outra foto (ex.: capa), use ver_fotos pra ver as fotos do post e troque com ajustar_arte (elemento foto1, campo foto).
+- Brinquedo cortado, "diminui a foto pra caber", "mostra o brinquedo inteiro", "centraliza no brinquedo": enquadrar_brinquedos (ele acha os brinquedos na foto e ajusta ponto focal e zoom — não chute fx/zoom no olho). Depois, olhe com ver_artes.
+- Edição de foto (só se o Marcos pediu): editar_foto_ia com as fotos e o pedido dele, específico ("trocar a terra em volta dos brinquedos por grama igual à do gramado"). Leva 1 a 2 minutos e roda em segundo plano: diga que começou e que o aviso chega no Telegram — nunca diga que já ficou pronta. "Volta a foto ao original"/"desfaz a edição": restaurar_foto.
 - refazer_artes volta TODAS as artes ao padrão e apaga os ajustes feitos (no editor ou por você) — só quando o Marcos pedir pra recomeçar ou trocar os textos de todas.
 - Legenda: gancho → o que foi entregue (só fatos) → chamada "Chama no WhatsApp!" → 4 a 6 hashtags, sempre com #LegausKids #BrincadeiraLevadaASerio. Tom alegre, frases curtas, no máximo 1 ou 2 emojis. Use alterar_legenda com o texto pronto. Story não tem legenda.
 - Slides do carrossel com 1 foto cada ou 2 empilhadas: organizar_slides (a capa e o story ficam como estão).
@@ -130,6 +135,33 @@ const FERRAMENTAS: Anthropic.Tool[] = [
       },
       required: ["artes", "ajustes"],
     },
+  },
+  {
+    name: "enquadrar_brinquedos",
+    description:
+      "Enquadra as fotos das artes pra os brinquedos aparecerem inteiros: o servidor localiza os brinquedos em cada foto e ajusta ponto focal e zoom, fora da faixa da logo e (na capa) abaixo do título. Foto larga demais pro slide diminui até caber, com fundo desfocado da própria foto.",
+    input_schema: {
+      type: "object",
+      properties: { artes: { type: "array", items: { type: "integer" }, description: "Números das artes; vazio = todas" } },
+    },
+  },
+  {
+    name: "editar_foto_ia",
+    description:
+      "Edita fotos do post com IA (ex.: trocar a terra por grama, tirar um objeto ou sujeira do chão). SÓ quando o Marcos pedir explicitamente pra mudar a foto. Os brinquedos são preservados. Leva 1 a 2 min, roda em segundo plano, refaz as artes e avisa no Telegram. A foto original fica guardada (restaurar_foto).",
+    input_schema: {
+      type: "object",
+      properties: {
+        fotos: { type: "array", items: { type: "integer" }, description: "Números das fotos do post (1, 2, 3…)" },
+        instrucao: { type: "string", description: "O que mudar na foto, em português, específico" },
+      },
+      required: ["fotos", "instrucao"],
+    },
+  },
+  {
+    name: "restaurar_foto",
+    description: "Volta fotos do post ao original (desfaz edição por IA) e refaz as artes que usam essas fotos.",
+    input_schema: { type: "object", properties: { fotos: { type: "array", items: { type: "integer" } } }, required: ["fotos"] },
   },
   {
     name: "organizar_slides",
@@ -203,8 +235,48 @@ async function executar(
   entrada: Record<string, unknown>,
   postagemId: string,
   estado: { atual: Estado },
+  usuarioId: string,
 ): Promise<{ conteudo: ConteudoResultado; mudou: boolean; feitos?: string[] }> {
   const e = estado.atual;
+  const idsDasFotos = (numeros: unknown) =>
+    [...new Set(Array.isArray(numeros) ? (numeros as number[]) : [])].flatMap((n) => (e.imagens[n - 1] ? [{ n, id: e.imagens[n - 1].id }] : []));
+  if (nome === "enquadrar_brinquedos") {
+    const ordens = ((entrada.artes as number[] | undefined) ?? []).map((n) => n - 1);
+    const r = await enquadrarBrinquedosNasArtes(postagemId, ordens);
+    const linhas = r.mudancas.map(
+      (m) =>
+        `Arte ${m.ordem + 1} (foto ${m.foto}): zoom ${m.antes.zoom.toFixed(2)}→${m.depois.zoom.toFixed(2)}${m.depois.zoom < 0.999 ? " (diminuiu pra caber, com fundo desfocado)" : ""}, ponto focal ${m.antes.fx.toFixed(2)},${m.antes.fy.toFixed(2)}→${m.depois.fx.toFixed(2)},${m.depois.fy.toFixed(2)}`,
+    );
+    if (r.mudancas.length) estado.atual = await carregarEstado(postagemId);
+    const sem = r.semBrinquedo.length ? `\nNão achei brinquedo nas fotos ${r.semBrinquedo.join(", ")} — ficaram como estavam.` : "";
+    return {
+      conteudo: (linhas.length ? `Enquadrei nos brinquedos:\n${linhas.join("\n")}` : "As fotos já mostravam os brinquedos inteiros — nada mudou.") + sem,
+      mudou: r.mudancas.length > 0,
+      feitos: r.mudancas.length ? [`Fotos enquadradas nos brinquedos em ${new Set(r.mudancas.map((m) => m.ordem)).size} arte(s)`] : undefined,
+    };
+  }
+  if (nome === "editar_foto_ia") {
+    if (!(await podeEditarFotoComIA(usuarioId))) return { conteudo: "Só o Marcos (administrador) pode pedir edição de foto por IA.", mudou: false };
+    const fotos = idsDasFotos(entrada.fotos);
+    const instrucao = String(entrada.instrucao ?? "").trim();
+    if (!fotos.length) return { conteudo: `Nenhuma dessas fotos existe (o post tem ${e.imagens.length}).`, mudou: false };
+    if (instrucao.length < 5) return { conteudo: "Diga o que mudar na foto (ex.: trocar a terra por grama).", mudou: false };
+    editarFotosEmSegundoPlano({ postagemId, imagemIds: fotos.map((f) => f.id), instrucao, usuarioId });
+    const quais = fotos.map((f) => f.n).join(", ");
+    return {
+      conteudo: `Edição por IA começou nas fotos ${quais} ("${instrucao}"). Leva 1 a 2 minutos, em segundo plano: quando terminar, as artes são refeitas e o aviso chega no Telegram. Ainda NÃO está pronta.`,
+      mudou: false,
+      feitos: [`Edição por IA das fotos ${quais} começou (fica pronta em 1 a 2 min, com aviso no Telegram)`],
+    };
+  }
+  if (nome === "restaurar_foto") {
+    const fotos = idsDasFotos(entrada.fotos);
+    if (!fotos.length) return { conteudo: `Nenhuma dessas fotos existe (o post tem ${e.imagens.length}).`, mudou: false };
+    await restaurarFotosOriginais(postagemId, fotos.map((f) => f.id));
+    estado.atual = await carregarEstado(postagemId);
+    const quais = fotos.map((f) => f.n).join(", ");
+    return { conteudo: `Fotos ${quais} voltaram ao original; as artes com elas foram refeitas.`, mudou: true, feitos: [`Fotos ${quais} de volta ao original`] };
+  }
   if (nome === "ver_artes") {
     const numeros = ((entrada.artes as number[]) ?? []).slice(0, MAX_IMAGENS_POR_VEZ);
     const blocos: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
@@ -368,7 +440,7 @@ export async function conversarSobrePost(input: {
       const resultados: Anthropic.ToolResultBlockParam[] = [];
       for (const uso of usos) {
         try {
-          const res = await executar(uso.name, uso.input as Record<string, unknown>, input.postagemId, estado);
+          const res = await executar(uso.name, uso.input as Record<string, unknown>, input.postagemId, estado, input.usuarioId);
           mudou ||= res.mudou;
           if (res.feitos?.length) feitos.push(...res.feitos);
           acoes.push({ ferramenta: uso.name, entrada: resumoEntrada(uso.input), ok: true });

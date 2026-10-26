@@ -89,11 +89,13 @@ export function aplicarAjuste(dados: DadosArte, formato: FormatoArte, a: AjusteA
     const fotos = dados.fotos.map((x, j) =>
       j === i
         ? {
-            ...x,
             imagemId: novaFoto,
+            box: x.box,
             fx: num(a.fx) ?? (trocouFoto ? 0.5 : x.fx),
             fy: num(a.fy) ?? (trocouFoto ? 0.5 : x.fy),
             zoom: num(a.zoom) ?? (trocouFoto ? 1 : x.zoom),
+            // Onde estão os brinquedos é da foto: trocou a foto, não vale mais.
+            ...(!trocouFoto && x.alvo ? { alvo: x.alvo } : {}),
           }
         : x,
     );

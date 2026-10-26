@@ -7,6 +7,7 @@ import {
   CORES_MARCA,
   DESLOCAMENTO_LETRA_TITULO,
   LOGO_PROPORCAO,
+  DESFOQUE_FUNDO,
   RAIO_FOTO,
   contornoTitulo,
   coresSelo,
@@ -73,11 +74,19 @@ export async function tratarFoto(original: Buffer): Promise<{ buffer: Buffer; la
   return { buffer: data, largura: info.width, altura: info.height };
 }
 
-/** Recorta a foto pra caixa sem distorcer, no ponto focal, com zoom (≥ 1). */
+/**
+ * A foto na caixa, sem distorcer, no ponto focal e com zoom. Zoom < 1 (foto
+ * menor que a caixa, pra os brinquedos caberem inteiros): o fundo é a própria
+ * foto ampliada e desfocada — a prévia do editor faz o mesmo com CSS.
+ */
 async function recortar(foto: Buffer, f: FotoArte): Promise<Buffer> {
   const meta = await sharp(foto).metadata();
   const r = recorteDaFoto({ largura: meta.width ?? 1, altura: meta.height ?? 1 }, f);
-  return sharp(foto).resize(r.rw, r.rh).extract({ left: r.left, top: r.top, width: r.w, height: r.h }).jpeg({ quality: 92 }).toBuffer();
+  const visivel = { left: r.left, top: r.top, width: Math.min(r.w, r.rw), height: Math.min(r.h, r.rh) };
+  const nitida = await sharp(foto).resize(r.rw, r.rh).extract(visivel).toBuffer();
+  if (r.preenche) return sharp(nitida).jpeg({ quality: 92 }).toBuffer();
+  const fundo = await sharp(foto).resize(r.w, r.h, { fit: "cover" }).blur(DESFOQUE_FUNDO).modulate({ brightness: 0.9 }).toBuffer();
+  return sharp(fundo).composite([{ input: nitida, left: r.dx, top: r.dy }]).jpeg({ quality: 92 }).toBuffer();
 }
 
 function noTitulo(e: ElementoTitulo): No {

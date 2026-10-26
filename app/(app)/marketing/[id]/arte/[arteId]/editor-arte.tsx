@@ -4,25 +4,29 @@ import { useEffect, useRef, useState, useTransition, type PointerEvent as Pointe
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Crosshair, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Crosshair, Expand, Loader2, Plus, RotateCcw, ScanSearch, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { salvarArteAction } from "@/app/(app)/marketing/actions";
+import { alvoDaFotoAction, salvarArteAction } from "@/app/(app)/marketing/actions";
 import {
   CORES_MARCA,
+  DESFOQUE_FUNDO,
   DESLOCAMENTO_LETRA_TITULO,
   LOGO_PROPORCAO,
   MARGEM_STORY,
   RAIO_FOTO,
+  areaSeguraDaFoto,
   comMaiuscula,
   contornoTitulo,
   coresSelo,
+  enquadrarNoAlvo,
   iconeSeloSvg,
   linhasDoTitulo,
   medidasSelo,
   recorteDaFoto,
   seloNovo,
+  zoomMinimo,
   type DadosArte,
   type ElementoArte,
   type ElementoLogo,
@@ -162,6 +166,8 @@ export function EditorArte(props: {
     setDados((d) => ({ ...d, elementos: d.elementos.map((e) => (e.id === id ? mudar(e) : e)) }));
   }
 
+  const [enquadrando, setEnquadrando] = useState(false);
+
   function trocarFoto(i: number, mudar: Partial<DadosArte["fotos"][number]>) {
     setDados((d) => ({ ...d, fotos: d.fotos.map((f, j) => (j === i ? { ...f, ...mudar } : f)) }));
   }
@@ -183,9 +189,10 @@ export function EditorArte(props: {
       const i = a.alvo.i;
       const f = a.inicio.fotos[i];
       const r = recorteDaFoto(fotoDoPost(f.imagemId), f);
-      // Arrastar a foto pra direita mostra mais da esquerda: o ponto focal anda ao contrário.
-      const fx = r.rw > r.w ? limitar(f.fx - dx / r.rw, r.w / 2 / r.rw, 1 - r.w / 2 / r.rw) : f.fx;
-      const fy = r.rh > r.h ? limitar(f.fy - dy / r.rh, r.h / 2 / r.rh, 1 - r.h / 2 / r.rh) : f.fy;
+      // Foto maior que a caixa: arrastar pra direita mostra mais da esquerda (o ponto focal anda ao contrário).
+      // Foto menor (zoom < 1, com fundo desfocado): arrastar move a foto junto.
+      const fx = r.rw > r.w ? limitar(f.fx - dx / r.rw, r.w / 2 / r.rw, 1 - r.w / 2 / r.rw) : r.rw < r.w ? limitar(f.fx + dx / (r.w - r.rw), 0, 1) : f.fx;
+      const fy = r.rh > r.h ? limitar(f.fy - dy / r.rh, r.h / 2 / r.rh, 1 - r.h / 2 / r.rh) : r.rh < r.h ? limitar(f.fy + dy / (r.h - r.rh), 0, 1) : f.fy;
       trocarFoto(i, { fx, fy });
       return;
     }
@@ -288,8 +295,18 @@ export function EditorArte(props: {
                     onPointerDown={(e) => comecar(e, { tipo: "foto", i })}
                     style={{ position: "absolute", left: f.box[0], top: f.box[1], width: r.w, height: r.h, borderRadius: RAIO_FOTO, overflow: "hidden", cursor: "grab" }}
                   >
+                    {!r.preenche && (
+                      // Foto menor que a caixa: o fundo é a própria foto desfocada (igual ao servidor).
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/imagem/postagem-imagem/${f.imagemId}`}
+                        alt=""
+                        draggable={false}
+                        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: `blur(${DESFOQUE_FUNDO}px) brightness(0.9)`, transform: "scale(1.08)", pointerEvents: "none" }}
+                      />
+                    )}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`/api/imagem/postagem-imagem/${f.imagemId}`} alt="" draggable={false} style={{ position: "absolute", left: -r.left, top: -r.top, width: r.rw, height: r.rh, maxWidth: "none", pointerEvents: "none" }} />
+                    <img src={`/api/imagem/postagem-imagem/${f.imagemId}`} alt="" draggable={false} style={{ position: "absolute", left: r.dx - r.left, top: r.dy - r.top, width: r.rw, height: r.rh, maxWidth: "none", pointerEvents: "none" }} />
                     {sel && (
                       <div style={{ position: "absolute", inset: 0, borderRadius: RAIO_FOTO, boxShadow: `inset 0 0 0 ${Math.max(5, 3 / escala)}px ${CORES_MARCA.laranja}`, pointerEvents: "none" }} />
                     )}
@@ -353,17 +370,54 @@ export function EditorArte(props: {
             {selecao?.tipo === "foto" && (() => {
               const i = selecao.i;
               const f = dados.fotos[i];
+              const minimo = Math.floor(zoomMinimo(fotoDoPost(f.imagemId), f.box) * 100) / 100;
               return (
                 <>
                   <h2 className="text-sm font-semibold">Foto {dados.fotos.length > 1 ? i + 1 : ""}</h2>
                   <div className="space-y-1.5">
-                    <Label>Zoom ({f.zoom.toFixed(2)}×)</Label>
-                    <input type="range" min={1} max={3} step={0.05} value={f.zoom} onChange={(e) => trocarFoto(i, { zoom: Number(e.target.value) })} className="w-full accent-primary" />
+                    <Label>
+                      Zoom ({f.zoom.toFixed(2)}×){f.zoom <= minimo + 0.005 ? " — foto inteira" : f.zoom < 1 ? " — com fundo desfocado" : ""}
+                    </Label>
+                    <input
+                      type="range"
+                      min={minimo}
+                      max={3}
+                      step={0.01}
+                      value={Math.max(f.zoom, minimo)}
+                      onChange={(e) => trocarFoto(i, { zoom: Number(e.target.value) })}
+                      className="w-full accent-primary"
+                    />
+                    <p className="text-xs text-muted-foreground">Abaixo de 1 a foto diminui pra caber, e o resto vira a própria foto desfocada.</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => trocarFoto(i, { fx: 0.5, fy: 0.5, zoom: 1 })}>
-                    <Crosshair className="size-4" />
-                    Centralizar
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={enquadrando}
+                      onClick={async () => {
+                        setEnquadrando(true);
+                        const r = await alvoDaFotoAction(postId, f.imagemId).catch(() => null);
+                        setEnquadrando(false);
+                        if (!r?.ok || !r.alvo) {
+                          toast.error(r && !r.ok ? r.error : "Não achei brinquedo nessa foto.");
+                          return;
+                        }
+                        trocarFoto(i, enquadrarNoAlvo(fotoDoPost(f.imagemId), f.box, r.alvo, areaSeguraDaFoto(dados, f.box)));
+                        toast.success("Enquadrei nos brinquedos — confira e salve.");
+                      }}
+                    >
+                      {enquadrando ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
+                      Enquadrar brinquedos
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => trocarFoto(i, { fx: 0.5, fy: 0.5, zoom: minimo })}>
+                      <Expand className="size-4" />
+                      Foto inteira
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => trocarFoto(i, { fx: 0.5, fy: 0.5, zoom: 1 })}>
+                      <Crosshair className="size-4" />
+                      Centralizar
+                    </Button>
+                  </div>
                   {fotosPost.length > 1 && (
                     <div className="space-y-1.5">
                       <Label>Trocar a foto</Label>

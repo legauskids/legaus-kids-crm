@@ -47,8 +47,16 @@ export type SeloPedido = string | { t: string; icone?: IconeSelo };
 export type ElementoLogo = { id: string; tipo: "logo"; cx: number; base: number; larg: number };
 export type ElementoArte = ElementoTitulo | ElementoSelo | ElementoLogo;
 
-/** Foto numa caixa [x0, y0, x1, y1], recortada sem distorcer; fx/fy = ponto focal (0 a 1). */
-export type FotoArte = { imagemId: string; box: [number, number, number, number]; fx: number; fy: number; zoom: number };
+/** Onde estão os brinquedos na foto: caixa [x0, y0, x1, y1] de 0 a 1 (lib/server/enquadramento.ts). */
+export type AlvoFoto = [number, number, number, number];
+
+/**
+ * Foto numa caixa [x0, y0, x1, y1], sem distorcer; fx/fy = ponto focal (0 a 1).
+ * zoom 1 = a foto cobre a caixa; menor que 1 = a foto diminui até caber
+ * inteira e o resto da caixa é a própria foto desfocada (26/10/2026).
+ * alvo = onde estão os brinquedos (guardado pra reenquadrar sem perguntar de novo).
+ */
+export type FotoArte = { imagemId: string; box: [number, number, number, number]; fx: number; fy: number; zoom: number; alvo?: AlvoFoto };
 
 export type DadosArte = { w: number; h: number; fotos: FotoArte[]; elementos: ElementoArte[] };
 
@@ -56,6 +64,8 @@ export type DadosArte = { w: number; h: number; fotos: FotoArte[]; elementos: El
 export const BORDA = 32;
 export const ESPACO_FOTOS = 16;
 export const RAIO_FOTO = 26;
+/** Desfoque do fundo quando a foto diminui pra caber (zoom < 1): sigma no sharp, px no CSS da prévia. */
+export const DESFOQUE_FUNDO = 28;
 // Medidas do título "adesivo" calibradas nos pixels das artes aprovadas
 // (capa e story de 16/10, desenhadas pelo legaus_render.py): cada linha
 // começa onde a anterior termina (altura × 1,259 + contorno − 6).
@@ -126,21 +136,118 @@ export function coresSelo(estilo: ElementoSelo["estilo"]): { fundo: string; text
   return estilo === "laranja" ? { fundo: CORES_MARCA.laranja, texto: CORES_MARCA.branco } : { fundo: CORES_MARCA.branco, texto: CORES_MARCA.teal };
 }
 
+/** Escalas da foto na caixa: cobrir (zoom 1) e caber inteira (o menor zoom). */
+function escalasDaFoto(foto: { largura: number; altura: number }, box: FotoArte["box"]) {
+  const w = Math.round(box[2] - box[0]);
+  const h = Math.round(box[3] - box[1]);
+  return { w, h, cobrir: Math.max(w / foto.largura, h / foto.altura), caber: Math.min(w / foto.largura, h / foto.altura) };
+}
+
+/** O menor zoom da foto nessa caixa: a foto inteira aparece (o resto é fundo desfocado). */
+export function zoomMinimo(foto: { largura: number; altura: number }, box: FotoArte["box"]): number {
+  const { cobrir, caber } = escalasDaFoto(foto, box);
+  return caber / cobrir;
+}
+
 /**
- * Como a foto entra na caixa (cover sem distorcer, ponto focal e zoom ≥ 1):
- * tamanho da foto ampliada e o recorte (left/top) — o mesmo cálculo no
- * servidor (sharp) e na prévia do editor (CSS).
+ * Como a foto entra na caixa, sem distorcer — o mesmo cálculo no servidor
+ * (sharp) e na prévia do editor (CSS). Em cada sentido: se a foto ampliada é
+ * maior que a caixa, recorta no ponto focal (left/top); se é menor (zoom < 1,
+ * desde 26/10), aparece inteira nesse sentido, posicionada pelo ponto focal
+ * (dx/dy), e o fundo é a própria foto desfocada (preenche = false).
  */
 export function recorteDaFoto(foto: { largura: number; altura: number }, f: Pick<FotoArte, "box" | "fx" | "fy" | "zoom">) {
-  const [x0, y0, x1, y1] = f.box;
-  const w = Math.round(x1 - x0);
-  const h = Math.round(y1 - y0);
-  const escala = Math.max(w / foto.largura, h / foto.altura) * Math.max(1, f.zoom || 1);
-  const rw = Math.max(w, Math.round(foto.largura * escala));
-  const rh = Math.max(h, Math.round(foto.altura * escala));
-  const left = Math.min(Math.max(Math.round(rw * f.fx - w / 2), 0), rw - w);
-  const top = Math.min(Math.max(Math.round(rh * f.fy - h / 2), 0), rh - h);
-  return { w, h, rw, rh, left, top };
+  const { w, h, cobrir, caber } = escalasDaFoto(foto, f.box);
+  const escala = Math.max(caber, cobrir * (f.zoom || 1));
+  // Arredondamento não pode abrir uma fresta de 1 px quando a foto cobre a caixa.
+  const ajustar = (r: number, c: number) => (r < c && r >= c - 1 ? c : r);
+  const rw = ajustar(Math.round(foto.largura * escala), w);
+  const rh = ajustar(Math.round(foto.altura * escala), h);
+  const eixo = (r: number, c: number, foco: number) =>
+    r >= c ? { corte: Math.min(Math.max(Math.round(r * foco - c / 2), 0), r - c), desloc: 0 } : { corte: 0, desloc: Math.round((c - r) * Math.min(Math.max(foco, 0), 1)) };
+  const x = eixo(rw, w, f.fx);
+  const y = eixo(rh, h, f.fy);
+  return { w, h, rw, rh, left: x.corte, top: y.corte, dx: x.desloc, dy: y.desloc, preenche: rw >= w && rh >= h };
+}
+
+/**
+ * Onde a foto pode mostrar os brinquedos sem nada por cima: a caixa da foto
+ * menos a faixa da logo (embaixo) e, se ainda sobrar espaço bom, menos a
+ * faixa do título e dos selos (em cima). Em pixels da arte.
+ */
+export function areaSeguraDaFoto(dados: Pick<DadosArte, "elementos">, box: FotoArte["box"]): [number, number, number, number] {
+  const [x0, , x1] = box;
+  let [, y0, , y1] = box;
+  const altura = y1 - y0;
+  for (const e of dados.elementos) {
+    if (e.tipo !== "logo") continue;
+    const topoLogo = e.base - e.larg * LOGO_PROPORCAO;
+    if (topoLogo > y0 + altura / 2 && topoLogo < y1) y1 = Math.min(y1, topoLogo - 12);
+  }
+  let fimTextos = y0;
+  for (const e of dados.elementos) {
+    if (e.tipo === "titulo") fimTextos = Math.max(fimTextos, e.y + alturaTitulo(e.linhas, e.escala || 1));
+    if (e.tipo === "selo") fimTextos = Math.max(fimTextos, e.y + alturaSelo(e.tam));
+  }
+  // Textos na metade de cima e ainda sobra pelo menos 45% da caixa: os brinquedos ficam abaixo deles.
+  if (fimTextos > y0 && fimTextos < y0 + altura / 2 && y1 - (fimTextos + 16) >= altura * 0.45) y0 = fimTextos + 16;
+  return [x0, y0, x1, y1];
+}
+
+/** Caixa de brinquedos vinda de fora (editor, assistente): 4 números de 0 a 1, em ordem. */
+export function alvoValido(v: unknown): AlvoFoto | null {
+  if (!Array.isArray(v) || v.length !== 4 || !v.every((n) => typeof n === "number" && n >= 0 && n <= 1)) return null;
+  const [x0, y0, x1, y1] = v as number[];
+  return x1 > x0 && y1 > y0 ? [x0, y0, x1, y1] : null;
+}
+
+/** Folga em volta dos brinquedos (da largura/altura da foto), pra não ficarem colados na borda. */
+const FOLGA_ALVO = 0.03;
+
+/**
+ * Ponto focal e zoom pra os brinquedos (alvo) aparecerem inteiros na área
+ * segura: o maior zoom (até cobrir a caixa, nunca ampliar além) em que eles
+ * cabem, com eles no meio da área. Foto larga demais pro slide: diminui até
+ * caber (zoom < 1), com fundo desfocado.
+ */
+export function enquadrarNoAlvo(
+  foto: { largura: number; altura: number },
+  box: FotoArte["box"],
+  alvo: AlvoFoto,
+  seguro: [number, number, number, number] = box,
+): Pick<FotoArte, "fx" | "fy" | "zoom"> {
+  const { w, h, cobrir, caber } = escalasDaFoto(foto, box);
+  const ax0 = Math.max(seguro[0] - box[0], 0);
+  const ay0 = Math.max(seguro[1] - box[1], 0);
+  const ax1 = Math.min(seguro[2] - box[0], w);
+  const ay1 = Math.min(seguro[3] - box[1], h);
+  const bx0 = Math.max(alvo[0] - FOLGA_ALVO, 0);
+  const by0 = Math.max(alvo[1] - FOLGA_ALVO, 0);
+  const bx1 = Math.min(alvo[2] + FOLGA_ALVO, 1);
+  const by1 = Math.min(alvo[3] + FOLGA_ALVO, 1);
+  const cabe = Math.min((ax1 - ax0) / Math.max((bx1 - bx0) * foto.largura, 1), (ay1 - ay0) / Math.max((by1 - by0) * foto.altura, 1));
+  const escala = Math.min(Math.max(Math.min(cobrir, cabe), caber), cobrir);
+  const rw = foto.largura * escala;
+  const rh = foto.altura * escala;
+  // Foto maior que a caixa: centro dos brinquedos no centro da área segura,
+  // sem sair da foto. Foto menor (sobra fundo): fica no meio da caixa, e só
+  // sobe/desce o necessário pra os brinquedos não irem pra trás da logo ou do título.
+  const foco = (r: number, c: number, b0: number, b1: number, a0: number, a1: number) => {
+    if (r > c + 0.5) return (Math.min(Math.max(((b0 + b1) / 2) * r - (a0 + a1) / 2, 0), r - c) + c / 2) / r;
+    if (r < c - 0.5) {
+      const min = Math.max(a0 - b0 * r, 0);
+      const max = Math.min(a1 - b1 * r, c - r);
+      const desloc = min <= max ? Math.min(Math.max((c - r) / 2, min), max) : Math.min(Math.max((a0 + a1) / 2 - ((b0 + b1) / 2) * r, 0), c - r);
+      return desloc / (c - r);
+    }
+    return 0.5;
+  };
+  const arred = (v: number) => Math.round(v * 1000) / 1000;
+  return {
+    fx: arred(foco(rw, w, bx0, bx1, ax0, ax1)),
+    fy: arred(foco(rh, h, by0, by1, ay0, ay1)),
+    zoom: arred(escala / cobrir),
+  };
 }
 
 /** Toda frase de título e selo começa com maiúscula (regra 4 da marca). */
@@ -350,16 +457,27 @@ const CORES_TITULO = ["teal", "laranja"] as const;
  * + 2 selos (3 informações), cores só da marca, textos com maiúscula e tudo
  * dentro da arte.
  */
-export function sanitizarDadosArte(guardada: DadosArte, enviada: Partial<DadosArte>, imagensDoPost: string[]): DadosArte {
+export function sanitizarDadosArte(
+  guardada: DadosArte,
+  enviada: Partial<DadosArte>,
+  imagensDoPost: string[],
+  /** Onde estão os brinquedos, descoberto no servidor (o que vem do navegador não vale). */
+  alvosDoServidor?: Map<string, AlvoFoto | null>,
+): DadosArte {
   const { w, h } = guardada;
   const fotos: FotoArte[] = guardada.fotos.map((g, i) => {
     const e = enviada.fotos?.[i];
+    const imagemId = e && imagensDoPost.includes(e.imagemId) ? e.imagemId : g.imagemId;
+    const alvo = alvosDoServidor?.get(imagemId) ?? (imagemId === g.imagemId ? g.alvo : undefined);
     return {
-      imagemId: e && imagensDoPost.includes(e.imagemId) ? e.imagemId : g.imagemId,
+      imagemId,
       box: g.box,
       fx: limitar(e?.fx ?? g.fx, 0, 1),
       fy: limitar(e?.fy ?? g.fy, 0, 1),
-      zoom: limitar(e?.zoom ?? g.zoom, 1, 4),
+      // Abaixo de 1 a foto diminui até caber inteira (recorteDaFoto não deixa passar disso).
+      zoom: limitar(e?.zoom ?? g.zoom, 0.1, 4),
+      // Onde estão os brinquedos é da foto: só vale enquanto for a mesma foto.
+      ...(alvo ? { alvo } : {}),
     };
   });
 
@@ -441,4 +559,16 @@ export function seloNovo(dados: DadosArte, formato: FormatoArte, texto?: string,
 export function tituloNovo(formato: FormatoArte, linhas: [string, string]): ElementoTitulo | null {
   const t = elementosDaCapa(formato, linhas, []).find((e): e is ElementoTitulo => e.tipo === "titulo");
   return t ?? null;
+}
+
+/** Enquadra nos brinquedos as fotos da arte cujo alvo já se sabe (as outras ficam como estão). */
+export function enquadrarArte(dados: DadosArte, fotos: Map<string, { largura: number; altura: number }>, alvos: Map<string, AlvoFoto | null>): DadosArte {
+  return {
+    ...dados,
+    fotos: dados.fotos.map((f) => {
+      const alvo = alvos.get(f.imagemId);
+      const dim = fotos.get(f.imagemId);
+      return alvo && dim ? { ...f, alvo, ...enquadrarNoAlvo(dim, f.box, alvo, areaSeguraDaFoto(dados, f.box)) } : f;
+    }),
+  };
 }

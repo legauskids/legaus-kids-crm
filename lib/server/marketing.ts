@@ -4,12 +4,16 @@ import sharp from "sharp";
 import type { ConteudoPostagem, Prisma, StatusPostagem } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { renderizarArte, tratarFoto } from "@/lib/server/postagem-render";
+import { localizarBrinquedos } from "@/lib/server/enquadramento";
+import { editarFotoComIA } from "@/lib/server/foto-ia";
 import {
+  enquadrarArte,
   montarArtes,
   sanitizarDadosArte,
   selosComLocal,
   slidesDasFotos,
   textosPadrao,
+  type AlvoFoto,
   type DadosArte,
   type FotosPorSlide,
   type TextosPostagem,
@@ -129,7 +133,7 @@ export async function montarArtesDaPostagem(postagemId: string) {
   });
   if (p.imagens.length === 0) throw new Error("Mande pelo menos uma foto.");
   const textos = textosDa(p);
-  const artes = montarArtes({
+  const montadas = montarArtes({
     conteudo: p.conteudo,
     fotos: p.imagens.map((i) => ({ id: i.id, largura: i.largura ?? 1, altura: i.altura ?? 1 })),
     titulo: textos.titulo,
@@ -137,6 +141,12 @@ export async function montarArtesDaPostagem(postagemId: string) {
     argumentos: textos.argumentos,
     fotosPorSlide: textos.fotosPorSlide,
   });
+  // Cada foto já entra enquadrada nos brinquedos (26/10): o que já se sabia
+  // das artes anteriores + o Claude olhando as fotos novas.
+  const existentes = await prisma.postagemArte.findMany({ where: { postagemId }, select: { dados: true } });
+  const dims = dimensoesDas(p.imagens);
+  const alvos = await alvosDasFotos(fotosUsadas(montadas.map((a) => a.dados)), alvosGuardados(existentes));
+  const artes = montadas.map((a) => ({ ...a, dados: enquadrarArte(a.dados, dims, alvos) }));
   await prisma.$transaction([
     prisma.postagemArte.deleteMany({ where: { postagemId } }),
     prisma.postagemArte.createMany({
@@ -297,12 +307,15 @@ export async function trocarFotosPorSlide(postagemId: string, porSlide: FotosPor
   const story = p.artes.find((a) => a.formato === "STORY");
   if (!capa) throw new Error("O post está sem capa — refaça as artes.");
   const capaId = (capa.dados as unknown as DadosArte).fotos[0]?.imagemId ?? "";
-  const { slides, foraDoCarrossel } = slidesDasFotos(
+  const { slides: slidesNovos, foraDoCarrossel } = slidesDasFotos(
     p.imagens.map((i) => ({ id: i.id, largura: i.largura ?? 1, altura: i.altura ?? 1 })),
     capaId,
     porSlide,
   );
   const textos = { ...textosDa(p), fotosPorSlide: porSlide };
+  const dims = dimensoesDas(p.imagens);
+  const alvos = await alvosDasFotos(fotosUsadas(slidesNovos), alvosGuardados(p.artes));
+  const slides = slidesNovos.map((d) => enquadrarArte(d, dims, alvos));
   const antigos = p.artes.filter((a) => a.formato === "FEED" && a.id !== capa.id).map((a) => a.id);
   await prisma.$transaction([
     prisma.postagemArte.deleteMany({ where: { id: { in: antigos } } }),
@@ -410,12 +423,12 @@ export async function buscarArteParaEditor(arteId: string) {
  * (sanitizarDadosArte) — e apaga o JPEG pra ser desenhado de novo. Post já
  * aprovado volta pra revisão: o que foi aprovado mudou.
  */
-export async function salvarDadosArte(arteId: string, enviada: Partial<DadosArte>) {
+export async function salvarDadosArte(arteId: string, enviada: Partial<DadosArte>, alvosDoServidor?: Map<string, AlvoFoto | null>) {
   const arte = await prisma.postagemArte.findUniqueOrThrow({
     where: { id: arteId },
     select: { dados: true, postagemId: true, postagem: { select: { status: true, imagens: { select: { id: true } } } } },
   });
-  const dados = sanitizarDadosArte(arte.dados as unknown as DadosArte, enviada, arte.postagem.imagens.map((i) => i.id));
+  const dados = sanitizarDadosArte(arte.dados as unknown as DadosArte, enviada, arte.postagem.imagens.map((i) => i.id), alvosDoServidor);
   const voltaPraRevisao = arte.postagem.status === "APROVADO" || arte.postagem.status === "AGENDADO";
   await prisma.$transaction([
     prisma.postagemArte.update({ where: { id: arteId }, data: { dados: dados as unknown as Prisma.InputJsonValue, imagem: null, renderizadaEm: null } }),
@@ -439,4 +452,141 @@ export async function atualizarStatusPostagem(id: string, status: StatusPostagem
 
 export async function excluirPostagem(id: string): Promise<void> {
   await prisma.postagem.delete({ where: { id } });
+}
+
+// ---------------------------------------------------------------------------
+// Brinquedos sempre inteiros na arte e edição de foto por IA (26/10/2026).
+
+function dimensoesDas(imagens: { id: string; largura: number | null; altura: number | null }[]) {
+  return new Map(imagens.map((i) => [i.id, { largura: i.largura ?? 1, altura: i.altura ?? 1 }]));
+}
+
+function fotosUsadas(dados: DadosArte[]): string[] {
+  return [...new Set(dados.flatMap((d) => d.fotos.map((f) => f.imagemId)))];
+}
+
+/** Onde estão os brinquedos, já descoberto e guardado nas artes do post (FotoArte.alvo). */
+function alvosGuardados(artes: { dados: unknown }[]): Map<string, AlvoFoto> {
+  const mapa = new Map<string, AlvoFoto>();
+  for (const a of artes) for (const f of (a.dados as DadosArte).fotos ?? []) if (f.alvo) mapa.set(f.imagemId, f.alvo);
+  return mapa;
+}
+
+/** Os alvos das fotos pedidas: os conhecidos + o Claude olhando as que faltam (em paralelo). */
+async function alvosDasFotos(imagemIds: string[], conhecidos: Map<string, AlvoFoto>): Promise<Map<string, AlvoFoto | null>> {
+  const resultado = new Map<string, AlvoFoto | null>(imagemIds.filter((id) => conhecidos.has(id)).map((id) => [id, conhecidos.get(id) as AlvoFoto]));
+  const faltam = imagemIds.filter((id) => !conhecidos.has(id));
+  if (!faltam.length) return resultado;
+  const fotos = await prisma.postagemImagem.findMany({ where: { id: { in: faltam } }, select: { id: true, imagemTratada: true, imagemOriginal: true } });
+  const achados = await Promise.all(fotos.map(async (f) => [f.id, await localizarBrinquedos(Buffer.from(f.imagemTratada ?? f.imagemOriginal))] as const));
+  for (const [id, alvo] of achados) resultado.set(id, alvo);
+  return resultado;
+}
+
+/** Onde estão os brinquedos numa foto do post (pro botão "Enquadrar brinquedos" do editor). Guarda nas artes. */
+export async function alvoDaFotoDoPost(postagemId: string, imagemId: string): Promise<AlvoFoto | null> {
+  const artes = await prisma.postagemArte.findMany({ where: { postagemId }, select: { id: true, dados: true } });
+  const conhecido = alvosGuardados(artes).get(imagemId);
+  if (conhecido) return conhecido;
+  const foto = await prisma.postagemImagem.findFirst({ where: { id: imagemId, postagemId }, select: { imagemTratada: true, imagemOriginal: true } });
+  if (!foto) return null;
+  const alvo = await localizarBrinquedos(Buffer.from(foto.imagemTratada ?? foto.imagemOriginal));
+  if (alvo) await guardarAlvo(artes, imagemId, alvo);
+  return alvo;
+}
+
+/** Guarda o alvo nas artes que usam a foto, sem redesenhar (o alvo não muda o desenho). */
+async function guardarAlvo(artes: { id: string; dados: unknown }[], imagemId: string, alvo: AlvoFoto) {
+  for (const a of artes) {
+    const dados = a.dados as DadosArte;
+    if (!dados.fotos.some((f) => f.imagemId === imagemId && !f.alvo)) continue;
+    const novo = { ...dados, fotos: dados.fotos.map((f) => (f.imagemId === imagemId ? { ...f, alvo } : f)) };
+    await prisma.postagemArte.update({ where: { id: a.id }, data: { dados: novo as unknown as Prisma.InputJsonValue } });
+  }
+}
+
+export type MudancaEnquadramento = { ordem: number; foto: number; antes: { fx: number; fy: number; zoom: number }; depois: { fx: number; fy: number; zoom: number } };
+
+/**
+ * Reenquadra nos brinquedos as fotos das artes pedidas (ordens a partir de
+ * 0; vazio = todas). Foto que não precisava mudar fica como está. Devolve o
+ * que mudou, pra contar ao Marcos.
+ */
+export async function enquadrarBrinquedosNasArtes(postagemId: string, ordens?: number[]): Promise<{ mudancas: MudancaEnquadramento[]; semBrinquedo: number[] }> {
+  const p = await prisma.postagem.findUniqueOrThrow({
+    where: { id: postagemId },
+    select: {
+      imagens: { orderBy: { ordem: "asc" }, select: { id: true, largura: true, altura: true } },
+      artes: { orderBy: { ordem: "asc" }, select: { id: true, ordem: true, dados: true } },
+    },
+  });
+  const alvo = p.artes.filter((a) => !ordens?.length || ordens.includes(a.ordem));
+  const alvos = await alvosDasFotos(fotosUsadas(alvo.map((a) => a.dados as unknown as DadosArte)), alvosGuardados(p.artes));
+  const dims = dimensoesDas(p.imagens);
+  const numeroDaFoto = (id: string) => p.imagens.findIndex((i) => i.id === id) + 1;
+  const mudancas: MudancaEnquadramento[] = [];
+  const semBrinquedo = new Set<number>();
+  for (const a of alvo) {
+    const dados = a.dados as unknown as DadosArte;
+    const novo = enquadrarArte(dados, dims, alvos);
+    let mudou = false;
+    novo.fotos.forEach((f, i) => {
+      const g = dados.fotos[i];
+      if (!alvos.get(f.imagemId)) semBrinquedo.add(numeroDaFoto(f.imagemId));
+      if (Math.abs(f.fx - g.fx) > 0.005 || Math.abs(f.fy - g.fy) > 0.005 || Math.abs(f.zoom - g.zoom) > 0.005) {
+        mudou = true;
+        mudancas.push({ ordem: a.ordem, foto: numeroDaFoto(f.imagemId), antes: { fx: g.fx, fy: g.fy, zoom: g.zoom }, depois: { fx: f.fx, fy: f.fy, zoom: f.zoom } });
+      }
+    });
+    if (mudou) await salvarDadosArte(a.id, novo, alvos);
+    else if (novo.fotos.some((f, i) => f.alvo && !dados.fotos[i].alvo)) await prisma.postagemArte.update({ where: { id: a.id }, data: { dados: novo as unknown as Prisma.InputJsonValue } });
+  }
+  return { mudancas, semBrinquedo: [...semBrinquedo] };
+}
+
+/** As artes que usam essas fotos voltam a ser desenhadas; post aprovado/agendado volta pra revisão. */
+async function redesenharArtesDasFotos(postagemId: string, imagemIds: string[]): Promise<string[]> {
+  const artes = await prisma.postagemArte.findMany({ where: { postagemId }, orderBy: { ordem: "asc" }, select: { id: true, dados: true } });
+  const afetadas = artes.filter((a) => (a.dados as unknown as DadosArte).fotos.some((f) => imagemIds.includes(f.imagemId))).map((a) => a.id);
+  await prisma.$transaction([
+    prisma.postagemArte.updateMany({ where: { id: { in: afetadas } }, data: { imagem: null, renderizadaEm: null } }),
+    prisma.postagem.updateMany({ where: { id: postagemId, status: { in: ["APROVADO", "AGENDADO"] } }, data: { status: "AGUARDANDO_APROVACAO", agendadaPara: null } }),
+  ]);
+  return afetadas;
+}
+
+/**
+ * Edita fotos do post com IA (só quando o Marcos pede — quem chama confere).
+ * A foto editada passa a ser a que entra nas artes; a original continua
+ * guardada (restaurarFotosOriginais). Leva ~1 min por foto, em paralelo.
+ */
+export async function editarFotosComIA(input: { postagemId: string; imagemIds: string[]; instrucao: string }): Promise<{ editadas: number[]; falhas: string[]; artes: string[] }> {
+  const fotos = await prisma.postagemImagem.findMany({
+    where: { postagemId: input.postagemId, id: { in: input.imagemIds } },
+    select: { id: true, imagemTratada: true, imagemOriginal: true },
+  });
+  const todas = await prisma.postagemImagem.findMany({ where: { postagemId: input.postagemId }, orderBy: { ordem: "asc" }, select: { id: true } });
+  const numero = (id: string) => todas.findIndex((t) => t.id === id) + 1;
+  const resultados = await Promise.allSettled(
+    fotos.map(async (f) => {
+      const editada = await editarFotoComIA(Buffer.from(f.imagemTratada ?? f.imagemOriginal), input.instrucao);
+      await prisma.postagemImagem.update({ where: { id: f.id }, data: { imagemTratada: new Uint8Array(editada) } });
+      return f.id;
+    }),
+  );
+  const editadas = resultados.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const falhas = resultados.flatMap((r, i) => (r.status === "rejected" ? [`foto ${numero(fotos[i].id)}: ${r.reason instanceof Error ? r.reason.message : r.reason}`] : []));
+  const artes = editadas.length ? await redesenharArtesDasFotos(input.postagemId, editadas) : [];
+  return { editadas: editadas.map(numero).sort((a, b) => a - b), falhas, artes };
+}
+
+/** Volta as fotos ao original (só a correção leve de luz e cor), desfazendo edição por IA. */
+export async function restaurarFotosOriginais(postagemId: string, imagemIds: string[]): Promise<number> {
+  const fotos = await prisma.postagemImagem.findMany({ where: { postagemId, id: { in: imagemIds } }, select: { id: true, imagemOriginal: true } });
+  for (const f of fotos) {
+    const tratada = await tratarFoto(Buffer.from(f.imagemOriginal));
+    await prisma.postagemImagem.update({ where: { id: f.id }, data: { imagemTratada: new Uint8Array(tratada.buffer), largura: tratada.largura, altura: tratada.altura } });
+  }
+  if (fotos.length) await redesenharArtesDasFotos(postagemId, fotos.map((f) => f.id));
+  return fotos.length;
 }

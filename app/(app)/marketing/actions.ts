@@ -16,10 +16,11 @@ import {
   excluirPostagem,
   gerarLegendaDaPostagem,
   montarArtesDaPostagem,
+  alvoDaFotoDoPost,
   salvarDadosArte,
   trocarFotosPorSlide,
 } from "@/lib/server/marketing";
-import { comMaiuscula, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
+import { comMaiuscula, type AlvoFoto, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 import { conversarSobrePost } from "@/lib/server/marketing-agente";
 import { transcreverAudio } from "@/lib/server/transcricao";
 import type { StatusPostagem } from "@prisma/client";
@@ -248,4 +249,14 @@ export async function cancelarAgendamentoAction(postagemId: string): Promise<Res
   if (r.count !== 1) return { ok: false, error: "Esse post não está agendado (pode já ter sido publicado)." };
   revalidar(postagemId);
   return { ok: true };
+}
+
+/** Editor: onde estão os brinquedos na foto (o Claude olha uma vez; fica guardado nas artes). */
+export async function alvoDaFotoAction(postagemId: string, imagemId: string): Promise<Resultado<{ alvo: AlvoFoto | null }>> {
+  await requireModulo("marketing");
+  try {
+    return { ok: true, alvo: await alvoDaFotoDoPost(postagemId, imagemId) };
+  } catch (e) {
+    return erro(e, "Não consegui olhar a foto agora.");
+  }
 }

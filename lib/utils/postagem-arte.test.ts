@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  alvoValido,
+  areaSeguraDaFoto,
   comMaiuscula,
   elementosDaCapa,
+  enquadrarNoAlvo,
+  zoomMinimo,
   montarArtes,
   recorteDaFoto,
   sanitizarDadosArte,
@@ -137,6 +141,67 @@ describe("recorteDaFoto", () => {
     expect(r).toMatchObject({ w: 1000, h: 1000, rw: 2000, rh: 1000, left: 0, top: 0 });
     expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 1, fy: 0.5, zoom: 1 }).left).toBe(1000);
     expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 0.5, fy: 0.5, zoom: 2 })).toMatchObject({ rw: 4000, rh: 2000, left: 1500, top: 500 });
+  });
+
+  it("zoom < 1: a foto diminui até caber inteira e o resto é fundo (posição pelo ponto focal)", () => {
+    // 2000×1000 numa caixa quadrada de 1000: cobrir = 1, caber = 0,5.
+    expect(zoomMinimo({ largura: 2000, altura: 1000 }, [0, 0, 1000, 1000])).toBe(0.5);
+    const inteira = recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 0.5, fy: 0.5, zoom: 0.5 });
+    expect(inteira).toMatchObject({ rw: 1000, rh: 500, left: 0, top: 0, dx: 0, dy: 250, preenche: false });
+    // Não passa da foto inteira, e o ponto focal posiciona a faixa (0 = em cima, 1 = embaixo).
+    expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 0.5, fy: 1, zoom: 0.1 })).toMatchObject({ rw: 1000, rh: 500, dy: 500 });
+    // No meio do caminho: corta dos lados e sobra fundo em cima/embaixo.
+    expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 0.5, fy: 0.5, zoom: 0.75 })).toMatchObject({ rw: 1500, rh: 750, left: 250, dx: 0, dy: 125, preenche: false });
+    expect(recorteDaFoto({ largura: 2000, altura: 1000 }, { box: [0, 0, 1000, 1000], fx: 0.5, fy: 0.5, zoom: 1 }).preenche).toBe(true);
+  });
+});
+
+describe("enquadrarNoAlvo (brinquedos sempre inteiros — 26/10)", () => {
+  // Foto do post #40: 1280×590, num slide de 1 foto (caixa 1016×1286).
+  const larga = { largura: 1280, altura: 590 };
+  const caixa: [number, number, number, number] = [32, 32, 1048, 1318];
+
+  it("brinquedos pequenos no meio: continua cobrindo a caixa, centrado neles", () => {
+    const e = enquadrarNoAlvo(larga, caixa, [0.4, 0.3, 0.6, 0.9]);
+    expect(e.zoom).toBe(1);
+    const r = recorteDaFoto(larga, { box: caixa, ...e });
+    // Os brinquedos (40% a 60% da largura) ficam dentro do que aparece.
+    expect(0.37 * r.rw).toBeGreaterThanOrEqual(r.left);
+    expect(0.63 * r.rw).toBeLessThanOrEqual(r.left + r.w);
+  });
+
+  it("brinquedos de ponta a ponta na foto larga: diminui até caber inteira", () => {
+    const e = enquadrarNoAlvo(larga, caixa, [0, 0.14, 1, 1]);
+    expect(e.zoom).toBeCloseTo(zoomMinimo(larga, caixa), 3);
+    expect(recorteDaFoto(larga, { box: caixa, ...e }).preenche).toBe(false);
+  });
+
+  it("brinquedos num canto: o ponto focal vai até eles, sem sair da foto", () => {
+    const e = enquadrarNoAlvo(larga, caixa, [0.75, 0.2, 0.95, 0.9]);
+    const r = recorteDaFoto(larga, { box: caixa, ...e });
+    expect(r.left + r.w).toBeGreaterThanOrEqual(Math.round(0.95 * r.rw));
+    expect(r.left + r.w).toBeLessThanOrEqual(r.rw);
+  });
+
+  it("fica fora da faixa da logo e, na capa, abaixo do título e dos selos", () => {
+    const slide = { elementos: [{ id: "logo", tipo: "logo" as const, cx: 540, base: 1294, larg: 250 }] };
+    const seguro = areaSeguraDaFoto(slide, caixa);
+    expect(seguro[3]).toBeLessThan(1294 - 250 * 0.6);
+    const capa = { elementos: elementosDaCapa("FEED", ["Entrega de", "Brinquedos"], ["Diversão Garantida", "Qualidade e Segurança"]) };
+    const seguroCapa = areaSeguraDaFoto(capa, caixa);
+    expect(seguroCapa[1]).toBeGreaterThan(300);
+    // Com os brinquedos ocupando a foto toda, eles terminam dentro da área segura.
+    const e = enquadrarNoAlvo(larga, caixa, [0.1, 0.1, 0.9, 0.95], seguroCapa);
+    const r = recorteDaFoto(larga, { box: caixa, ...e });
+    const topoBrinquedos = caixa[1] + r.dy + (0.07 * r.rh - r.top);
+    expect(topoBrinquedos).toBeGreaterThanOrEqual(seguroCapa[1] - 1);
+  });
+
+  it("caixa de brinquedos vinda de fora só vale se for válida", () => {
+    expect(alvoValido([0.1, 0.2, 0.8, 0.9])).toEqual([0.1, 0.2, 0.8, 0.9]);
+    expect(alvoValido([0.8, 0.2, 0.1, 0.9])).toBeNull();
+    expect(alvoValido([0, 0, 1.5, 1])).toBeNull();
+    expect(alvoValido("x")).toBeNull();
   });
 });
 
