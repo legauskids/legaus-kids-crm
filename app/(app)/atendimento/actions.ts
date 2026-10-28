@@ -13,7 +13,7 @@ import {
   type ConversaBuscaResultado,
 } from "@/lib/server/conversas";
 import { criarRespostaRapida, excluirRespostaRapida } from "@/lib/server/respostas-rapidas";
-import { salvarContatoPorTelefone, existeContatoComTelefone } from "@/lib/server/contatos";
+import { salvarContatoPorTelefone, existeContatoComTelefone, atualizarContato } from "@/lib/server/contatos";
 import { criarNegocio, moverNegocio } from "@/lib/server/negocios";
 import { criarTarefa } from "@/lib/server/tarefas";
 import { gerarSugestaoResposta } from "@/lib/server/agente-atendimento";
@@ -30,6 +30,7 @@ import { reaisParaCentavos } from "@/lib/utils/money";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { itensDoChecklist } from "@/lib/utils/checklist";
 import { categoriaDoFormulario } from "@/lib/utils/categoria-tarefa";
+import { temNomeSalvo } from "@/lib/utils/telefone";
 
 function revalidateAtendimento() {
   revalidatePath("/atendimento");
@@ -81,6 +82,22 @@ export async function gerarSugestaoAgenteAction(conversaId: string): Promise<Sug
   } catch (erro) {
     return { error: erro instanceof Error ? erro.message : "Não consegui gerar uma sugestão." };
   }
+}
+
+/** Salvar/corrigir o nome do contato direto no cabeçalho da conversa. */
+export async function salvarNomeContatoAction(contatoId: string, nome: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireUser();
+  const limpo = nome.trim().replace(/\s+/g, " ");
+  if (!temNomeSalvo(limpo)) return { ok: false, error: "Digite o nome do contato." };
+  if (limpo.length > 120) return { ok: false, error: "Nome muito comprido (até 120 letras)." };
+  try {
+    await atualizarContato(contatoId, { nome: limpo });
+  } catch {
+    return { ok: false, error: "Não achei esse contato — recarregue a página." };
+  }
+  revalidateAtendimento();
+  revalidatePath("/cadastros");
+  return { ok: true };
 }
 
 export async function assumirConversaAction(conversaId: string): Promise<void> {

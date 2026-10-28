@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finalDeTelefone, mesmoTelefone, pareceTelefone, partesTelefone, telefoneLegivel, telefonePadraoBR } from "./telefone";
+import { finalDeTelefone, mesmoTelefone, pareceTelefone, partesTelefone, telefoneLegivel, telefonePadraoBR, temNomeSalvo } from "./telefone";
 
 describe("partesTelefone", () => {
   it("separa DDD e 8 finais em vários formatos", () => {
@@ -77,5 +77,18 @@ describe("telefonePadraoBR e telefoneLegivel (padrão com o 9, 2026-10-14)", () 
     expect(telefoneLegivel("555596356217")).toBe("(55) 99635-6217");
     expect(telefoneLegivel("5554969602960")).toBe("(54) 96960-2960");
     expect(telefoneLegivel("555535121234")).toBe("(55) 3512-1234");
+  });
+});
+
+describe("temNomeSalvo", () => {
+  it("telefone ou vazio ainda não é nome", () => {
+    expect(temNomeSalvo("555599446076")).toBe(false);
+    expect(temNomeSalvo("+55 (55) 9944-6076")).toBe(false);
+    expect(temNomeSalvo("  ")).toBe(false);
+    expect(temNomeSalvo(".")).toBe(false);
+  });
+  it("qualquer letra conta como nome", () => {
+    expect(temNomeSalvo("Monique")).toBe(true);
+    expect(temNomeSalvo("Escola 21 de Abril")).toBe(true);
   });
 });

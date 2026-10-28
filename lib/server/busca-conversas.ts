@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
-import { mesmoTelefone, partesTelefone, soDigitosTelefone, telefoneLegivel } from "@/lib/utils/telefone";
+import { mesmoTelefone, partesTelefone, soDigitosTelefone, telefoneLegivel, temNomeSalvo } from "@/lib/utils/telefone";
 
 // Busca nas conversas do Atendimento pro agente (pedido do Marcos de
 // 2026-10-16): "encontre o contato com o final 6980 e gere um negócio..." —
@@ -26,10 +26,7 @@ const CANDIDATOS = 80;
 const TEXTO_MAX = 160;
 const BRASILIA = "America/Sao_Paulo";
 
-/** O contato já tem nome salvo, ou o "nome" ainda é o próprio telefone? */
-export function temNomeSalvo(nome: string): boolean {
-  return !/^[\d\s()+.-]*$/.test(nome.trim());
-}
+export { temNomeSalvo };
 
 /** A conversa existe? Devolve o contato dela (pro negócio/tarefa ficarem ligados). */
 export async function conversaDoAtendimento(conversaId: string): Promise<{ id: string; contatoId: string }> {

@@ -48,6 +48,7 @@ export default async function AtendimentoPage({
         status: conversaSelecionadaRaw.status,
         contatoId: conversaSelecionadaRaw.contatoId,
         contatoNome: conversaSelecionadaRaw.contato.nome,
+        contatoTelefone: conversaSelecionadaRaw.contato.telefone,
         setorId: conversaSelecionadaRaw.setorId,
         atendenteId: conversaSelecionadaRaw.atendenteId,
         mensagens: conversaSelecionadaRaw.mensagens.map((m) => ({

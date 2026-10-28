@@ -73,6 +73,11 @@ export function telefonePadraoBR(valor: string): string {
   return d;
 }
 
+/** O contato já tem nome salvo, ou o "nome" ainda é o próprio telefone (ou está vazio)? */
+export function temNomeSalvo(nome: string): boolean {
+  return !/^[\d\s()+.-]*$/.test(nome.trim());
+}
+
 /** "555596356217" -> "(55) 99635-6217" — sempre no padrão com o 9 do celular, pra ninguém reformatar de cabeça. */
 export function telefoneLegivel(telefone: string): string {
   const d = telefonePadraoBR(telefone).replace(/^55(?=\d{10,11}$)/, "");

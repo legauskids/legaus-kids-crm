@@ -12,6 +12,8 @@ import { PromoverNegocioDialog } from "@/app/(app)/atendimento/promover-negocio-
 import { MessagesTab } from "@/app/(app)/atendimento/messages-tab";
 import { NotesTab } from "@/app/(app)/atendimento/notes-tab";
 import { ScheduledTab } from "@/app/(app)/atendimento/scheduled-tab";
+import { SalvarContatoPopover } from "@/app/(app)/atendimento/salvar-contato-popover";
+import { telefoneLegivel, temNomeSalvo } from "@/lib/utils/telefone";
 import type {
   ConversaDetalhada,
   RespostaRapidaVM,
@@ -54,6 +56,7 @@ export function ConversationView({
   const [promoverAberto, setPromoverAberto] = useState(false);
 
   const agendadasPendentes = conversa.agendadas.filter((a) => a.status === "PENDENTE").length;
+  const temNome = temNomeSalvo(conversa.contatoNome);
 
   return (
     <div className="flex h-full flex-col">
@@ -67,13 +70,21 @@ export function ConversationView({
           <Avatar className="size-9">
             <AvatarFallback className="bg-primary/10 font-semibold text-primary">{initials(conversa.contatoNome)}</AvatarFallback>
           </Avatar>
-          <div>
-            <p className="text-sm font-medium">{conversa.contatoNome}</p>
-            {conversa.status === "FILA" && (
-              <Badge variant="secondary" className="text-[10px]">
-                Fila
-              </Badge>
-            )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-1">
+              <p className="truncate text-sm font-medium">
+                {temNome || !conversa.contatoTelefone ? conversa.contatoNome : telefoneLegivel(conversa.contatoTelefone)}
+              </p>
+              <SalvarContatoPopover contatoId={conversa.contatoId} nome={conversa.contatoNome} telefone={conversa.contatoTelefone} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              {temNome && conversa.contatoTelefone && <span className="text-xs text-muted-foreground">{telefoneLegivel(conversa.contatoTelefone)}</span>}
+              {conversa.status === "FILA" && (
+                <Badge variant="secondary" className="text-[10px]">
+                  Fila
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">

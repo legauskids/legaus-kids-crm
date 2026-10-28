@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
-import { mesmoTelefone, partesTelefone } from "@/lib/utils/telefone";
+import { mesmoTelefone, partesTelefone, temNomeSalvo } from "@/lib/utils/telefone";
 
 /**
  * Única superfície que deve tocar as tabelas Conversa/Mensagem. Quando a
@@ -36,6 +36,9 @@ export async function encontrarOuCriarConversaPorTelefone(input: {
   nomeContato?: string;
 }) {
   const telefone = normalizarTelefone(input.telefone);
+  // Nome do perfil do WhatsApp (só vem em mensagem recebida) ou informado pelo agente.
+  const nomeContato = input.nomeContato?.trim();
+  const nomeInformado = nomeContato && temNomeSalvo(nomeContato) ? nomeContato : null;
 
   // O mesmo celular pode estar gravado com ou sem o 9 (o WhatsApp manda no
   // formato interno dele; cadastro feito por gente usa o padrão com o 9 —
@@ -45,6 +48,13 @@ export async function encontrarOuCriarConversaPorTelefone(input: {
     (await prisma.contato.findUnique({ where: { telefone }, include: { conversas: true } })) ?? (await contatoDoMesmoCelular(telefone));
 
   if (contatoExistente) {
+    // Contato que ainda está só com o telefone ganha o nome que chegou —
+    // inclusive quando a primeira mensagem foi nossa e ele nasceu sem nome
+    // (2026-10-28: 838 de 1020 contatos estavam assim). Nome já salvo por
+    // alguém nunca é trocado.
+    if (nomeInformado && !temNomeSalvo(contatoExistente.nome)) {
+      await prisma.contato.update({ where: { id: contatoExistente.id }, data: { nome: nomeInformado } });
+    }
     const conversaExistente = contatoExistente.conversas[0];
     if (conversaExistente) return conversaExistente;
 
@@ -60,7 +70,7 @@ export async function encontrarOuCriarConversaPorTelefone(input: {
     where: { nome: "Atendimento/Pré-vendas" },
   });
   const contato = await prisma.contato.create({
-    data: { telefone, nome: input.nomeContato?.trim() || telefone },
+    data: { telefone, nome: nomeInformado ?? telefone },
   });
   return prisma.conversa.create({
     data: { contatoId: contato.id, setorId: setorPadrao.id },

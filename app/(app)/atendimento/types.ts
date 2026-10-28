@@ -42,6 +42,7 @@ export type ConversaDetalhada = {
   status: "FILA" | "ATENDENDO";
   contatoId: string;
   contatoNome: string;
+  contatoTelefone: string | null;
   setorId: string;
   atendenteId: string | null;
   mensagens: MensagemVM[];
