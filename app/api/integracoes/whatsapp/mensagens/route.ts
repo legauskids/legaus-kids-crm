@@ -11,6 +11,8 @@ import { transcreverAudio, transcricaoConfigurada } from "@/lib/server/transcric
 const bodySchema = z.object({
   telefone: z.string().min(1),
   nomeContato: z.string().optional(),
+  // Nome do contato na agenda do celular da Legaus (whatsapp-service/agenda.js).
+  nomeAgenda: z.string().optional(),
   texto: z.string().min(1),
   direcao: z.enum(["ENTRADA", "SAIDA"]),
   externalId: z.string().min(1),
@@ -46,6 +48,7 @@ export async function POST(request: Request) {
   const conversa = await encontrarOuCriarConversaPorTelefone({
     telefone: parsed.data.telefone,
     nomeContato: parsed.data.nomeContato,
+    nomeAgenda: parsed.data.nomeAgenda,
   });
 
   // Nota de voz recebida chegava aqui só como "📎 audio-xxx.ogg" — nem o

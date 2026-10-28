@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { TipoContato } from "@prisma/client";
-import { telefonePadraoBR } from "@/lib/utils/telefone";
+import { telefonePadraoBR, temNomeSalvo } from "@/lib/utils/telefone";
+import { contatoPorTelefone } from "@/lib/server/conversas";
 
 export function normalizarTelefone(telefone: string): string {
   return telefone.replace(/\D/g, "");
@@ -55,6 +56,39 @@ export async function salvarContatoPorTelefone(input: {
   return prisma.contato.create({
     data: { telefone, nome: nome || telefone, empresa: empresa || null },
   });
+}
+
+export type ResultadoNomesAgenda = { atualizados: number; iguais: number; semCadastro: number; protegidos: number; invalidos: number };
+
+/**
+ * Nome salvo na agenda do celular da Legaus (pedido do Marcos de 2026-10-28:
+ * "o nome que for salvo no celular precisa sincronizar com o CRM"). O
+ * whatsapp-service repassa na hora em que alguém salva/edita o contato no
+ * celular — é a última decisão de alguém, então troca o nome do perfil ou um
+ * nome antigo. Só não troca o nome de cadastro com CNPJ (cliente/fornecedor
+ * formal, o nome que vai em contrato e nota), a não ser que ainda esteja sem
+ * nome. Número fora do CRM é ignorado: a agenda tem família, contatos
+ * pessoais etc.; lead novo entra quando manda mensagem (já com o nome da
+ * agenda, ver encontrarOuCriarConversaPorTelefone).
+ */
+export async function aplicarNomesDaAgenda(lista: { telefone: string; nome: string }[]): Promise<ResultadoNomesAgenda> {
+  const r: ResultadoNomesAgenda = { atualizados: 0, iguais: 0, semCadastro: 0, protegidos: 0, invalidos: 0 };
+  for (const item of lista) {
+    const nome = item.nome.trim().replace(/\s+/g, " ").slice(0, 120);
+    if (!temNomeSalvo(nome)) {
+      r.invalidos++;
+      continue;
+    }
+    const contato = await contatoPorTelefone(item.telefone);
+    if (!contato) r.semCadastro++;
+    else if (contato.nome === nome) r.iguais++;
+    else if (contato.cnpj && temNomeSalvo(contato.nome)) r.protegidos++;
+    else {
+      await prisma.contato.update({ where: { id: contato.id }, data: { nome } });
+      r.atualizados++;
+    }
+  }
+  return r;
 }
 
 /** Substitui a lista de etiquetas do contato (cria o contato se o telefone for novo). */

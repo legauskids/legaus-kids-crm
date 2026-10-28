@@ -6,5 +6,6 @@ auth-migrada-*/
 *.log
 ultimo-qr.png
 lid-cache.json
+nomes-agenda.json
 estado-saude.json
 .ultimo-alerta-watchdog

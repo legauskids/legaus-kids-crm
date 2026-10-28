@@ -11,6 +11,7 @@ import { ligarRelayDeEntrada } from "./relay-entrada.js";
 import { iniciarRelayDeSaida } from "./relay-saida.js";
 import { ligarRelayDeComandoAgente } from "./relay-comando-agente.js";
 import { aprenderDeContatos, registrarMapeamento } from "./lid-cache.js";
+import { aprenderNomesDaAgenda } from "./agenda.js";
 import { avisar } from "./alertas.js";
 import { iniciarRelogioDoMarketing } from "./relogio-marketing.js";
 
@@ -305,6 +306,9 @@ async function conectar() {
   // telefone (ver lid-cache.js pro porquê disso ser necessário).
   sock.ev.on("contacts.upsert", aprenderDeContatos);
   sock.ev.on("contacts.update", aprenderDeContatos);
+  // contacts.upsert também traz o nome salvo na agenda do celular quando
+  // alguém salva/edita um contato — vai pro CRM (ver agenda.js).
+  sock.ev.on("contacts.upsert", aprenderNomesDaAgenda);
   // Baileys 7: o WhatsApp avisa sempre que descobre um par LID <-> telefone
   // (mensagem nova, sincronização) — é a fonte mais direta pro lid-cache.
   sock.ev.on("lid-mapping.update", ({ lid, pn }) => registrarMapeamento(lid, pn));

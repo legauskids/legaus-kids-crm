@@ -26,6 +26,22 @@ async function contatoDoMesmoCelular(telefone: string) {
 }
 
 /**
+ * Contato do telefone. O mesmo celular pode estar gravado com ou sem o 9 (o
+ * WhatsApp manda no formato interno dele; cadastro feito por gente usa o
+ * padrão com o 9 — 2026-10-14): sem o número exato, vale o mesmo celular no
+ * outro formato, em vez de criar um cadastro duplicado.
+ */
+export async function contatoPorTelefone(telefoneQualquer: string) {
+  const telefone = normalizarTelefone(telefoneQualquer);
+  return (await prisma.contato.findUnique({ where: { telefone }, include: { conversas: true } })) ?? (await contatoDoMesmoCelular(telefone));
+}
+
+function nomeValido(nome: string | undefined): string | null {
+  const limpo = nome?.trim().replace(/\s+/g, " ");
+  return limpo && temNomeSalvo(limpo) ? limpo.slice(0, 120) : null;
+}
+
+/**
  * Ponto de entrada da futura extensão de WhatsApp: acha a conversa de um
  * telefone (criando Contato + Conversa se for a primeira vez que esse
  * número aparece). Novos contatos caem na fila do setor de
@@ -34,24 +50,21 @@ async function contatoDoMesmoCelular(telefone: string) {
 export async function encontrarOuCriarConversaPorTelefone(input: {
   telefone: string;
   nomeContato?: string;
+  nomeAgenda?: string;
 }) {
   const telefone = normalizarTelefone(input.telefone);
-  // Nome do perfil do WhatsApp (só vem em mensagem recebida) ou informado pelo agente.
-  const nomeContato = input.nomeContato?.trim();
-  const nomeInformado = nomeContato && temNomeSalvo(nomeContato) ? nomeContato : null;
+  // Nome salvo na agenda do celular da Legaus (vale mais) ou, sem ele, o do
+  // perfil do WhatsApp (só vem em mensagem recebida) ou informado pelo agente.
+  const nomeInformado = nomeValido(input.nomeAgenda) ?? nomeValido(input.nomeContato);
 
-  // O mesmo celular pode estar gravado com ou sem o 9 (o WhatsApp manda no
-  // formato interno dele; cadastro feito por gente usa o padrão com o 9 —
-  // 2026-10-14): sem o número exato, vale o mesmo celular no outro formato,
-  // em vez de criar um cadastro duplicado.
-  const contatoExistente =
-    (await prisma.contato.findUnique({ where: { telefone }, include: { conversas: true } })) ?? (await contatoDoMesmoCelular(telefone));
+  const contatoExistente = await contatoPorTelefone(telefone);
 
   if (contatoExistente) {
     // Contato que ainda está só com o telefone ganha o nome que chegou —
     // inclusive quando a primeira mensagem foi nossa e ele nasceu sem nome
     // (2026-10-28: 838 de 1020 contatos estavam assim). Nome já salvo por
-    // alguém nunca é trocado.
+    // alguém nunca é trocado por aqui — a agenda do celular troca na hora em
+    // que é editada (aplicarNomesDaAgenda).
     if (nomeInformado && !temNomeSalvo(contatoExistente.nome)) {
       await prisma.contato.update({ where: { id: contatoExistente.id }, data: { nome: nomeInformado } });
     }

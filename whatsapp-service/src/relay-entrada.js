@@ -1,6 +1,7 @@
 import { downloadMediaMessage, getContentType } from "@whiskeysockets/baileys";
 import { chamarApi } from "./crm-api.js";
 import { resolverTelefoneDaConversa } from "./lid-cache.js";
+import { nomeDaAgenda } from "./agenda.js";
 import { extrairSoTelefones, extrairCartoesDeContato, ehProprioNumero } from "./colagem-contatos.js";
 
 const TIPOS_TEXTO_OU_CONTATO = new Set(["conversation", "extendedTextMessage", "contactMessage", "contactsArrayMessage"]);
@@ -166,6 +167,8 @@ export function ligarRelayDeEntrada(sock) {
             // mensagens que o próprio usuário do CRM manda (fromMe) o
             // pushName é o nome do Marcos/Dani, não do contato.
             nomeContato: !msg.key.fromMe ? msg.pushName || undefined : undefined,
+            // Nome salvo na agenda do celular (vale mais que o do perfil) — ver agenda.js.
+            nomeAgenda: nomeDaAgenda(telefone) || undefined,
             texto,
             anexo: anexo || undefined,
             direcao: msg.key.fromMe ? "SAIDA" : "ENTRADA",
