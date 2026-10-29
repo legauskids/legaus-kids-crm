@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/db";
 import { resumoDaConexao } from "@/lib/server/meta";
-import { publicarPostagem, reivindicarParaPublicar } from "@/lib/server/meta-publicacao";
+import { publicarPostagem, registrarStoryPeloCelular, reivindicarParaPublicar } from "@/lib/server/meta-publicacao";
 import { dataHoraDoFormulario } from "@/lib/utils/data-hora";
 import { requireModulo } from "@/lib/auth/guards";
 import {
@@ -249,6 +249,14 @@ export async function cancelarAgendamentoAction(postagemId: string): Promise<Res
   if (r.count !== 1) return { ok: false, error: "Esse post não está agendado (pode já ter sido publicado)." };
   revalidar(postagemId);
   return { ok: true };
+}
+
+/** "Já postei": o story foi postado pelo celular com música do Instagram — o CRM não publica o story de novo. */
+export async function storyPostadoPeloCelularAction(postagemId: string): Promise<Resultado<{ terminou: boolean }>> {
+  await requireModulo("marketing");
+  const r = await registrarStoryPeloCelular(postagemId);
+  if (r.ok) revalidar(postagemId);
+  return r;
 }
 
 /** Editor: onde estão os brinquedos na foto (o Claude olha uma vez; fica guardado nas artes). */

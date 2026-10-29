@@ -41,6 +41,11 @@ describe("partesPendentes — tentar de novo só refaz o que falhou", () => {
   it("post só de story não vai pro feed nem pro Facebook", () => {
     expect(partesPendentes({ feed: 0, story: 1 }, { instagram: true, facebook: true }, null)).toEqual({ instagramFeed: false, instagramStory: true, facebook: false });
   });
+  it("story postado pelo celular não sai de novo; o feed continua pendente", () => {
+    const feito = { instagram: { storyPeloCelularEm: "2026-10-29T15:00:00.000Z" } };
+    expect(partesPendentes(partes, { instagram: true, facebook: true }, feito)).toEqual({ instagramFeed: true, instagramStory: false, facebook: true });
+    expect(nadaPendente(partesPendentes({ feed: 0, story: 2 }, { instagram: true, facebook: false }, feito))).toBe(true);
+  });
 });
 
 describe("erroMetaLegivel", () => {

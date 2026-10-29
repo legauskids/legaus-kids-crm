@@ -39,7 +39,7 @@ function paraInput(iso: string | null) {
 function LinksPublicados({ publicacao }: { publicacao: PublicacaoMeta | null }) {
   const ig = publicacao?.instagram;
   const fb = publicacao?.facebook;
-  if (!ig?.feedId && !ig?.storyIds?.length && !fb?.postId) return null;
+  if (!ig?.feedId && !ig?.storyIds?.length && !ig?.storyPeloCelularEm && !fb?.postId) return null;
   return (
     <ul className="space-y-1 text-sm">
       {ig?.feedId && (
@@ -57,6 +57,12 @@ function LinksPublicados({ publicacao }: { publicacao: PublicacaoMeta | null }) 
         <li className="flex items-center gap-2">
           <CheckCircle2 className="size-4 text-success" />
           Story do Instagram{(ig?.storyIds?.length ?? 0) > 1 ? ` (${ig?.storyIds?.length})` : ""}
+        </li>
+      )}
+      {ig?.storyPeloCelularEm && !ig.storyIds?.length && (
+        <li className="flex items-center gap-2">
+          <CheckCircle2 className="size-4 text-success" />
+          Story do Instagram (postado pelo celular)
         </li>
       )}
       {fb?.postId && (

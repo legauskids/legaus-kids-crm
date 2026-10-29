@@ -5,9 +5,13 @@
 export const PERMISSOES_INSTAGRAM = ["instagram_basic", "instagram_content_publish", "pages_show_list", "pages_read_engagement"] as const;
 export const PERMISSAO_FACEBOOK = "pages_manage_posts";
 
-/** O que já saiu em cada rede (Postagem.publicacao). */
+/**
+ * O que já saiu em cada rede (Postagem.publicacao). storyPeloCelularEm: o
+ * story foi postado à mão pelo celular, com música do Instagram (pedido de
+ * 2026-10-29) — o CRM não publica o story de novo.
+ */
 export type PublicacaoMeta = {
-  instagram?: { feedId?: string; feedLink?: string; storyIds?: string[] };
+  instagram?: { feedId?: string; feedLink?: string; storyIds?: string[]; storyPeloCelularEm?: string };
   facebook?: { postId?: string; link?: string };
 };
 
@@ -41,7 +45,8 @@ export type Destinos = { instagram: boolean; facebook: boolean };
 export function partesPendentes(partes: PartesDoPost, destinos: Destinos, feito: PublicacaoMeta | null | undefined) {
   return {
     instagramFeed: destinos.instagram && partes.feed > 0 && !feito?.instagram?.feedId,
-    instagramStory: destinos.instagram && partes.story > 0 && (feito?.instagram?.storyIds?.length ?? 0) < partes.story,
+    instagramStory:
+      destinos.instagram && partes.story > 0 && !feito?.instagram?.storyPeloCelularEm && (feito?.instagram?.storyIds?.length ?? 0) < partes.story,
     facebook: destinos.facebook && partes.feed > 0 && !feito?.facebook?.postId,
   };
 }

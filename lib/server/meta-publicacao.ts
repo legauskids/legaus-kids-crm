@@ -33,7 +33,43 @@ export async function reivindicarParaPublicar(postagemId: string, de: StatusPost
   return r.count === 1;
 }
 
-const esperar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+const APROVADOS: StatusPostagem[] = ["APROVADO", "AGENDADO", "ERRO"];
+
+/**
+ * O story foi postado à mão pelo celular, com música do Instagram (a API não
+ * põe música — pedido de 2026-10-29). Fica registrado e o CRM não publica o
+ * story de novo; se não sobrar nada (post só de story, ou feed já publicado),
+ * o post vira PUBLICADO e sai do agendamento.
+ */
+export async function registrarStoryPeloCelular(postagemId: string): Promise<{ ok: true; terminou: boolean } | { ok: false; error: string }> {
+  const post = await prisma.postagem.findUnique({
+    where: { id: postagemId },
+    select: { status: true, publicacao: true, publicarNoInstagram: true, publicarNoFacebook: true, artes: { select: { formato: true } } },
+  });
+  if (!post) return { ok: false, error: "Post não encontrado." };
+  if (!APROVADOS.includes(post.status)) {
+    const motivo = { PUBLICANDO: "O post está sendo publicado agora — espere terminar.", PUBLICADO: "Esse post já está publicado." } as Partial<Record<StatusPostagem, string>>;
+    return { ok: false, error: motivo[post.status] ?? "Aprove o post antes de postar o story." };
+  }
+  const feed = post.artes.filter((a) => a.formato === "FEED").length;
+  const story = post.artes.filter((a) => a.formato === "STORY").length;
+  if (story === 0) return { ok: false, error: "Esse post não tem story." };
+
+  const anterior: PublicacaoMeta = (post.publicacao as PublicacaoMeta | null) ?? {};
+  const feito: PublicacaoMeta = { ...anterior, instagram: { ...anterior.instagram, storyPeloCelularEm: new Date().toISOString() } };
+  const terminou = nadaPendente(partesPendentes({ feed, story }, { instagram: post.publicarNoInstagram, facebook: post.publicarNoFacebook && feed > 0 }, feito));
+  const r = await prisma.postagem.updateMany({
+    where: { id: postagemId, status: post.status },
+    data: {
+      publicacao: feito as unknown as Prisma.InputJsonValue,
+      ...(terminou && { status: "PUBLICADO" as const, publicadaEm: new Date(), agendadaPara: null, erroPublicacao: null }),
+    },
+  });
+  if (r.count !== 1) return { ok: false, error: "O post mudou enquanto isso — recarregue a página." };
+  return { ok: true, terminou };
+}
+
+const esperar =(ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
 /** Acesso expirado/revogado (código 190): as outras partes vão falhar igual — para na primeira. */
 const acessoCaiu = (e: unknown) => e instanceof ErroMeta && e.codigo === 190;

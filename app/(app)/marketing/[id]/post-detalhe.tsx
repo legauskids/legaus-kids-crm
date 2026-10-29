@@ -21,6 +21,7 @@ import type { ConteudoPostagem, FormatoArte, TextosPostagem } from "@/lib/utils/
 import type { StatusPostagem } from "@prisma/client";
 import { AssistentePost, type MensagemAssistente } from "@/app/(app)/marketing/[id]/assistente-post";
 import { PublicacaoPost, type ConexaoPublicacaoVM, type PublicacaoVM } from "@/app/(app)/marketing/[id]/publicacao-post";
+import { StoryPeloCelular } from "@/app/(app)/marketing/[id]/story-celular";
 
 type ArteVM = { id: string; ordem: number; formato: FormatoArte; versao: number };
 type PostVM = {
@@ -265,6 +266,14 @@ export function PostDetalhe({ post, historico, conexao }: { post: PostVM; histor
         legendaPendente={legenda !== post.legenda}
         pub={post.publicacao}
         conexao={conexao}
+      />
+
+      <StoryPeloCelular
+        postId={post.id}
+        numero={post.numero}
+        stories={stories.map((a) => ({ id: a.id, versao: a.versao }))}
+        status={post.status}
+        publicacao={post.publicacao.publicacao}
       />
 
       <section className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-4">
