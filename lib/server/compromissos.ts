@@ -10,11 +10,13 @@ import {
   inicioDoPeriodo,
   percentualCumprimento,
   proximoDiaUtil,
+  semanaDoDiario,
   sequenciaDeDias,
   tarefasQueContam,
   versaoVigente,
   type CompromissoParaCalculo,
   type ContextoCalculo,
+  type DiaDaSemanaDiario,
   type ResultadoCompromisso,
   type StatusCompromisso,
 } from "@/lib/utils/compromissos";
@@ -33,7 +35,10 @@ export type PainelCompromissos = {
   usuario: { id: string; nome: string };
   hoje: { dia: string; itens: ItemPainel[] };
   semana: { inicio: string; fim: string; itens: ItemPainel[] };
+  /** Usada pelo assistente (agente.ts); o card mostra a receitaSemana no lugar. */
   sequencia: number;
+  /** Tarefas de Gerar Receita concluídas em cada dia da semana (pedido de 2026-10-29, no lugar da sequência). */
+  receitaSemana: { compromissoId: string; nome: string; categoriaCor: string | null; total: number; dias: DiaDaSemanaDiario[] } | null;
   /** Botão "Planejar amanhã": categoria e dia (próximo dia útil). */
   planejar: { categoriaId: string; diaAlvo: string } | null;
   grade: { dia: string; estado: StatusCompromisso | "sem" | "futuro"; itens: { nome: string; realizado: number; meta: number; status: StatusCompromisso }[] }[];
@@ -135,6 +140,23 @@ export async function getPainelCompromissos(usuarioId: string, agora: Date = new
   const planejar = diarios.find((c) => c.regra === "PLANEJAR_DIA_SEGUINTE" && c.categoriaId);
   const versaoPlanejar = planejar ? versaoVigente(planejar.versoes, inicioDoPeriodo("DIARIA", agora)) : null;
 
+  // Gerar Receita: o diário por categoria da mesma categoria do planejar (ou o primeiro diário por categoria).
+  const receita =
+    diarios.find((c) => c.regra === "CATEGORIA" && planejar?.categoriaId && c.categoriaId === planejar.categoriaId) ??
+    diarios.find((c) => c.regra === "CATEGORIA" && c.categoriaId);
+  const receitaSemana = receita
+    ? (() => {
+        const dias = semanaDoDiario(receita, segunda, ctx);
+        return {
+          compromissoId: receita.id,
+          nome: receita.nome,
+          categoriaCor: corPorId.get(receita.id) ?? null,
+          total: dias.reduce((soma, d) => soma + d.realizado, 0),
+          dias,
+        };
+      })()
+    : null;
+
   const grade = Array.from({ length: DIAS_GRADE }, (_, i) => somarDias(inicioGrade, i)).map((dia) => {
     if (dia > hoje) return { dia, estado: "futuro" as const, itens: [] };
     const resultados = avaliarDia(diarios, dia, ctx);
@@ -167,6 +189,7 @@ export async function getPainelCompromissos(usuarioId: string, agora: Date = new
       itens: semanais.map((c) => avaliarSemanal(c, segunda, ctx)).filter((r): r is ResultadoCompromisso => r !== null).map(comCor),
     },
     sequencia: sequenciaDeDias(diarios, ctx, LIMITE_SEQUENCIA_DIAS),
+    receitaSemana,
     planejar:
       planejar?.categoriaId && versaoPlanejar ? { categoriaId: planejar.categoriaId, diaAlvo: proximoDiaUtil(hoje, versaoPlanejar.diasUteis) } : null,
     grade,

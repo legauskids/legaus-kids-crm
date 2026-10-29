@@ -6,6 +6,7 @@ import {
   execucaoDoPlano,
   percentualCumprimento,
   proximoDiaUtil,
+  semanaDoDiario,
   sequenciaDeDias,
   tarefasQueContam,
   type CompromissoParaCalculo,
@@ -143,6 +144,30 @@ describe("sequência", () => {
   it("para no primeiro dia não cumprido", () => {
     const tarefas = cumpridoNosDias(["2026-09-28", "2026-09-30", "2026-10-01"]);
     expect(sequenciaDeDias([soGr], ctx("2026-10-01 18:00", tarefas, [soGr]))).toBe(2);
+  });
+});
+
+describe("semana dia a dia (card do Painel)", () => {
+  const concluidas = (dia: string, n: number, categoria = "cat-gr") =>
+    Array.from({ length: n }, (_, i) => tarefa(categoria, `${dia} 09:00`, { concluida: `${dia} 1${i}:00` }));
+  const tarefas = [...concluidas("2026-10-05", 3), ...concluidas("2026-10-05", 2, "cat-mel"), ...concluidas("2026-10-06", 1), ...concluidas("2026-10-08", 2), ...concluidas("2026-10-10", 1)];
+
+  it("conta as concluídas em cada dia, com a meta e o status; fim de semana mostra o que foi feito sem meta", () => {
+    expect(semanaDoDiario(GR, "2026-10-05", ctx("2026-10-11 11:00", tarefas))).toEqual([
+      { dia: "2026-10-05", realizado: 3, meta: 3, status: "cumprido" },
+      { dia: "2026-10-06", realizado: 1, meta: 3, status: "nao_cumprido" },
+      { dia: "2026-10-07", realizado: 0, meta: 3, status: "nao_cumprido" },
+      { dia: "2026-10-08", realizado: 2, meta: 3, status: "nao_cumprido" },
+      { dia: "2026-10-09", realizado: 0, meta: 3, status: "nao_cumprido" },
+      { dia: "2026-10-10", realizado: 1, meta: null, status: "sem" },
+      { dia: "2026-10-11", realizado: 0, meta: null, status: "sem" },
+    ]);
+  });
+
+  it("hoje em andamento e o resto da semana como futuro", () => {
+    const dias = semanaDoDiario(GR, "2026-10-05", ctx("2026-10-08 11:00", tarefas));
+    expect(dias[3]).toEqual({ dia: "2026-10-08", realizado: 2, meta: 3, status: "andamento" });
+    expect(dias.slice(4).map((d) => d.status)).toEqual(["futuro", "futuro", "futuro"]);
   });
 });
 

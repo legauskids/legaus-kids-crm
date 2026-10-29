@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, Flame } from "lucide-react";
+import { CalendarPlus } from "lucide-react";
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -13,8 +13,9 @@ import { NovaTarefaDialog } from "@/app/(app)/tarefas/nova-tarefa-dialog";
 import type { Contagem, ItemPainel, PainelCompromissos } from "@/lib/server/compromissos";
 
 // Card "Compromissos" do Painel (pedido de 2026-09-30): progresso de hoje e da
-// semana, sequência de dias cumpridos e, expandido, a grade das últimas 4
-// semanas, % de cumprimento, execução do plano e a meta vigente em cada período.
+// semana, Gerar Receita concluídas em cada dia da semana (no lugar da sequência,
+// pedido de 2026-10-29) e, expandido, a grade das últimas 4 semanas, % de
+// cumprimento, execução do plano e a meta vigente em cada período.
 // Cores: cumprido = verde, em andamento = azul claro, não cumprido = vermelho.
 
 const COR_STATUS = {
@@ -128,15 +129,8 @@ export function CompromissosPanel({
           </ul>
         )}
       </section>
-      <section className="flex flex-col gap-3 md:w-44">
-        <div className="rounded-lg border bg-muted/30 px-3 py-2">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <Flame className="size-3.5 text-amber-500" />
-            Sequência
-          </p>
-          <p className="text-2xl font-bold tabular-nums">{painel.sequencia}</p>
-          <p className="text-xs text-muted-foreground">{painel.sequencia === 1 ? "dia útil" : "dias úteis"} com todos os diários cumpridos</p>
-        </div>
+      <section className="flex flex-col gap-3 md:w-52">
+        {painel.receitaSemana && <ReceitaPorDia receita={painel.receitaSemana} usuarioId={painel.usuario.id} hoje={painel.hoje.dia} />}
         {painel.planejar && (
           <Button size="sm" variant="outline" onClick={() => setPlanejarAberto(true)}>
             <CalendarPlus className="size-3.5" />
@@ -271,6 +265,58 @@ export function CompromissosPanel({
         />
       )}
     </>
+  );
+}
+
+const DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+/** Quantas tarefas de Gerar Receita foram concluídas em cada dia da semana (segunda a domingo). */
+function ReceitaPorDia({ receita, usuarioId, hoje }: { receita: NonNullable<PainelCompromissos["receitaSemana"]>; usuarioId: string; hoje: string }) {
+  return (
+    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {receita.categoriaCor && <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: receita.categoriaCor }} />}
+        <span className="truncate">{receita.nome} por dia</span>
+      </p>
+      <div className="mt-2 grid grid-cols-7 gap-1 text-center">
+        {DIAS_SEMANA.map((d) => (
+          <span key={d} className="text-[10px] font-medium text-muted-foreground">
+            {d}
+          </span>
+        ))}
+        {receita.dias.map((d) => {
+          const meta = d.meta !== null ? ` de ${d.meta}` : "";
+          const status = d.status === "sem" || d.status === "futuro" ? "" : ` (${COR_STATUS[d.status].rotulo})`;
+          const titulo = d.status === "futuro" ? diaCurto(d.dia) : `${diaCurto(d.dia)}: ${d.realizado}${meta} concluída(s)${status}`;
+          const classe = cn(
+            "flex h-7 items-center justify-center rounded-md text-xs font-semibold tabular-nums",
+            d.status === "cumprido" && COR_STATUS.cumprido.fundo,
+            d.status === "andamento" && COR_STATUS.andamento.fundo,
+            d.status === "nao_cumprido" && COR_STATUS.nao_cumprido.fundo,
+            d.status === "sem" && "bg-muted/60 text-muted-foreground",
+            d.status === "futuro" && "border border-dashed",
+            d.dia === hoje && "ring-2 ring-primary/40",
+          );
+          return d.status !== "futuro" && (d.realizado > 0 || d.status !== "sem") ? (
+            <Link
+              key={d.dia}
+              href={linkTarefas(receita.compromissoId, usuarioId, d.dia)}
+              title={`${titulo} — ver as tarefas`}
+              className={cn(classe, "transition-opacity hover:opacity-80")}
+            >
+              {d.realizado}
+            </Link>
+          ) : (
+            <div key={d.dia} title={titulo} className={classe}>
+              {d.status === "futuro" ? "" : d.realizado}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        <b className="tabular-nums text-foreground">{receita.total}</b> {receita.total === 1 ? "concluída" : "concluídas"} na semana
+      </p>
+    </div>
   );
 }
 

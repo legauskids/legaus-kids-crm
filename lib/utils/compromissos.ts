@@ -237,6 +237,24 @@ export function sequenciaDeDias(compromissos: CompromissoParaCalculo[], ctx: Con
   return n;
 }
 
+export type DiaDaSemanaDiario = { dia: string; realizado: number; meta: number | null; status: StatusCompromisso | "sem" | "futuro" };
+
+/**
+ * Semana (segunda a domingo) de um compromisso diário, dia a dia: quantas
+ * tarefas somaram em cada dia, com a meta e o status da época. Dia fora dos
+ * considerados (ou antes do compromisso existir) vem "sem", mas mostra o que
+ * foi concluído nele; dia depois de hoje vem "futuro".
+ */
+export function semanaDoDiario(c: CompromissoParaCalculo, segunda: string, ctx: ContextoCalculo): DiaDaSemanaDiario[] {
+  const hoje = diaBrasilia(ctx.agora);
+  return Array.from({ length: 7 }, (_, i) => somarDias(segunda, i)).map((dia): DiaDaSemanaDiario => {
+    if (dia > hoje) return { dia, realizado: 0, meta: null, status: "futuro" };
+    const r = avaliarDiario(c, dia, ctx);
+    if (r) return { dia, realizado: r.realizado, meta: r.meta, status: r.status };
+    return { dia, realizado: tarefasQueContam(c, dia, ctx.tarefas).length, meta: null, status: "sem" };
+  });
+}
+
 /** % de cumprimento: só conta período encerrado ou já cumprido (o de hoje em andamento não pesa contra). */
 export function percentualCumprimento(resultados: (ResultadoCompromisso | null)[]): { cumpridos: number; avaliados: number } {
   let cumpridos = 0;
