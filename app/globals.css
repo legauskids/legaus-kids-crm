@@ -150,3 +150,15 @@
     @apply font-sans;
   }
 }
+
+/* Confete do alerta de meta semanal batida (Painel > Compromissos). */
+@keyframes confete-cair {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--confete-desvio, 0), 105vh, 0) rotate(var(--confete-giro, 540deg));
+    opacity: 0.2;
+  }
+}

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { type CSSProperties, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarPlus } from "lucide-react";
 import { ExpandablePanel } from "@/components/shared/expandable-panel";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { corDoIndice } from "@/lib/utils/colors";
 import { somarDias } from "@/lib/utils/brasilia";
@@ -13,9 +15,10 @@ import { NovaTarefaDialog } from "@/app/(app)/tarefas/nova-tarefa-dialog";
 import type { Contagem, ItemPainel, PainelCompromissos } from "@/lib/server/compromissos";
 
 // Card "Compromissos" do Painel (pedido de 2026-09-30): progresso de hoje e da
-// semana, Gerar Receita concluídas em cada dia da semana (no lugar da sequência,
-// pedido de 2026-10-29) e, expandido, a grade das últimas 4 semanas, % de
-// cumprimento, execução do plano e a meta vigente em cada período.
+// semana, Gerar Receita concluídas em cada dia útil com a meta semanal e alerta
+// comemorativo ao bater (no lugar da sequência, pedido de 2026-10-29) e,
+// expandido, a grade das últimas 4 semanas, % de cumprimento, execução do plano
+// e a meta vigente em cada período.
 // Cores: cumprido = verde, em andamento = azul claro, não cumprido = vermelho.
 
 const COR_STATUS = {
@@ -247,6 +250,9 @@ export function CompromissosPanel({
       >
         {conteudo}
       </ExpandablePanel>
+      {painel.receitaSemana && (
+        <ComemoracaoMetaSemanal receita={painel.receitaSemana} chave={`legaus:meta-receita:${painel.usuario.id}:${painel.semana.inicio}`} />
+      )}
       {painel.planejar && (
         <NovaTarefaDialog
           key={planejarAberto ? "planejar-aberto" : "planejar-fechado"}
@@ -268,18 +274,22 @@ export function CompromissosPanel({
   );
 }
 
-const DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const DIAS_UTEIS = ["Seg", "Ter", "Qua", "Qui", "Sex"];
 
-/** Quantas tarefas de Gerar Receita foram concluídas em cada dia da semana (segunda a domingo). */
-function ReceitaPorDia({ receita, usuarioId, hoje }: { receita: NonNullable<PainelCompromissos["receitaSemana"]>; usuarioId: string; hoje: string }) {
+type ReceitaSemana = NonNullable<PainelCompromissos["receitaSemana"]>;
+
+/** Quantas tarefas de Gerar Receita foram concluídas em cada dia útil (segunda a sexta) e o placar da meta semanal. */
+function ReceitaPorDia({ receita, usuarioId, hoje }: { receita: ReceitaSemana; usuarioId: string; hoje: string }) {
+  const batida = receita.total >= receita.meta;
+  const progresso = Math.min(100, Math.round((receita.total / receita.meta) * 100));
   return (
-    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+    <div className={cn("rounded-lg border px-3 py-2", batida ? "border-emerald-500/50 bg-emerald-500/10" : "bg-muted/30")}>
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {receita.categoriaCor && <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: receita.categoriaCor }} />}
         <span className="truncate">{receita.nome} por dia</span>
       </p>
-      <div className="mt-2 grid grid-cols-7 gap-1 text-center">
-        {DIAS_SEMANA.map((d) => (
+      <div className="mt-2 grid grid-cols-5 gap-1 text-center">
+        {DIAS_UTEIS.map((d) => (
           <span key={d} className="text-[10px] font-medium text-muted-foreground">
             {d}
           </span>
@@ -313,10 +323,120 @@ function ReceitaPorDia({ receita, usuarioId, hoje }: { receita: NonNullable<Pain
           );
         })}
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        <b className="tabular-nums text-foreground">{receita.total}</b> {receita.total === 1 ? "concluída" : "concluídas"} na semana
-      </p>
+      <div className="mt-2 space-y-1">
+        <div className="flex items-baseline justify-between gap-2 text-xs">
+          <span className={batida ? "font-semibold text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>
+            {batida ? "🎉 Meta batida!" : "Meta da semana"}
+          </span>
+          <span className={cn("shrink-0 font-semibold tabular-nums", batida ? COR_STATUS.cumprido.texto : COR_STATUS.andamento.texto)}>
+            {receita.total}/{receita.meta}
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className={cn("h-full rounded-full transition-all", batida ? COR_STATUS.cumprido.barra : COR_STATUS.andamento.barra)} style={{ width: `${progresso}%` }} />
+        </div>
+        {receita.fimDeSemana > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            inclui {receita.fimDeSemana} {receita.fimDeSemana === 1 ? "concluída" : "concluídas"} no fim de semana
+          </p>
+        )}
+      </div>
     </div>
+  );
+}
+
+const CORES_CONFETE = ["#16a34a", "#f59e0b", "#3b82f6", "#ec4899", "#a855f7", "#ef4444", "#14b8a6"];
+
+/** Confete caindo pela tela inteira (fica por cima do alerta; some sozinho e respeita "reduzir movimento"). */
+function Confete() {
+  const [pecas] = useState(() =>
+    Array.from({ length: 70 }, (_, i) => ({
+      esquerda: Math.random() * 100,
+      atraso: Math.random() * 0.9,
+      duracao: 2.4 + Math.random() * 1.8,
+      tamanho: 6 + Math.random() * 6,
+      desvio: (Math.random() - 0.5) * 160,
+      giro: (Math.random() > 0.5 ? 1 : -1) * (360 + Math.random() * 540),
+      cor: CORES_CONFETE[i % CORES_CONFETE.length],
+    })),
+  );
+  return createPortal(
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-[60] overflow-hidden motion-reduce:hidden">
+      {pecas.map((p, i) => (
+        <span
+          key={i}
+          className="absolute top-0 block rounded-[2px]"
+          style={
+            {
+              left: `${p.esquerda}%`,
+              width: p.tamanho,
+              height: p.tamanho * 0.5,
+              backgroundColor: p.cor,
+              animation: `confete-cair ${p.duracao}s ease-in ${p.atraso}s both`,
+              "--confete-desvio": `${p.desvio}px`,
+              "--confete-giro": `${p.giro}deg`,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
+// localStorage não avisa mudanças da própria aba; quem fecha o alerta guarda e re-renderiza.
+const semAssinatura = () => () => {};
+
+/**
+ * Alerta comemorativo quando a meta semanal de Gerar Receita é batida (pedido
+ * de 2026-10-29): ao abrir o Painel já com a meta batida, ou na hora em que a
+ * tarefa que fecha a meta é concluída por aqui (o Painel recarrega os dados).
+ * Depois de fechado, não volta mais naquela semana neste navegador.
+ */
+function ComemoracaoMetaSemanal({ receita, chave }: { receita: ReceitaSemana; chave: string }) {
+  const [fechado, setFechado] = useState(false);
+  const jaComemorado = useSyncExternalStore(
+    semAssinatura,
+    () => {
+      try {
+        return localStorage.getItem(chave) !== null;
+      } catch {
+        return false; // sem armazenamento (aba anônima, bloqueado): comemora mesmo assim
+      }
+    },
+    () => true, // no servidor não abre; abre depois de carregar no navegador
+  );
+  const aberto = receita.total >= receita.meta && !jaComemorado && !fechado;
+
+  function fechar() {
+    try {
+      localStorage.setItem(chave, new Date().toISOString());
+    } catch {
+      // idem: sem armazenamento, só fecha
+    }
+    setFechado(true);
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={(open) => !open && fechar()}>
+      <DialogContent className="text-center">
+        <div aria-hidden className="mx-auto animate-bounce pt-2 text-5xl motion-reduce:animate-none">
+          🎉
+        </div>
+        <DialogHeader className="items-center">
+          <DialogTitle className="text-xl">Meta da semana batida!</DialogTitle>
+          <DialogDescription>
+            {receita.total} tarefas de {receita.nome} concluídas nesta semana — a meta era {receita.meta}. Parabéns! 🚀
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button className="w-full sm:w-auto" onClick={fechar}>
+            Valeu!
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+      {aberto && <Confete />}
+    </Dialog>
   );
 }
 

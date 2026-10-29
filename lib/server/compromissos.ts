@@ -27,6 +27,8 @@ import {
 
 const DIAS_GRADE = 28; // 4 semanas
 const LIMITE_SEQUENCIA_DIAS = 400;
+// Meta semanal de Gerar Receita do card (pedido de 2026-10-29: alerta comemorativo ao bater 10 na semana).
+const META_SEMANAL_RECEITA = 10;
 
 export type ItemPainel = ResultadoCompromisso & { categoriaCor: string | null };
 export type Contagem = { cumpridos: number; avaliados: number };
@@ -37,8 +39,20 @@ export type PainelCompromissos = {
   semana: { inicio: string; fim: string; itens: ItemPainel[] };
   /** Usada pelo assistente (agente.ts); o card mostra a receitaSemana no lugar. */
   sequencia: number;
-  /** Tarefas de Gerar Receita concluídas em cada dia da semana (pedido de 2026-10-29, no lugar da sequência). */
-  receitaSemana: { compromissoId: string; nome: string; categoriaCor: string | null; total: number; dias: DiaDaSemanaDiario[] } | null;
+  /**
+   * Tarefas de Gerar Receita concluídas em cada dia útil (segunda a sexta) e o
+   * placar da meta semanal (pedido de 2026-10-29, no lugar da sequência). O
+   * total conta a semana inteira, inclusive o que for concluído no fim de semana.
+   */
+  receitaSemana: {
+    compromissoId: string;
+    nome: string;
+    categoriaCor: string | null;
+    dias: DiaDaSemanaDiario[];
+    fimDeSemana: number;
+    total: number;
+    meta: number;
+  } | null;
   /** Botão "Planejar amanhã": categoria e dia (próximo dia útil). */
   planejar: { categoriaId: string; diaAlvo: string } | null;
   grade: { dia: string; estado: StatusCompromisso | "sem" | "futuro"; itens: { nome: string; realizado: number; meta: number; status: StatusCompromisso }[] }[];
@@ -146,13 +160,16 @@ export async function getPainelCompromissos(usuarioId: string, agora: Date = new
     diarios.find((c) => c.regra === "CATEGORIA" && c.categoriaId);
   const receitaSemana = receita
     ? (() => {
-        const dias = semanaDoDiario(receita, segunda, ctx);
+        const semana = semanaDoDiario(receita, segunda, ctx);
+        const somar = (dias: DiaDaSemanaDiario[]) => dias.reduce((soma, d) => soma + d.realizado, 0);
         return {
           compromissoId: receita.id,
           nome: receita.nome,
           categoriaCor: corPorId.get(receita.id) ?? null,
-          total: dias.reduce((soma, d) => soma + d.realizado, 0),
-          dias,
+          dias: semana.slice(0, 5),
+          fimDeSemana: somar(semana.slice(5)),
+          total: somar(semana),
+          meta: META_SEMANAL_RECEITA,
         };
       })()
     : null;
