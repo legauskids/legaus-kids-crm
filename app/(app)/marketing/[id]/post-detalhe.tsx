@@ -22,6 +22,7 @@ import type { StatusPostagem } from "@prisma/client";
 import { AssistentePost, type MensagemAssistente } from "@/app/(app)/marketing/[id]/assistente-post";
 import { PublicacaoPost, type ConexaoPublicacaoVM, type PublicacaoVM } from "@/app/(app)/marketing/[id]/publicacao-post";
 import { StoryPeloCelular } from "@/app/(app)/marketing/[id]/story-celular";
+import { MusicaDoStory, type MusicaOpcaoVM, type PreviaVideoVM } from "@/app/(app)/marketing/[id]/musica-story";
 
 type ArteVM = { id: string; ordem: number; formato: FormatoArte; versao: number };
 type PostVM = {
@@ -33,6 +34,9 @@ type PostVM = {
   temLegenda: boolean;
   textos: TextosPostagem;
   artes: ArteVM[];
+  musicaId: string | null;
+  musicas: MusicaOpcaoVM[];
+  previasVideo: PreviaVideoVM[];
   publicacao: PublicacaoVM;
 };
 
@@ -90,6 +94,7 @@ export function PostDetalhe({ post, historico, conexao }: { post: PostVM; histor
   // Agendado ou com erro ao publicar continua aprovado; publicado (ou saindo agora) não volta pra revisão.
   const aprovado = ["APROVADO", "AGENDADO", "ERRO"].includes(post.status);
   const saiu = post.status === "PUBLICADO" || post.status === "PUBLICANDO";
+  const storyJaSaiu = Boolean(post.publicacao.publicacao?.instagram?.storyPeloCelularEm || post.publicacao.publicacao?.instagram?.storyIds?.length);
 
   function executar(nome: string, fn: () => Promise<{ ok: true } | { ok: false; error: string }>, sucesso?: string, depois?: () => void) {
     setAcao(nome);
@@ -258,6 +263,10 @@ export function PostDetalhe({ post, historico, conexao }: { post: PostVM; histor
           <div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">Story não tem legenda no Instagram — só as artes.</div>
         )}
       </section>
+
+      {stories.length > 0 && !saiu && !storyJaSaiu && (
+        <MusicaDoStory postId={post.id} status={post.status} musicas={post.musicas} musicaId={post.musicaId} previas={post.previasVideo} />
+      )}
 
       <PublicacaoPost
         postId={post.id}

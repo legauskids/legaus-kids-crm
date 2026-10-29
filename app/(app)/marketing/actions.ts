@@ -22,6 +22,7 @@ import {
 } from "@/lib/server/marketing";
 import { comMaiuscula, type AlvoFoto, type ConteudoPostagem, type DadosArte, type TextosPostagem } from "@/lib/utils/postagem-arte";
 import { conversarSobrePost } from "@/lib/server/marketing-agente";
+import { escolherMusicaDoPost, excluirMusica } from "@/lib/server/musicas-story";
 import { transcreverAudio } from "@/lib/server/transcricao";
 import type { StatusPostagem } from "@prisma/client";
 
@@ -256,6 +257,21 @@ export async function storyPostadoPeloCelularAction(postagemId: string): Promise
   await requireModulo("marketing");
   const r = await registrarStoryPeloCelular(postagemId);
   if (r.ok) revalidar(postagemId);
+  return r;
+}
+
+/** Música do story publicado pelo CRM (vira vídeo). Post aprovado/agendado volta pra revisão. */
+export async function escolherMusicaAction(postagemId: string, musicaId: string | null): Promise<Resultado<{ voltouPraRevisao: boolean }>> {
+  await requireModulo("marketing");
+  const r = await escolherMusicaDoPost(postagemId, musicaId);
+  if (r.ok) revalidar(postagemId);
+  return r;
+}
+
+export async function excluirMusicaAction(musicaId: string): Promise<Resultado> {
+  await requireModulo("marketing");
+  const r = await excluirMusica(musicaId);
+  if (r.ok) revalidatePath("/marketing/musicas");
   return r;
 }
 

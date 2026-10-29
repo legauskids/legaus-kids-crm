@@ -377,6 +377,7 @@ export function buscarPostagem(id: string) {
       publicarNoFacebook: true,
       publicacao: true,
       erroPublicacao: true,
+      musicaId: true,
       criadoPor: { select: { nome: true } },
       negocio: { select: { id: true, titulo: true } },
       imagens: { orderBy: { ordem: "asc" }, select: { id: true, largura: true, altura: true } },

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Music2, Plus } from "lucide-react";
 import { requireModulo } from "@/lib/auth/guards";
 import { listarPostagens } from "@/lib/server/marketing";
 import { Badge } from "@/components/ui/badge";
@@ -20,10 +20,16 @@ export default async function MarketingPage() {
             Fotos reais das obras viram artes no padrão da Legaus Kids, com legenda sugerida. Nada vai pro ar sem sua aprovação.
           </p>
         </div>
-        <Link href="/marketing/novo" className={buttonVariants()}>
-          <Plus className="size-4" />
-          Novo post
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/marketing/musicas" className={buttonVariants({ variant: "outline" })}>
+            <Music2 className="size-4" />
+            Músicas dos stories
+          </Link>
+          <Link href="/marketing/novo" className={buttonVariants()}>
+            <Plus className="size-4" />
+            Novo post
+          </Link>
+        </div>
       </div>
 
       <div className="p-4 sm:p-6">

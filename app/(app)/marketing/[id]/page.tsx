@@ -5,6 +5,8 @@ import { requireModulo } from "@/lib/auth/guards";
 import { buscarPostagem, SO_STORY, textosDaPostagem } from "@/lib/server/marketing";
 import { historicoDoAssistente } from "@/lib/server/marketing-agente";
 import { resumoDaConexao } from "@/lib/server/meta";
+import { urlPublicaDoVideo } from "@/lib/server/meta-publicacao";
+import { opcoesDeMusica } from "@/lib/server/musicas-story";
 import { PERMISSAO_FACEBOOK, type PublicacaoMeta } from "@/lib/utils/meta-publicacao";
 import { Badge } from "@/components/ui/badge";
 import { ROTULO_CONTEUDO } from "@/lib/utils/postagem-arte";
@@ -16,9 +18,9 @@ import { PostDetalhe } from "@/app/(app)/marketing/[id]/post-detalhe";
 // publica em segundo plano (after) e pode levar até uns minutos na Meta.
 export const maxDuration = 300;
 
-/** Muda quando a legenda, o status, os textos ou alguma arte mudam. */
-function versaoDoPost(p: { legenda: string | null; status: string; textos: unknown; agendadaPara: Date | null; artes: { atualizadoEm: Date }[] }): string {
-  const texto = `${p.legenda ?? ""}|${p.status}|${p.agendadaPara?.getTime() ?? ""}|${JSON.stringify(p.textos)}|${p.artes.map((a) => a.atualizadoEm.getTime()).join(".")}`;
+/** Muda quando a legenda, o status, os textos, a música ou alguma arte mudam. */
+function versaoDoPost(p: { legenda: string | null; status: string; textos: unknown; agendadaPara: Date | null; musicaId: string | null; artes: { atualizadoEm: Date }[] }): string {
+  const texto = `${p.legenda ?? ""}|${p.status}|${p.agendadaPara?.getTime() ?? ""}|${JSON.stringify(p.textos)}|${p.musicaId ?? ""}|${p.artes.map((a) => a.atualizadoEm.getTime()).join(".")}`;
   let hash = 0;
   for (let i = 0; i < texto.length; i++) hash = (hash * 31 + texto.charCodeAt(i)) | 0;
   return String(hash);
@@ -27,8 +29,17 @@ function versaoDoPost(p: { legenda: string | null; status: string; textos: unkno
 export default async function PostPage({ params }: { params: Promise<{ id: string }> }) {
   await requireModulo("marketing");
   const { id } = await params;
-  const [p, historico, conexao] = await Promise.all([buscarPostagem(id), historicoDoAssistente(id), resumoDaConexao()]);
+  const [p, historico, conexao, musicas] = await Promise.all([buscarPostagem(id), historicoDoAssistente(id), resumoDaConexao(), opcoesDeMusica()]);
   if (!p) notFound();
+  // Prévia do story com a música: o mesmo link assinado que a Meta usa, só que relativo (mesmo site).
+  const previasVideo = p.musicaId
+    ? p.artes
+        .filter((a) => a.formato === "STORY")
+        .map((a) => {
+          const url = new URL(urlPublicaDoVideo(a.id, p.musicaId));
+          return { arteId: a.id, url: `${url.pathname}${url.search}`, poster: `/api/imagem/postagem-arte/${a.id}?v=${a.atualizadoEm.getTime()}` };
+        })
+    : [];
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -64,6 +75,9 @@ export default async function PostPage({ params }: { params: Promise<{ id: strin
           temLegenda: !SO_STORY.includes(p.conteudo),
           textos: textosDaPostagem(p),
           artes: p.artes.map((a) => ({ id: a.id, ordem: a.ordem, formato: a.formato, versao: a.atualizadoEm.getTime() })),
+          musicaId: p.musicaId,
+          musicas,
+          previasVideo,
           publicacao: {
             status: p.status,
             agendadaPara: p.agendadaPara?.toISOString() ?? null,

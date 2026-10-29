@@ -27,6 +27,25 @@ export function urlPublicaDaArte(arteId: string): string {
 
 export { FINALIDADE_LINK };
 
+// Story com música (2026-10-29): o MP4 (arte + trecho) também vai por link assinado de 2 h.
+export const FINALIDADE_VIDEO = "arte-video";
+
+/** `musicaId` só muda o link (o navegador não reaproveita o vídeo da música anterior). */
+export function urlPublicaDoVideo(arteId: string, musicaId?: string | null): string {
+  const exp = Math.floor(Date.now() / 1000) + VALIDADE_LINK_S;
+  return `${URL_BASE}/api/imagem/arte-video/${arteId}?exp=${exp}&sig=${assinar(`${arteId}.${exp}`, FINALIDADE_VIDEO)}${musicaId ? `&m=${musicaId}` : ""}`;
+}
+
+/** Monta o vídeo antes (pedindo o link) pra Meta não esperar o ffmpeg — e pra erro aparecer com motivo claro. */
+async function prepararVideoDoStory(arteId: string): Promise<string> {
+  const url = urlPublicaDoVideo(arteId);
+  const r = await fetch(url, { headers: { Range: "bytes=0-1" }, signal: AbortSignal.timeout(110_000) }).catch(() => null);
+  if (!r || !r.ok || !(r.headers.get("content-type") ?? "").startsWith("video/")) {
+    throw new Error("Não consegui montar o vídeo do story com a música — tente de novo (ou tire a música).");
+  }
+  return url;
+}
+
 /** Passa o post pra PUBLICANDO se ele estiver num dos estados pedidos (vale como trava contra publicar duas vezes). */
 export async function reivindicarParaPublicar(postagemId: string, de: StatusPostagem[]): Promise<boolean> {
   const r = await prisma.postagem.updateMany({ where: { id: postagemId, status: { in: de } }, data: { status: "PUBLICANDO", erroPublicacao: null } });
@@ -74,15 +93,16 @@ const esperar =(ms: number) => new Promise((ok) => setTimeout(ok, ms));
 /** Acesso expirado/revogado (código 190): as outras partes vão falhar igual — para na primeira. */
 const acessoCaiu = (e: unknown) => e instanceof ErroMeta && e.codigo === 190;
 
-/** O Instagram processa o contêiner antes de publicar: espera ficar pronto (imagem costuma ser na hora). */
-async function esperarConteiner(id: string, token: string): Promise<void> {
-  for (let i = 0; i < 15; i++) {
+/** O Instagram processa o contêiner antes de publicar: espera ficar pronto (imagem costuma ser na hora; vídeo leva mais). */
+async function esperarConteiner(id: string, token: string, video = false): Promise<void> {
+  const midia = video ? "o vídeo" : "a imagem";
+  for (let i = 0; i < (video ? 90 : 15); i++) {
     const r = await graph<{ status_code?: string }>(`/${id}`, { fields: "status_code", access_token: token });
     if (r.status_code === "FINISHED" || r.status_code === undefined) return;
-    if (r.status_code === "ERROR" || r.status_code === "EXPIRED") throw new Error(`O Instagram não aceitou a imagem (${r.status_code}).`);
+    if (r.status_code === "ERROR" || r.status_code === "EXPIRED") throw new Error(`O Instagram não aceitou ${midia} (${r.status_code}).`);
     await esperar(2000);
   }
-  throw new Error("O Instagram demorou demais pra processar as imagens — tente de novo.");
+  throw new Error(`O Instagram demorou demais pra processar ${midia} — tente de novo.`);
 }
 
 async function publicarFeedInstagram(conexao: ConexaoAtiva, urls: string[], legenda: string): Promise<{ id: string; link: string | null }> {
@@ -107,10 +127,11 @@ async function publicarFeedInstagram(conexao: ConexaoAtiva, urls: string[], lege
   return { id: publicado.id, link };
 }
 
-async function publicarStoryInstagram(conexao: ConexaoAtiva, url: string): Promise<string> {
+async function publicarStoryInstagram(conexao: ConexaoAtiva, midia: { imagem: string } | { video: string }): Promise<string> {
   const ig = conexao.instagramId as string;
-  const conteiner = (await graph<{ id: string }>(`/${ig}/media`, { image_url: url, media_type: "STORIES", access_token: conexao.token }, "POST")).id;
-  await esperarConteiner(conteiner, conexao.token);
+  const fonte = "video" in midia ? { video_url: midia.video } : { image_url: midia.imagem };
+  const conteiner = (await graph<{ id: string }>(`/${ig}/media`, { ...fonte, media_type: "STORIES", access_token: conexao.token }, "POST")).id;
+  await esperarConteiner(conteiner, conexao.token, "video" in midia);
   return (await graph<{ id: string }>(`/${ig}/media_publish`, { creation_id: conteiner, access_token: conexao.token }, "POST")).id;
 }
 
@@ -151,6 +172,7 @@ export async function publicarPostagem(postagemId: string): Promise<{ ok: boolea
       publicacao: true,
       publicarNoInstagram: true,
       publicarNoFacebook: true,
+      musicaId: true,
       artes: { orderBy: { ordem: "asc" }, select: { id: true, formato: true } },
     },
   });
@@ -190,10 +212,12 @@ export async function publicarPostagem(postagemId: string): Promise<{ ok: boolea
       for (const [i, arte] of stories.entries()) {
         if (feito.instagram?.storyIds?.[i]) continue;
         try {
-          const id = await publicarStoryInstagram(conexao, urlPublicaDaArte(arte.id));
+          // Com música, o story sai como vídeo (arte + trecho da música).
+          const midia = post.musicaId ? { video: await prepararVideoDoStory(arte.id) } : { imagem: urlPublicaDaArte(arte.id) };
+          const id = await publicarStoryInstagram(conexao, midia);
           feito.instagram = { ...feito.instagram, storyIds: [...(feito.instagram?.storyIds ?? []), id] };
           await salvar();
-          saiu.push("story do Instagram");
+          saiu.push(post.musicaId ? "story do Instagram (com música)" : "story do Instagram");
         } catch (e) {
           if (acessoCaiu(e)) throw e;
           falhas.push(`Story: ${e instanceof Error ? e.message : e}`);
