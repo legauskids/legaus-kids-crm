@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth/session";
+import { requireApiOuSessaoUser } from "@/lib/auth/api-token";
 import { moduloPermitido } from "@/lib/auth/permissoes";
 import { prisma } from "@/lib/db";
 import { codificarTrechoMusica } from "@/lib/server/ffmpeg";
@@ -15,8 +15,12 @@ export const maxDuration = 60;
 const texto = (form: FormData, campo: string, max: number) => String(form.get(campo) ?? "").trim().replace(/\s+/g, " ").slice(0, max);
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  let user: Awaited<ReturnType<typeof requireApiOuSessaoUser>>;
+  try {
+    user = await requireApiOuSessaoUser(request);
+  } catch (naoAutenticado) {
+    return naoAutenticado as Response;
+  }
   if (!moduloPermitido(user, "marketing")) return NextResponse.json({ error: "Sem acesso ao Marketing." }, { status: 403 });
 
   const form = await request.formData().catch(() => null);
