@@ -2,11 +2,21 @@ import "server-only";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/db";
 import type { StatusOrcamento } from "@prisma/client";
+import type { ClienteBuscavel } from "@/lib/utils/busca-cliente";
 
 const ITENS_COM_IMAGEM = {
   orderBy: { ordem: "asc" as const },
   include: { produto: { select: { imagemUrl: true } } },
 };
+
+/** Contatos pra busca do cliente no orçamento por nome, CPF, CNPJ ou telefone (seletor-cliente.tsx). */
+export async function listarClientesParaOrcamento(): Promise<ClienteBuscavel[]> {
+  const contatos = await prisma.contato.findMany({
+    select: { id: true, nome: true, empresa: true, razaoSocial: true, cnpj: true, representanteLegalCpf: true, telefone: true, tipo: true },
+    orderBy: { nome: "asc" },
+  });
+  return contatos.map(({ representanteLegalCpf, ...c }) => ({ ...c, cpf: representanteLegalCpf }));
+}
 
 export function listarOrcamentos() {
   return prisma.orcamento.findMany({

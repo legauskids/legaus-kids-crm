@@ -7,13 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -24,6 +17,8 @@ import { Plus, Trash2, UserPlus } from "lucide-react";
 import { centavosParaReais } from "@/lib/utils/money";
 import { AdicionarProdutoDialog, type ProdutoParaEscolha } from "@/app/(app)/orcamentos/adicionar-produto-dialog";
 import { salvarOrcamentoAction, criarClienteRapidoAction } from "@/app/(app)/orcamentos/actions";
+import { SeletorCliente } from "@/app/(app)/orcamentos/seletor-cliente";
+import type { ClienteBuscavel } from "@/lib/utils/busca-cliente";
 
 type ItemEditavel = {
   chave: string;
@@ -35,7 +30,7 @@ type ItemEditavel = {
   imagemUrl: string | null;
 };
 
-export type ContatoParaEscolha = { id: string; nome: string; empresa: string | null; razaoSocial: string | null };
+export type ContatoParaEscolha = ClienteBuscavel;
 
 export type OrcamentoParaEditar = {
   id: string;
@@ -138,7 +133,10 @@ export function OrcamentoEditor({
         setErro(resultado.error);
         return;
       }
-      setListaContatos((atual) => [...atual, { id: resultado.id, nome: resultado.nome, empresa: null, razaoSocial: null }]);
+      setListaContatos((atual) => [
+        ...atual,
+        { id: resultado.id, nome: resultado.nome, empresa: null, razaoSocial: null, cnpj: null, cpf: null, telefone: novoClienteTelefone.replace(/\D/g, "") || null, tipo: "CLIENTE" },
+      ]);
       setContatoId(resultado.id);
       setNovoClienteAberto(false);
       setNovoClienteNome("");
@@ -182,20 +180,16 @@ export function OrcamentoEditor({
         <div className="space-y-2">
           <Label>Cliente</Label>
           <div className="flex gap-2">
-            <Select value={contatoId || "__nenhum__"} onValueChange={(v) => setContatoId(v === "__nenhum__" ? "" : v)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Sem cliente vinculado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__nenhum__">Sem cliente vinculado</SelectItem>
-                {listaContatos.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nome}
-                    {c.razaoSocial ? ` — ${c.razaoSocial}` : c.empresa ? ` — ${c.empresa}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SeletorCliente
+              clientes={listaContatos}
+              valor={contatoId}
+              onChange={setContatoId}
+              onNovoCliente={(termo) => {
+                // Digitou um nome: já vem preenchido no cadastro rápido (CPF/CNPJ se completa em Cadastros).
+                if (!/^[\d\s./()+-]+$/.test(termo)) setNovoClienteNome(termo);
+                setNovoClienteAberto(true);
+              }}
+            />
             <Button type="button" variant="outline" size="icon" title="Novo cliente" onClick={() => setNovoClienteAberto(true)}>
               <UserPlus className="size-4" />
             </Button>

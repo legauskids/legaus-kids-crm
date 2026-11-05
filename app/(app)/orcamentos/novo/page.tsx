@@ -1,15 +1,13 @@
 import { requireModulo } from "@/lib/auth/guards";
 import { prisma } from "@/lib/db";
+import { listarClientesParaOrcamento } from "@/lib/server/orcamentos";
 import { OrcamentoEditor } from "@/app/(app)/orcamentos/orcamento-editor";
 
 export default async function NovoOrcamentoPage() {
   await requireModulo("orcamentos");
 
   const [contatos, produtos] = await Promise.all([
-    prisma.contato.findMany({
-      select: { id: true, nome: true, empresa: true, razaoSocial: true },
-      orderBy: { nome: "asc" },
-    }),
+    listarClientesParaOrcamento(),
     prisma.produto.findMany({
       where: { ativo: true },
       select: { id: true, nome: true, codigo: true, categoria: true, descricao: true, imagemUrl: true, valorCentavos: true },
