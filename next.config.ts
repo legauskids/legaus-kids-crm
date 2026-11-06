@@ -18,6 +18,8 @@ const nextConfig: NextConfig = {
     "/api/imagem/postagem-arte/[id]": ["./public/fontes-marca/*.ttf", "./public/legaus-logo.png"],
     "/api/imagem/arte-video/[id]": ["./node_modules/ffmpeg-static/ffmpeg", "./public/fontes-marca/*.ttf", "./public/legaus-logo.png"],
     "/api/marketing/musicas": ["./node_modules/ffmpeg-static/ffmpeg"],
+    // Apresentação do orçamento (2026-11-06): páginas do modelo, rodapé, logo e fontes.
+    "/api/pdf/orcamento/[id]/apresentacao": ["./public/apresentacao/*.jpg", "./public/fontes-marca/Baloo2-ExtraBold.ttf", "./public/fontes-marca/Nunito-*.ttf"],
   },
 };
 

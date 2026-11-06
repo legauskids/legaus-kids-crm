@@ -612,7 +612,37 @@ model Orcamento {
   itens        OrcamentoItem[]
   notasFiscais NotaFiscal[]
 
+  apresentacao        ApresentacaoOrcamento?
+  imagensApresentacao ApresentacaoImagem[]
+
   @@index([contatoId])
+}
+
+// Apresentação do orçamento (pedido de 2026-11-06): páginas no formato da
+// "Apresentação Legaus Kids", editáveis, em JSON (lib/utils/apresentacao.ts).
+// Sem registro = apresentação padrão montada na hora a partir do orçamento.
+model ApresentacaoOrcamento {
+  orcamentoId  String    @id
+  orcamento    Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  paginas      Json
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+}
+
+// Imagens extras enviadas pra apresentação (fotos de obra, projeto 3D...),
+// já reduzidas pra JPEG — mesmo esquema das fotos do Marketing (bytes no banco).
+model ApresentacaoImagem {
+  id          String    @id @default(cuid())
+  orcamentoId String
+  orcamento   Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  nome        String?
+  mime        String
+  bytes       Bytes
+  largura     Int
+  altura      Int
+  criadoEm    DateTime  @default(now())
+
+  @@index([orcamentoId])
 }
 
 model OrcamentoItem {

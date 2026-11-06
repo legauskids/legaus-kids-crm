@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Printer, Send, Trash2 } from "lucide-react";
+import { Presentation, Printer, Send, Trash2 } from "lucide-react";
 import { atualizarStatusOrcamentoAction, excluirOrcamentoAction } from "@/app/(app)/orcamentos/actions";
 import type { StatusOrcamento } from "@prisma/client";
 
@@ -61,6 +61,12 @@ export function ControleStatusOrcamento({
         <Link href={`/orcamentos/${orcamentoId}/imprimir`} target="_blank">
           <Send className="size-4" />
           Enviar
+        </Link>
+      </Button>
+      <Button variant="outline" size="sm" asChild>
+        <Link href={`/orcamentos/${orcamentoId}/apresentacao`}>
+          <Presentation className="size-4" />
+          Apresentação
         </Link>
       </Button>
       <Button
