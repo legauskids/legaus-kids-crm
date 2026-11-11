@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import { requireModulo } from "@/lib/auth/guards";
 import { buscarOrcamentoPorId, listarClientesParaOrcamento } from "@/lib/server/orcamentos";
 import { prisma } from "@/lib/db";
+import { listarAnexosOrcamento } from "@/lib/server/anexos-orcamento";
 import { OrcamentoEditor } from "@/app/(app)/orcamentos/orcamento-editor";
 import { ControleStatusOrcamento } from "@/app/(app)/orcamentos/status-orcamento";
+import { AnexosOrcamento } from "./anexos-orcamento";
 
 export default async function OrcamentoDetalhePage({
   params,
@@ -13,7 +15,7 @@ export default async function OrcamentoDetalhePage({
   await requireModulo("orcamentos");
   const { orcamentoId } = await params;
 
-  const [orcamento, contatos, produtos] = await Promise.all([
+  const [orcamento, contatos, produtos, anexos] = await Promise.all([
     buscarOrcamentoPorId(orcamentoId),
     listarClientesParaOrcamento(),
     prisma.produto.findMany({
@@ -21,6 +23,7 @@ export default async function OrcamentoDetalhePage({
       select: { id: true, nome: true, codigo: true, categoria: true, descricao: true, imagemUrl: true, valorCentavos: true },
       orderBy: { nome: "asc" },
     }),
+    listarAnexosOrcamento(orcamentoId),
   ]);
 
   if (!orcamento) notFound();
@@ -52,6 +55,7 @@ export default async function OrcamentoDetalhePage({
         contatos={contatos}
         produtos={produtos}
       />
+      <AnexosOrcamento orcamentoId={orcamento.id} numero={orcamento.numero} anexosIniciais={anexos} />
     </div>
   );
 }

@@ -18,6 +18,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // fontes-marca: Baloo 2 e Nunito (OFL) da prévia do editor de posts.
-    "/((?!login|publico|api/auth|api/integracoes|api/agente|api/telegram|api/push|api/pdf|api/imagem|fontes-marca|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|logo-mark.*\\.svg|icon-.*\\.png).*)",
+    // legaus-logo.png: aparece no link público do orçamento, pra quem não tem login.
+    "/((?!login|publico|api/auth|api/integracoes|api/agente|api/telegram|api/push|api/pdf|api/imagem|fontes-marca|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|manifest.webmanifest|legaus-logo\\.png|logo-mark.*\\.svg|icon-.*\\.png).*)",
   ],
 };

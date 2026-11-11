@@ -19,6 +19,7 @@ export default async function NovoOrcamentoPage() {
     <div className="mx-auto max-w-4xl space-y-4 p-6">
       <h1 className="text-xl font-bold tracking-tight text-foreground">Novo orçamento</h1>
       <OrcamentoEditor contatos={contatos} produtos={produtos} />
+      <p className="text-xs text-muted-foreground">Depois de criar o orçamento, dá pra anexar imagens a ele (saem numa folha depois do orçamento).</p>
     </div>
   );
 }

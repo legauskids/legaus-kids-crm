@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { requireModulo } from "@/lib/auth/guards";
 import { buscarOrcamentoPorId } from "@/lib/server/orcamentos";
 import { emailConfigurado } from "@/lib/server/email";
+import { listarAnexosOrcamento } from "@/lib/server/anexos-orcamento";
 import { OrcamentoDocumento } from "@/app/(app)/orcamentos/orcamento-documento";
+import { AnexosDoOrcamento } from "@/app/(app)/orcamentos/folha-anexos";
 import { BotaoImprimir } from "@/app/(app)/orcamentos/[orcamentoId]/imprimir/botao-imprimir";
 import { EnviarOrcamentoDialog } from "@/app/(app)/orcamentos/enviar-orcamento-dialog";
 
@@ -13,7 +15,7 @@ export default async function ImprimirOrcamentoPage({
 }) {
   await requireModulo("orcamentos");
   const { orcamentoId } = await params;
-  const orcamento = await buscarOrcamentoPorId(orcamentoId);
+  const [orcamento, anexos] = await Promise.all([buscarOrcamentoPorId(orcamentoId), listarAnexosOrcamento(orcamentoId)]);
   if (!orcamento) notFound();
 
   return (
@@ -56,6 +58,7 @@ export default async function ImprimirOrcamentoPage({
           })),
         }}
       />
+      <AnexosDoOrcamento anexos={anexos} numero={orcamento.numero} />
     </div>
   );
 }

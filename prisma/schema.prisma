@@ -614,8 +614,30 @@ model Orcamento {
 
   apresentacao        ApresentacaoOrcamento?
   imagensApresentacao ApresentacaoImagem[]
+  anexos              OrcamentoAnexo[]
 
   @@index([contatoId])
+}
+
+// Imagens anexas ao orçamento (pedido de 2026-11-11): saem em página(s) depois
+// do orçamento, na ordem e no tamanho escolhidos (lib/utils/anexos-orcamento.ts).
+// Bytes no banco, já reduzidos pra JPEG — mesmo esquema da ApresentacaoImagem.
+model OrcamentoAnexo {
+  id          String    @id @default(cuid())
+  orcamentoId String
+  orcamento   Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  nome        String?
+  legenda     String?
+  mime        String
+  bytes       Bytes
+  largura     Int
+  altura      Int
+  // Largura na folha, em % da largura útil (20 a 100).
+  tamanho     Int       @default(100)
+  ordem       Int       @default(0)
+  criadoEm    DateTime  @default(now())
+
+  @@index([orcamentoId])
 }
 
 // Apresentação do orçamento (pedido de 2026-11-06): páginas no formato da

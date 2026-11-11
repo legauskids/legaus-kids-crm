@@ -42,6 +42,7 @@ import {
   type PaginaApresentacao,
   type TipoPagina,
 } from "@/lib/utils/apresentacao";
+import { reduzirImagem } from "@/lib/utils/reduzir-imagem";
 import { CamposPagina, urlImagem } from "./campos-pagina";
 import {
   enviarApresentacaoWhatsAppAction,
@@ -71,24 +72,6 @@ const FIXAS: readonly TipoPagina[] = PAGINAS_FIXAS;
 const AVULSAS: readonly TipoPagina[] = PAGINAS_AVULSAS;
 
 const novoId = (tipo: TipoPagina) => `${tipo}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-/** Reduz no próprio aparelho antes de mandar — foto de celular passa do limite de envio. */
-async function reduzir(arquivo: File): Promise<Blob> {
-  try {
-    const bitmap = await createImageBitmap(arquivo, { imageOrientation: "from-image" });
-    const escala = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * escala);
-    canvas.height = Math.round(bitmap.height * escala);
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.88));
-    if (blob) return blob;
-  } catch {
-    // Formato que o navegador não abre (ex.: HEIC no computador): manda como veio.
-  }
-  return arquivo;
-}
 
 type Estado = "salvo" | "alterado" | "salvando" | "erro";
 
@@ -275,7 +258,7 @@ export function ApresentacaoEditor({
     const novas: ImagemApresentacaoVM[] = [];
     for (const arquivo of arquivos) {
       const form = new FormData();
-      form.append("imagem", await reduzir(arquivo), arquivo.name.replace(/\.[^.]+$/, "") + ".jpg");
+      form.append("imagem", await reduzirImagem(arquivo),arquivo.name.replace(/\.[^.]+$/, "") + ".jpg");
       const r = await enviarImagemApresentacaoAction(orcamentoId, form).catch(() => ({ error: "Falha ao enviar a imagem — tente de novo." }));
       setEnviandoImagens((n) => n - 1);
       if ("error" in r) {

@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { buscarOrcamentoPorTokenPublico } from "@/lib/server/orcamentos";
+import { listarAnexosOrcamento } from "@/lib/server/anexos-orcamento";
 import { OrcamentoDocumento } from "@/app/(app)/orcamentos/orcamento-documento";
+import { AnexosDoOrcamento } from "@/app/(app)/orcamentos/folha-anexos";
 import { BotaoImprimir } from "@/app/(app)/orcamentos/[orcamentoId]/imprimir/botao-imprimir";
 
 export default async function OrcamentoPublicoPage({
@@ -11,6 +13,7 @@ export default async function OrcamentoPublicoPage({
   const { token } = await params;
   const orcamento = await buscarOrcamentoPorTokenPublico(token);
   if (!orcamento) notFound();
+  const anexos = await listarAnexosOrcamento(orcamento.id);
 
   return (
     <div className="min-h-full bg-neutral-100 py-8 print:bg-white print:py-0">
@@ -46,6 +49,8 @@ export default async function OrcamentoPublicoPage({
           })),
         }}
       />
+      {/* Imagens pela rota com o token deste link (quem recebeu não tem login). */}
+      <AnexosDoOrcamento anexos={anexos} numero={orcamento.numero} tokenPublico={token} />
     </div>
   );
 }

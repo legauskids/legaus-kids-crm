@@ -1,10 +1,14 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import type { Style } from "@react-pdf/types";
 import { EMPRESA } from "@/lib/constants/empresa";
 import { centavosParaReais } from "@/lib/utils/money";
 import { buscarOrcamentoPorId, calcularTotalCentavos } from "@/lib/server/orcamentos";
+import { anexosOrcamentoParaPdf } from "@/lib/server/anexos-orcamento";
+import { AREA_UTIL, FOLHA, paginarAnexos, type CaixaAnexo } from "@/lib/utils/anexos-orcamento";
 
 const STATUS_LABEL: Record<string, string> = {
   RASCUNHO: "Rascunho",
@@ -54,6 +58,13 @@ const styles = StyleSheet.create({
   observacoesTitulo: { fontWeight: 700, fontSize: 9, marginBottom: 3 },
   observacoesTexto: { fontSize: 8.5, color: "#525252" },
   rodape: { marginTop: 24, borderTopWidth: 1, borderTopColor: "#e5e5e5", paddingTop: 8, fontSize: 7.5, color: "#a3a3a3" },
+  // Folha de imagens anexas: as medidas vêm de FOLHA (as mesmas da prévia no editor).
+  anexosPage: { padding: FOLHA.margem, fontFamily: "Helvetica", color: cores.texto },
+  anexosHeader: { height: FOLHA.cabecalho - 10, marginBottom: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 2, borderBottomColor: cores.teal, paddingBottom: 6 },
+  anexosLogo: { width: 70, height: 30, objectFit: "contain" },
+  anexosTitulo: { fontSize: 11, fontWeight: 700, textAlign: "right" },
+  anexosSubtitulo: { fontSize: 8, color: cores.cinza500, textAlign: "right", marginTop: 2 },
+  anexosLegenda: { fontSize: 8, color: cores.cinza500, textAlign: "center", maxLines: 1, textOverflow: "ellipsis" } as Style,
 });
 
 function formatarData(data: Date): string {
@@ -76,7 +87,76 @@ type OrcamentoPdfVM = {
   itens: { nome: string; descricao: string | null; quantidade: number; valorUnitarioCentavos: number; imagemUrl: string | null }[];
 };
 
-function OrcamentoPdfDocument({ orcamento }: { orcamento: OrcamentoPdfVM }) {
+// ---------------------------------------------------------------------------
+// Imagens anexas: cada uma reduzida pro tamanho que ocupa na folha (2 px por
+// pt) — o PDF fica leve pro WhatsApp e cabe no limite de resposta da Vercel.
+// Se mesmo assim passar, gerarPdfOrcamento refaz com as imagens mais leves.
+// ---------------------------------------------------------------------------
+
+type Nitidez = { escala: number; qualidade: number };
+const NITIDEZES: Nitidez[] = [
+  { escala: 2, qualidade: 82 },
+  { escala: 1.25, qualidade: 70 },
+  { escala: 1, qualidade: 55 },
+];
+const LIMITE_PDF = 4.2 * 1024 * 1024;
+// O resto do PDF (a folha do orçamento, com as fotos dos itens).
+const FOLGA_PDF = 700 * 1024;
+
+type AnexoPronto = CaixaAnexo & { src: Buffer };
+
+async function prepararAnexos(anexos: { id: string; bytes: Uint8Array }[], folhas: CaixaAnexo[][], n: Nitidez): Promise<AnexoPronto[][]> {
+  const bytes = new Map(anexos.map((a) => [a.id, a.bytes]));
+  return Promise.all(
+    folhas.map(async (folha) => {
+      const prontas = await Promise.all(
+        folha.map(async (caixa) => {
+          const original = bytes.get(caixa.id);
+          if (!original) return null;
+          const src = await sharp(original)
+            .resize(Math.round(caixa.largura * n.escala), Math.round(caixa.altura * n.escala), { fit: "fill" })
+            .jpeg({ quality: n.qualidade })
+            .toBuffer()
+            .catch(() => null);
+          return src ? { ...caixa, src } : null;
+        }),
+      );
+      return prontas.filter((c) => c !== null);
+    }),
+  );
+}
+
+// O logo original (PNG de 2203 px) entra inteiro de novo em cada folha onde
+// aparece — nas folhas de anexo vai uma cópia pequena.
+let logoPequeno: Promise<Buffer> | null = null;
+const logoDosAnexos = () => (logoPequeno ??= sharp(LOGO).resize(280).flatten({ background: "#ffffff" }).png({ palette: true }).toBuffer());
+
+function FolhaAnexosPdf({ folha, numero, logo }: { folha: AnexoPronto[]; numero: number; logo: Buffer }) {
+  return (
+    <Page size="A4" style={styles.anexosPage}>
+      <View style={styles.anexosHeader}>
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- Image aqui é do @react-pdf/renderer (destino é PDF), não HTML img */}
+        <Image src={logo} style={styles.anexosLogo} />
+        <View>
+          <Text style={styles.anexosTitulo}>Imagens anexas</Text>
+          <Text style={styles.anexosSubtitulo}>Orçamento nº {String(numero).padStart(4, "0")}</Text>
+        </View>
+      </View>
+      {/* 1 pt a menos que a área útil: altura exata às vezes empurra pra uma folha em branco. */}
+      <View style={{ position: "relative", width: AREA_UTIL.largura, height: AREA_UTIL.altura - 1 }}>
+        {folha.map((c) => (
+          <View key={c.id} style={{ position: "absolute", left: c.x, top: c.y, width: c.largura }}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- Image aqui é do @react-pdf/renderer (destino é PDF), não HTML img */}
+            <Image src={c.src} style={{ width: c.largura, height: c.altura, borderRadius: 3 }} />
+            {c.legenda && <Text style={[styles.anexosLegenda, { height: FOLHA.legenda, paddingTop: 4 }]}>{c.legenda}</Text>}
+          </View>
+        ))}
+      </View>
+    </Page>
+  );
+}
+
+function OrcamentoPdfDocument({ orcamento, anexos, logoAnexos }: { orcamento: OrcamentoPdfVM; anexos: AnexoPronto[][]; logoAnexos: Buffer }) {
   const subtotal = orcamento.itens.reduce((soma, item) => soma + item.quantidade * item.valorUnitarioCentavos, 0);
   const total = calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos);
   const validade = new Date(orcamento.createdAt);
@@ -176,45 +256,60 @@ function OrcamentoPdfDocument({ orcamento }: { orcamento: OrcamentoPdfVM }) {
           <Text>Responsável: {orcamento.responsavel.nome} · {EMPRESA.nomeFantasia} — {EMPRESA.site}</Text>
         </View>
       </Page>
+      {anexos.map((folha, i) => (
+        <FolhaAnexosPdf key={i} folha={folha} numero={orcamento.numero} logo={logoAnexos} />
+      ))}
     </Document>
   );
 }
 
 export async function gerarPdfOrcamento(orcamentoId: string): Promise<{ buffer: Buffer; nomeArquivo: string }> {
-  const orcamento = await buscarOrcamentoPorId(orcamentoId);
+  const [orcamento, anexos] = await Promise.all([buscarOrcamentoPorId(orcamentoId), anexosOrcamentoParaPdf(orcamentoId)]);
   if (!orcamento) throw new Error("Orçamento não encontrado.");
 
-  const buffer = await renderToBuffer(
-    <OrcamentoPdfDocument
-      orcamento={{
-        numero: orcamento.numero,
-        status: orcamento.status,
-        createdAt: orcamento.createdAt,
-        validadeDias: orcamento.validadeDias,
-        observacoes: orcamento.observacoes,
-        descontoCentavos: orcamento.descontoCentavos,
-        contato: orcamento.contato
-          ? {
-              nome: orcamento.contato.nome,
-              razaoSocial: orcamento.contato.razaoSocial,
-              cnpj: orcamento.contato.cnpj,
-              telefone: orcamento.contato.telefone,
-              endereco: orcamento.contato.endereco,
-              cidade: orcamento.contato.cidade,
-              uf: orcamento.contato.uf,
-            }
-          : null,
-        responsavel: { nome: orcamento.responsavel.nome },
-        itens: orcamento.itens.map((i) => ({
-          nome: i.nome,
-          descricao: i.descricao,
-          quantidade: i.quantidade,
-          valorUnitarioCentavos: i.valorUnitarioCentavos,
-          imagemUrl: i.produto?.imagemUrl ?? null,
-        })),
-      }}
-    />,
-  );
+  const vm: OrcamentoPdfVM = {
+    numero: orcamento.numero,
+    status: orcamento.status,
+    createdAt: orcamento.createdAt,
+    validadeDias: orcamento.validadeDias,
+    observacoes: orcamento.observacoes,
+    descontoCentavos: orcamento.descontoCentavos,
+    contato: orcamento.contato
+      ? {
+          nome: orcamento.contato.nome,
+          razaoSocial: orcamento.contato.razaoSocial,
+          cnpj: orcamento.contato.cnpj,
+          telefone: orcamento.contato.telefone,
+          endereco: orcamento.contato.endereco,
+          cidade: orcamento.contato.cidade,
+          uf: orcamento.contato.uf,
+        }
+      : null,
+    responsavel: { nome: orcamento.responsavel.nome },
+    itens: orcamento.itens.map((i) => ({
+      nome: i.nome,
+      descricao: i.descricao,
+      quantidade: i.quantidade,
+      valorUnitarioCentavos: i.valorUnitarioCentavos,
+      imagemUrl: i.produto?.imagemUrl ?? null,
+    })),
+  };
+
+  // A Vercel não devolve resposta maior que 4,5 MB: com muitas imagens anexas,
+  // usa elas mais leves — escolhe pelo peso das imagens já reduzidas, sem
+  // montar o PDF várias vezes; só remonta se o resultado ainda passar.
+  const folhas = paginarAnexos(anexos);
+  const logo = folhas.length > 0 ? await logoDosAnexos() : LOGO;
+  let buffer: Buffer | null = null;
+  for (const [nivel, n] of NITIDEZES.entries()) {
+    const ultimo = nivel === NITIDEZES.length - 1;
+    const prontos = await prepararAnexos(anexos, folhas, n);
+    const peso = prontos.flat().reduce((soma, a) => soma + a.src.length, 0);
+    if (!ultimo && peso > LIMITE_PDF - FOLGA_PDF) continue;
+    buffer = await renderToBuffer(<OrcamentoPdfDocument orcamento={vm} anexos={prontos} logoAnexos={logo} />);
+    if (anexos.length === 0 || buffer.length <= LIMITE_PDF) break;
+  }
+  if (!buffer || (anexos.length > 0 && buffer.length > LIMITE_PDF)) throw new Error("O PDF do orçamento ficou grande demais — tire algumas imagens anexas.");
 
   return { buffer, nomeArquivo: `orcamento-${String(orcamento.numero).padStart(4, "0")}.pdf` };
 }
