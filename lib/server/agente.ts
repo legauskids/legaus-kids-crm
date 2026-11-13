@@ -1945,7 +1945,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "gerar_contrato_de_orcamento_antigo",
     description:
-      "Cria um negócio novo (já na etapa Contrato do Funil de pós-venda) e o contrato a partir de um orçamento ANTIGO anexado nesse comando (PDF ou foto) que nunca entrou no CRM — usado só como ponte até migrarmos tudo pro sistema, pra vendas fechadas fora do CRM não ficarem sem contrato registrado. Leia o PDF/imagem anexado de verdade e extraia nome do cliente, CNPJ/endereço/cidade/UF se tiver, representante legal se tiver, o produto/descrição, o valor total e a forma de pagamento — preencha os campos com o que estiver escrito no documento, sem inventar o que não aparecer. Sempre pergunte qual empresa emitiu o contrato (Legaus Kids ou Idezza) antes de chamar essa ferramenta, a não ser que o Marcos já tenha dito no comando.",
+      "Cria um negócio novo (já na etapa Contrato do Funil de pós-venda) e o contrato a partir de um orçamento ANTIGO anexado nesse comando (PDF ou foto) que nunca entrou no CRM — usado só como ponte até migrarmos tudo pro sistema, pra vendas fechadas fora do CRM não ficarem sem contrato registrado. Leia o PDF/imagem anexado de verdade e extraia nome do cliente, CNPJ/endereço/cidade/UF se tiver, representante legal se tiver, o produto/descrição, o valor total e a forma de pagamento — preencha os campos com o que estiver escrito no documento, sem inventar o que não aparecer. Sempre pergunte qual empresa emitiu o contrato (Legaus Kids ou Idezza) antes de chamar essa ferramenta, a não ser que o Marcos já tenha dito no comando. O contrato nasce em RASCUNHO: responda com o linkConferir, onde dá pra completar os dados (CPF/CNPJ, endereço, prazos), ajustar o texto e finalizar o PDF.",
     input_schema: {
       type: "object",
       properties: {
@@ -1999,7 +1999,9 @@ const FERRAMENTAS: Ferramenta[] = [
         cliente: contatoNovo.nome,
         contratoNumero: contrato.numero,
         empresaEmissora: a.empresaEmissora,
-        linkPdf: `${URL_BASE}/api/pdf/contrato/${contrato.id}`,
+        situacao: "rascunho — conferir os dados e o texto e clicar em Finalizar no link linkConferir",
+        linkConferir: `${URL_BASE}/contratos/${contrato.id}`,
+        linkPdfRascunho: `${URL_BASE}/api/pdf/contrato/${contrato.id}`,
       };
     },
   },
@@ -2488,7 +2490,7 @@ Regras:
 - Ferramentas sensíveis (enviar por WhatsApp ou e-mail, excluir orçamento, marcar negócio como perdido) nunca executam de primeira — o resultado da ferramenta vai te dizer que está pendente de confirmação. IMPORTANTE: pra propor uma ação sensível você TEM que chamar a ferramenta de verdade — nunca descreva a ação em texto puro perguntando "posso confirmar?" sem chamar a ferramenta, porque nesse caso o sistema não sabe o que confirmar depois. A chamada da ferramenta É o pedido de confirmação. Depois de chamá-la, pergunte a confirmação pro Marcos com suas próprias palavras, mencionando os detalhes principais.
 - Ações de edição/criação normais (cliente, produto, preço, orçamento, negócio, tarefa) executam direto, sem pedir confirmação — só pare pra confirmar nas ferramentas marcadas como sensíveis.
 - Enviar orçamento por WhatsApp ou e-mail já manda o PDF de verdade anexado, automaticamente — não precisa de um comando separado pra "mandar em PDF". Se o Marcos pedir só o link/arquivo pra ver aqui no chat mesmo (sem mandar pro cliente), use obter_link_pdf_orcamento.
-- Marcar um negócio como Ganho exige que o cliente já tenha CNPJ, razão social, endereço, cidade/UF e nome+CPF do representante legal cadastrados, e que o negócio tenha forma de pagamento definida — tudo isso vira o contrato automaticamente. Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
+- Marcar um negócio como Ganho exige endereço e cidade/UF do cliente, forma de pagamento no negócio e o documento: empresa precisa de CNPJ, razão social e nome+CPF do representante legal; pessoa física (sem CNPJ) precisa do CPF, que fica no campo do representante legal (CPF de quem assina) — tudo isso vira o contrato, que nasce em rascunho pra conferir e finalizar no CRM (link /contratos/<id> na tarefa "Emissão de contrato"). Se mover_negocio_etapa falhar dizendo o que falta, ajude a preencher com atualizar_cliente/atualizar_negocio antes de tentar de novo.
 - Se não achar o que foi pedido (cliente, produto, orçamento, negócio, tarefa), diga isso claramente em vez de inventar.
 - Pra saber se um número já está cadastrado, ou achar um cliente pelo telefone, use buscar_clientes com o telefone como termo (aceita qualquer formato: com ou sem 55, com ou sem o 9, com máscara). Se criar_cliente responder "jaExiste", não tente criar de novo: use o cadastro existente (atualize com atualizar_cliente, ex.: pra pôr o nome).
 - Gente sendo atendida no WhatsApp ("o contato com final 6980", "quem chamou hoje", "a cliente do playground de 2 torres", "busca no atendimento/nas conversas"): use buscar_conversas — acha pelo final do telefone (últimos 4 dígitos já bastam), por trecho do nome ou das mensagens e por período, inclusive quem ainda não tem nome salvo. Nunca diga que não consegue procurar nas conversas. Com o contato achado: "salvar"/"o nome é X" → atualizar_cliente com o contatoId e novoNome; negócio → criar_negocio com conversaId (já liga ao contato e à conversa); tarefa → criar_tarefa com conversaId e, se acabou de criar o negócio, negocioId. Se mais de um contato bater, mostre as opções (nome, telefone, última mensagem) e pergunte qual antes de criar algo. Se o contato ainda não tiver nome salvo (nome_salvo false): quando o pedido disser claramente o nome da pessoa, salve junto; senão, no fim da resposta pergunte o nome pra salvar.

@@ -2,159 +2,134 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
-import { prisma } from "@/lib/db";
-import { EMPRESAS_EMISSORAS, type ChaveEmpresaEmissora, type DadosEmpresa } from "@/lib/constants/empresa";
+import { carregarDocumentoContrato, type DocumentoContrato } from "@/lib/server/contrato-documento";
+import { nomeProprio } from "@/lib/utils/contrato";
 
 const LOGO = fs.readFileSync(path.join(process.cwd(), "public", "legaus-logo.png"));
 
+// A divisão de sílabas padrão do react-pdf é a do inglês ("DORA-VANTE",
+// "REPRE-SENTADA") — no contrato em português a palavra não é quebrada.
+const semHifenizar = (palavra: string) => [palavra];
+
 const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 9.5, fontFamily: "Helvetica", color: "#171717", lineHeight: 1.45 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottomWidth: 2, borderBottomColor: "#00A99D", paddingBottom: 12, marginBottom: 4 },
+  page: { paddingTop: 40, paddingBottom: 60, paddingHorizontal: 54, fontSize: 11, fontFamily: "Helvetica", color: "#171717", lineHeight: 1.5 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", borderBottomWidth: 2, borderBottomColor: "#00A99D", paddingBottom: 12, marginBottom: 18 },
   logo: { width: 100, height: 44, objectFit: "contain" },
-  empresaBloco: { alignItems: "flex-end", fontSize: 7.5, color: "#737373", gap: 1.5 },
-  aviso: { marginTop: 8, marginBottom: 14, backgroundColor: "#fff4e5", borderWidth: 1, borderColor: "#f0c36d", borderRadius: 4, padding: 8, fontSize: 8, color: "#8a5a00" },
-  titulo: { fontSize: 14, fontWeight: 700, textAlign: "center", marginTop: 4, marginBottom: 14, textTransform: "uppercase" },
+  empresaBloco: { alignItems: "flex-end", fontSize: 7.5, color: "#737373", gap: 1.5, lineHeight: 1.3 },
+  aviso: { marginBottom: 16, backgroundColor: "#fff4e5", borderWidth: 1, borderColor: "#f0c36d", borderRadius: 4, padding: 8, fontSize: 9, color: "#8a5a00", lineHeight: 1.35 },
+  marcaDagua: { position: "absolute", top: 380, left: 0, right: 0, textAlign: "center", fontSize: 96, fontWeight: 700, color: "#d97706", opacity: 0.08, transform: "rotate(-32deg)" },
+  titulo: { fontSize: 13, fontWeight: 700, textAlign: "center", marginBottom: 2 },
+  numero: { fontSize: 9, color: "#737373", textAlign: "center", marginBottom: 16 },
   paragrafo: { marginBottom: 8, textAlign: "justify" },
-  secaoTitulo: { fontWeight: 700, fontSize: 9.5, marginTop: 6, marginBottom: 2 },
-  assinaturas: { marginTop: 32, flexDirection: "row", justifyContent: "space-between" },
+  secaoTitulo: { fontWeight: 700, marginTop: 6, marginBottom: 6 },
+  assinaturas: { marginTop: 36, flexDirection: "row", justifyContent: "space-between" },
   assinaturaBox: { width: "45%", alignItems: "center" },
-  linhaAssinatura: { borderTopWidth: 1, borderTopColor: "#171717", width: "100%", marginBottom: 4, marginTop: 28 },
-  assinaturaLabel: { fontSize: 8.5, textAlign: "center" },
-  testemunhas: { marginTop: 28, flexDirection: "row", justifyContent: "space-between" },
+  linhaAssinatura: { borderTopWidth: 1, borderTopColor: "#171717", width: "100%", marginBottom: 4 },
+  assinaturaLabel: { fontSize: 9.5, textAlign: "center", lineHeight: 1.35 },
+  testemunhas: { marginTop: 44, flexDirection: "row", justifyContent: "space-between" },
   testemunhaBox: { width: "45%" },
-  linhaTestemunha: { borderTopWidth: 1, borderTopColor: "#171717", width: "100%", marginBottom: 4, marginTop: 24 },
-  testemunhaLabel: { fontSize: 8 },
-  rodape: { marginTop: 24, borderTopWidth: 1, borderTopColor: "#e5e5e5", paddingTop: 8, fontSize: 7, color: "#a3a3a3", textAlign: "center" },
+  testemunhaLabel: { fontSize: 9.5, lineHeight: 1.6 },
+  // Com "bottom" o react-pdf jogava o rodapé pra fora da folha (y ≈ 8000); "top" fica certo.
+  rodape: { position: "absolute", top: 806, left: 54, right: 54, fontSize: 8, lineHeight: 1, color: "#a3a3a3", textAlign: "center" },
 });
 
-function formatarData(data: Date): string {
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" }).format(data);
-}
-
-// Bold só nos títulos de seção maiores ("1 - DOS TERMOS...", "Cláusula 1ª —
-// ...") — os itens numerados menores ("1.1) Objeto:") ficam em texto normal,
-// exatamente como no modelo real da Legaus Kids.
-const REGEX_SECAO = /^(Cláusula|\d+\s*-\s*[A-ZÀ-Ú])/;
-
-function ContratoPdfDocument({
-  numero,
-  titulo,
-  paragrafos,
-  contratanteNome,
-  contratanteRepresentanteNome,
-  contratanteRepresentanteCpf,
-  empresa,
-  empresaEmissora,
-}: {
-  numero: number;
-  titulo: string;
-  paragrafos: string[];
-  contratanteNome: string;
-  contratanteRepresentanteNome: string | null;
-  contratanteRepresentanteCpf: string | null;
-  empresa: DadosEmpresa;
-  empresaEmissora: ChaveEmpresaEmissora;
-}) {
-  const hoje = new Date();
-
+function ContratoPdfDocument({ doc }: { doc: DocumentoContrato }) {
+  const { empresa } = doc;
+  // O fecho ("Santa Rosa/RS, 12 de novembro de 2026.") vai junto das
+  // assinaturas, pra elas nunca ficarem sozinhas numa folha sem texto.
+  const ultimo = doc.blocos.at(-1);
+  const fecho = ultimo?.tipo === "paragrafo" && ultimo.texto.length <= 600 ? ultimo : null;
+  const corpo = fecho ? doc.blocos.slice(0, -1) : doc.blocos;
   return (
-    <Document>
+    <Document title={`Contrato nº ${doc.numero}`}>
       <Page size="A4" style={styles.page}>
+        {doc.rascunho && (
+          <Text fixed style={styles.marcaDagua}>
+            Rascunho
+          </Text>
+        )}
+
         <View style={styles.header}>
           {/* Logo só existe da Legaus Kids — contrato da Idezza mostra só o
               nome fantasia em texto até termos uma logo dela também. */}
-          {empresaEmissora === "LEGAUS" ? (
+          {doc.empresaEmissora === "LEGAUS" ? (
             // eslint-disable-next-line jsx-a11y/alt-text -- Image aqui é do @react-pdf/renderer (destino é PDF), não HTML img
             <Image src={LOGO} style={styles.logo} />
           ) : (
             <Text style={{ fontWeight: 700, fontSize: 14 }}>{empresa.nomeFantasia}</Text>
           )}
           <View style={styles.empresaBloco}>
-            <Text style={{ fontWeight: 700, color: "#171717", fontSize: 8.5 }}>{empresa.razaoSocial}</Text>
+            <Text style={{ fontWeight: 700, color: "#171717", fontSize: 8.5 }}>{nomeProprio(empresa.razaoSocial)}</Text>
             <Text>CNPJ {empresa.cnpj}</Text>
-            <Text>{empresa.endereco}, {empresa.bairro} — {empresa.cidade}/{empresa.uf}</Text>
+            <Text>
+              {empresa.endereco}, {empresa.bairro} — {empresa.cidade}/{empresa.uf}
+            </Text>
           </View>
         </View>
 
-        <Text style={styles.aviso}>
-          Gerado automaticamente a partir do modelo cadastrado no CRM — confira os dados antes de enviar pra assinatura.
+        {doc.rascunho && (
+          <Text style={styles.aviso} hyphenationCallback={semHifenizar}>
+            Rascunho — confira os dados e o texto no CRM e clique em Finalizar antes de mandar pra assinatura.
+          </Text>
+        )}
+
+        <Text style={styles.titulo} hyphenationCallback={semHifenizar}>
+          {doc.titulo}
         </Text>
+        <Text style={styles.numero}>Contrato nº {doc.numero}</Text>
 
-        <Text style={styles.titulo}>{titulo} nº {String(numero).padStart(4, "0")}</Text>
-
-        {paragrafos.map((paragrafo, i) => (
-          <Text key={i} style={REGEX_SECAO.test(paragrafo) ? styles.secaoTitulo : styles.paragrafo}>
-            {paragrafo}
+        {corpo.map((bloco, i) => (
+          <Text key={i} style={bloco.tipo === "secao" ? styles.secaoTitulo : styles.paragrafo} hyphenationCallback={semHifenizar}>
+            {bloco.texto}
           </Text>
         ))}
 
-        <View style={styles.assinaturas}>
-          <View style={styles.assinaturaBox}>
-            <View style={styles.linhaAssinatura} />
-            <Text style={styles.assinaturaLabel}>
-              {empresa.razaoSocial}{"\n"}Representante: {empresa.representanteNome}{"\n"}CPF nº {empresa.representanteCpf}{"\n"}(VENDEDOR)
+        {/* Fecho, assinaturas e testemunhas juntos, sem partir entre duas folhas. */}
+        <View wrap={false}>
+          {fecho && (
+            <Text style={styles.paragrafo} hyphenationCallback={semHifenizar}>
+              {fecho.texto}
             </Text>
+          )}
+          <View style={styles.assinaturas}>
+            {[
+              { linhas: doc.vendedor, papel: "Vendedor" },
+              { linhas: doc.comprador, papel: "Comprador" },
+            ].map(({ linhas, papel }) => (
+              <View key={papel} style={styles.assinaturaBox}>
+                <View style={styles.linhaAssinatura} />
+                <Text style={styles.assinaturaLabel}>
+                  {linhas.join("\n")}
+                  {"\n"}({papel})
+                </Text>
+              </View>
+            ))}
           </View>
-          <View style={styles.assinaturaBox}>
-            <View style={styles.linhaAssinatura} />
-            <Text style={styles.assinaturaLabel}>
-              {contratanteNome}
-              {contratanteRepresentanteNome ? `\nRepresentante: ${contratanteRepresentanteNome}` : ""}
-              {contratanteRepresentanteCpf ? `\nCPF nº ${contratanteRepresentanteCpf}` : ""}
-              {"\n"}(COMPRADOR)
-            </Text>
+
+          <View style={styles.testemunhas}>
+            {[1, 2].map((n) => (
+              <View key={n} style={styles.testemunhaBox}>
+                <View style={styles.linhaAssinatura} />
+                <Text style={styles.testemunhaLabel}>Testemunha {n}{"\n"}Nome:{"\n"}CPF:</Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        <View style={styles.testemunhas}>
-          <View style={styles.testemunhaBox}>
-            <View style={styles.linhaTestemunha} />
-            <Text style={styles.testemunhaLabel}>TESTEMUNHA 1{"\n"}Nome:{"\n"}CPF:</Text>
-          </View>
-          <View style={styles.testemunhaBox}>
-            <View style={styles.linhaTestemunha} />
-            <Text style={styles.testemunhaLabel}>TESTEMUNHA 2{"\n"}Nome:{"\n"}CPF:</Text>
-          </View>
-        </View>
-
-        <View style={styles.rodape}>
-          <Text>Documento gerado automaticamente pelo CRM da {empresa.nomeFantasia} em {formatarData(hoje)}.</Text>
-        </View>
+        <Text
+          fixed
+          style={styles.rodape}
+          render={({ pageNumber, totalPages }) =>
+            `${doc.rascunho ? "Rascunho do contrato" : "Contrato"} nº ${doc.numero} · página ${pageNumber} de ${totalPages}`
+          }
+        />
       </Page>
     </Document>
   );
 }
 
 export async function gerarPdfContrato(contratoId: string): Promise<{ buffer: Buffer; nomeArquivo: string }> {
-  const contrato = await prisma.contrato.findUnique({
-    where: { id: contratoId },
-    include: { negocio: { include: { contato: true } } },
-  });
-  if (!contrato) throw new Error("Contrato não encontrado.");
-
-  // Um parágrafo por linha em branco no texto salvo — o primeiro vira o
-  // título do documento, o resto é o corpo (seções "1 - ..." ganham destaque).
-  const [tituloBruto, ...paragrafos] = contrato.conteudo
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const titulo = tituloBruto || "Contrato";
-  const contratanteNome = contrato.negocio.contato?.razaoSocial || contrato.negocio.contato?.nome || "Cliente";
-  const empresa = EMPRESAS_EMISSORAS[contrato.empresaEmissora];
-
-  const buffer = await renderToBuffer(
-    <ContratoPdfDocument
-      numero={contrato.numero}
-      titulo={titulo}
-      paragrafos={paragrafos}
-      empresa={empresa}
-      empresaEmissora={contrato.empresaEmissora}
-      contratanteNome={contratanteNome}
-      contratanteRepresentanteNome={contrato.negocio.contato?.representanteLegalNome ?? null}
-      contratanteRepresentanteCpf={contrato.negocio.contato?.representanteLegalCpf ?? null}
-    />,
-  );
-
-  return { buffer, nomeArquivo: `contrato-${String(contrato.numero).padStart(4, "0")}.pdf` };
+  const doc = await carregarDocumentoContrato(contratoId);
+  const buffer = await renderToBuffer(<ContratoPdfDocument doc={doc} />);
+  return { buffer, nomeArquivo: `${doc.nomeArquivo}${doc.rascunho ? "-rascunho" : ""}.pdf` };
 }

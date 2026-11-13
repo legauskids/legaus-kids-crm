@@ -16,7 +16,8 @@ import {
   excluirItemChecklistNegocio,
 } from "@/lib/server/negocios";
 import { marcarPagamentoIdentificado } from "@/lib/server/automations";
-import { atualizarContato } from "@/lib/server/contatos";
+import { guardarDadosDoContratoNoCadastro, validarFormularioContrato } from "@/lib/server/contratos";
+import type { ErrosContrato } from "@/lib/utils/contrato";
 import {
   criarNegocioSchema,
   marcarPerdidoSchema,
@@ -191,48 +192,32 @@ export async function excluirItemChecklistNegocioAction(negocioId: string, itemI
   revalidatePath(`/negocios/${negocioId}`);
 }
 
-export type CompletarDadosContratoState = { error?: string; success?: boolean };
-
 /**
- * Preenche de uma vez os dados de contrato que faltam (cliente + forma de
- * pagamento do negócio) e já tenta marcar como Ganho em seguida — evita um
- * segundo clique manual em "Ganho" depois de salvar. Usado pelo diálogo que
- * abre quando o botão "Ganho" falha por falta de dado (ver
- * EtapaBreadcrumb) — antes disso o erro de moverNegocioAction era
- * descartado sem mostrar nada pro usuário, então nem aparecia o que faltava
- * preencher nem o negócio virava Ganho.
+ * Botão "Ganho" (tela do negócio ou arrastando no quadro): o formulário do
+ * contrato pede cliente, produto, pagamento e prazos; o que foi digitado volta
+ * pro cadastro, o negócio vira Ganho e o contrato nasce em rascunho com esses
+ * dados. Devolve o contrato pra tela abrir ele em seguida.
  */
-export async function completarDadosContratoEGanharAction(
-  _prevState: CompletarDadosContratoState,
-  formData: FormData,
-): Promise<CompletarDadosContratoState> {
+export async function ganharComContratoAction(
+  negocioId: string,
+  etapaGanhoId: string,
+  dados: unknown,
+): Promise<{ contratoId?: string; error?: string; campos?: ErrosContrato }> {
   await requireUser();
-  const raw = Object.fromEntries(formData) as Record<string, string>;
-  const { negocioId, etapaGanhoId, contatoId } = raw;
-  if (!negocioId || !etapaGanhoId || !contatoId) {
-    return { error: "Dados inválidos." };
-  }
-
-  await atualizarContato(contatoId, {
-    cnpj: raw.cnpj || null,
-    razaoSocial: raw.razaoSocial || null,
-    endereco: raw.endereco || null,
-    cidade: raw.cidade || null,
-    uf: raw.uf || null,
-    cep: raw.cep || null,
-    representanteLegalNome: raw.representanteLegalNome || null,
-    representanteLegalCpf: raw.representanteLegalCpf || null,
-  });
-  await atualizarDadosNegocio(negocioId, { formaPagamento: raw.formaPagamento || null });
-  const empresaEmissora: ChaveEmpresaEmissora = raw.empresaEmissora === "IDEZZA" ? "IDEZZA" : "LEGAUS";
+  const validado = validarFormularioContrato(dados);
+  if ("error" in validado) return validado;
 
   try {
-    await moverNegocio(negocioId, etapaGanhoId, { empresaEmissora });
+    await guardarDadosDoContratoNoCadastro(negocioId, validado.dados);
+    const { contratoId } = await moverNegocio(negocioId, etapaGanhoId, {
+      empresaEmissora: validado.dados.empresaEmissora,
+      dadosContrato: validado.dados,
+    });
+    revalidatePath("/negocios");
+    revalidatePath(`/negocios/${negocioId}`);
+    revalidatePath("/financeiro");
+    return { contratoId };
   } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Ainda faltam dados." };
+    return { error: erro instanceof Error ? erro.message : "Não consegui marcar como Ganho." };
   }
-
-  revalidatePath("/negocios");
-  revalidatePath(`/negocios/${negocioId}`);
-  return { success: true };
 }

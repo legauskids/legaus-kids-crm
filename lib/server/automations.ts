@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
 import { gerarContrato } from "@/lib/server/contratos";
 import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
+import type { DadosContrato } from "@/lib/utils/contrato";
 import { SUFIXO_POS_VENDA } from "@/lib/utils/negocio-pos-venda";
 
 // Derivado do client de verdade (com a extensão de soft-delete de Negocio
@@ -18,23 +19,31 @@ async function getResponsavelAutomatico(tx: Tx) {
   return tx.user.findUniqueOrThrow({ where: { username: RESPONSAVEL_AUTOMATICO_USERNAME } });
 }
 
+export type OpcoesGanho = {
+  semContrato?: boolean;
+  empresaEmissora?: ChaveEmpresaEmissora;
+  // Respostas do formulário do contrato (botão Ganho na tela do negócio ou no
+  // quadro); sem elas o contrato sai com o que o CRM já sabe do cliente.
+  dadosContrato?: DadosContrato;
+};
+
 /**
  * Reage a uma mudança de etapa de um negócio, aplicando as regras da tabela
  * de automações da especificação. Deve ser chamada sempre logo após o campo
  * `etapaId` do negócio já ter sido atualizado, dentro da mesma transação.
+ * Devolve o contrato que o Ganho gerou, pra tela abrir ele em seguida.
  */
 export async function onNegocioEtapaChanged(
   tx: Tx,
   negocioId: string,
   novaEtapaId: string,
-  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
-): Promise<void> {
+  opcoes?: OpcoesGanho,
+): Promise<{ contratoId?: string }> {
   const etapa = await tx.etapa.findUniqueOrThrow({ where: { id: novaEtapaId }, include: { funil: true } });
   const negocio = await tx.negocio.findUniqueOrThrow({ where: { id: negocioId } });
 
   if (etapa.tipo === "GANHO") {
-    await handleNegocioGanho(tx, negocio, opcoes);
-    return;
+    return handleNegocioGanho(tx, negocio, opcoes);
   }
 
   if (etapa.nome === "Pagamento") {
@@ -45,7 +54,7 @@ export async function onNegocioEtapaChanged(
       solicitanteId: negocio.responsavelId,
       prazoEmHoras: 24,
     });
-    return;
+    return {};
   }
 
   if (etapa.nome === "Entrega") {
@@ -56,7 +65,7 @@ export async function onNegocioEtapaChanged(
       solicitanteId: negocio.responsavelId,
       prazoEmHoras: 48,
     });
-    return;
+    return {};
   }
 
   if (etapa.nome === "Avaliação") {
@@ -67,11 +76,12 @@ export async function onNegocioEtapaChanged(
       solicitanteId: negocio.responsavelId,
       prazoEmHoras: 48,
     });
-    return;
+    return {};
   }
 
   // Compras / Produção (pós-venda): movimentação manual, sem automação de
   // transição — no-op intencional (spec §4.4).
+  return {};
 }
 
 async function handleNegocioGanho(
@@ -87,8 +97,8 @@ async function handleNegocioGanho(
     descricao: string | null;
     formaPagamento: string | null;
   },
-  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
-): Promise<void> {
+  opcoes?: OpcoesGanho,
+): Promise<{ contratoId?: string }> {
   const semContrato = opcoes?.semContrato ?? false;
   const empresaEmissora = opcoes?.empresaEmissora ?? "LEGAUS";
   const funilPosVenda = await tx.funil.findFirstOrThrow({ where: { nome: "Funil de pós-venda" } });
@@ -116,6 +126,7 @@ async function handleNegocioGanho(
     },
   });
 
+  let contratoId: string | undefined;
   if (semContrato) {
     // Equivalente à automação que dispararia ao entrar em Pagamento (ver
     // onNegocioEtapaChanged) — como o pós-venda nasce JÁ em Pagamento (não
@@ -130,8 +141,9 @@ async function handleNegocioGanho(
     });
   } else {
     const responsavelAutomatico = await getResponsavelAutomatico(tx);
-    const contrato = await gerarContrato(negocioPosVenda.id, tx, empresaEmissora);
-    const linkContrato = `${URL_BASE}/api/pdf/contrato/${contrato.id}`;
+    const contrato = await gerarContrato(negocioPosVenda.id, tx, { empresaEmissora, dados: opcoes?.dadosContrato });
+    contratoId = contrato.id;
+    const linkContrato = `${URL_BASE}/contratos/${contrato.id}`;
     await tx.tarefa.create({
       data: {
         titulo: "Emissão de contrato",
@@ -143,8 +155,8 @@ async function handleNegocioGanho(
         automatica: true,
         descricao:
           `Gerado automaticamente após o negócio de venda ser marcado como Ganho.\n\n` +
-          `Modelo de contrato pronto pra revisar e baixar: ${linkContrato}\n` +
-          `(é um rascunho — revise cláusulas e forma de pagamento antes de mandar pro cliente assinar)`,
+          `Contrato em rascunho: ${linkContrato}\n` +
+          `Confira os dados do cliente, o produto e o pagamento, ajuste o texto se precisar e clique em "Finalizar" pra gerar o PDF final.`,
       },
     });
   }
@@ -167,6 +179,7 @@ async function handleNegocioGanho(
       },
     ],
   });
+  return { contratoId };
 }
 
 async function criarTarefaAutomatica(

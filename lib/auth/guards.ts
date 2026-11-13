@@ -27,3 +27,12 @@ export async function requireModulo(modulo: ModuloKey): Promise<SessionUser> {
   }
   return user;
 }
+
+/** Basta um dos módulos — o contrato abre pra quem tem Negócios ou Financeiro. */
+export async function requireAlgumModulo(...modulos: ModuloKey[]): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!modulos.some((modulo) => moduloPermitido(user, modulo))) {
+    redirect("/");
+  }
+  return user;
+}

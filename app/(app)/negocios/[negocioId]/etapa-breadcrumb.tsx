@@ -18,7 +18,7 @@ import {
 } from "@/app/(app)/negocios/actions";
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
 import { ExcluirNegocioDialog } from "@/app/(app)/negocios/excluir-negocio-dialog";
-import { CompletarDadosContratoDialog, type ContatoParaContrato } from "@/app/(app)/negocios/[negocioId]/completar-dados-contrato-dialog";
+import { GanhoContratoDialog, type AlvoGanho } from "@/app/(app)/negocios/ganho-contrato-dialog";
 import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 
 type Etapa = { id: string; nome: string; ordem: number; tipo: "NORMAL" | "GANHO" | "PERDIDO" | "CONCLUIDO" };
@@ -29,23 +29,18 @@ export function EtapaBreadcrumb({
   etapas,
   isFunilVenda,
   isFunilPosVenda,
-  contato,
-  formaPagamentoAtual,
 }: {
   negocioId: string;
   etapaAtualId: string;
   etapas: Etapa[];
   isFunilVenda: boolean;
   isFunilPosVenda: boolean;
-  contato: ContatoParaContrato | null;
-  formaPagamentoAtual: string | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [motivoOpen, setMotivoOpen] = useState(false);
   const [excluirOpen, setExcluirOpen] = useState(false);
-  const [dadosContratoAviso, setDadosContratoAviso] = useState<string | null>(null);
-  const [empresaEscolhida, setEmpresaEscolhida] = useState<ChaveEmpresaEmissora>("LEGAUS");
+  const [ganho, setGanho] = useState<AlvoGanho | null>(null);
 
   const etapasNormais = [...etapas].filter((e) => e.tipo === "NORMAL").sort((a, b) => a.ordem - b.ordem);
   const etapaAtual = etapas.find((e) => e.id === etapaAtualId);
@@ -62,29 +57,17 @@ export function EtapaBreadcrumb({
     });
   }
 
-  // Sem isso, um erro de moverNegocioAction (ex: falta CNPJ/representante
-  // legal/forma de pagamento pro contrato, checado em validarDadosParaContrato)
-  // era descartado em silêncio — o clique em "Ganho" simplesmente não fazia
-  // nada visível, sem dizer o motivo nem deixar preencher o que faltava.
-  function mover(etapaId: string, opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora }) {
+  function mover(etapaId: string, opcoes?: { semContrato?: boolean }) {
     startTransition(async () => {
       const resultado = await moverNegocioAction(negocioId, etapaId, opcoes);
-      if (resultado.error) {
-        // Mover pra etapa Ganho só falha por causa dos dados do contrato
-        // faltando (é a única checagem que moverNegocio faz nesse caso) —
-        // abre o diálogo pra completar em vez de só avisar que faltou algo.
-        // Não se aplica quando semContrato:true, já que nesse caso
-        // moverNegocio nem faz essa checagem.
-        if (etapaId === etapaGanho?.id && contato && !opcoes?.semContrato) {
-          setEmpresaEscolhida(opcoes?.empresaEmissora ?? "LEGAUS");
-          setDadosContratoAviso(resultado.error);
-          return;
-        }
-        toast.error(resultado.error);
-        return;
-      }
+      if (resultado.error) return void toast.error(resultado.error);
       router.refresh();
     });
+  }
+
+  // Ganho com contrato passa pelo formulário do contrato (GanhoContratoDialog).
+  function ganhar(empresa: ChaveEmpresaEmissora) {
+    if (etapaGanho) setGanho({ negocioId, etapaGanhoId: etapaGanho.id, empresa });
   }
 
   return (
@@ -155,7 +138,7 @@ export function EtapaBreadcrumb({
               <Button
                 size="sm"
                 className="rounded-r-none bg-success text-success-foreground hover:bg-success/90"
-                onClick={() => etapaGanho && mover(etapaGanho.id)}
+                onClick={() => ganhar("LEGAUS")}
               >
                 <Trophy className="size-4" />
                 Ganho
@@ -167,7 +150,7 @@ export function EtapaBreadcrumb({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => etapaGanho && mover(etapaGanho.id, { empresaEmissora: "IDEZZA" })}>
+                  <DropdownMenuItem onClick={() => ganhar("IDEZZA")}>
                     Marcar Ganho pela Idezza
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => etapaGanho && mover(etapaGanho.id, { semContrato: true })}>
@@ -207,18 +190,7 @@ export function EtapaBreadcrumb({
           router.push("/negocios");
         }}
       />
-      {contato && etapaGanho && (
-        <CompletarDadosContratoDialog
-          open={dadosContratoAviso != null}
-          onOpenChange={(open) => !open && setDadosContratoAviso(null)}
-          negocioId={negocioId}
-          etapaGanhoId={etapaGanho.id}
-          contato={contato}
-          formaPagamentoAtual={formaPagamentoAtual}
-          avisoInicial={dadosContratoAviso}
-          empresaEmissoraInicial={empresaEscolhida}
-        />
-      )}
+      <GanhoContratoDialog alvo={ganho} onFechar={() => setGanho(null)} />
     </div>
   );
 }

@@ -39,15 +39,10 @@ export function PendenciasPosVenda({ pendencias }: { pendencias: Pendencia[] }) 
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {p.titulo === "Emissão de contrato" && p.contratoId && (
-                  <a
-                    href={`/api/pdf/contrato/${p.contratoId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-xs text-primary underline underline-offset-2"
-                  >
+                  <Link href={`/contratos/${p.contratoId}`} className="flex items-center gap-1 text-xs text-primary underline underline-offset-2">
                     <FileText className="size-3.5" />
                     Contrato
-                  </a>
+                  </Link>
                 )}
                 {p.negocioId && (
                   <Link href={`/negocios/${p.negocioId}`}>

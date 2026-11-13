@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireModulo } from "@/lib/auth/guards";
-import { salvarModeloContrato, gerarContrato, atualizarStatusContrato } from "@/lib/server/contratos";
+import { salvarModeloContrato, atualizarStatusContrato } from "@/lib/server/contratos";
 import {
   importarExtratoOfx,
   confirmarPar,
@@ -47,24 +47,6 @@ export async function salvarModeloContratoAction(
   const conteudo = String(formData.get("conteudo") ?? "").trim();
   if (!conteudo) return { error: "O modelo não pode ficar vazio." };
   await salvarModeloContrato(conteudo);
-  revalidateFinanceiro();
-  return { success: true };
-}
-
-export async function gerarContratoManualAction(
-  _prevState: AcaoContratoState,
-  formData: FormData,
-): Promise<AcaoContratoState> {
-  await requireModulo("financeiro");
-  const negocioId = String(formData.get("negocioId") ?? "");
-  if (!negocioId) return { error: "Escolha um negócio." };
-  const empresaEmissoraBruta = String(formData.get("empresaEmissora") ?? "LEGAUS");
-  const empresaEmissora = empresaEmissoraBruta === "IDEZZA" ? "IDEZZA" : "LEGAUS";
-  try {
-    await gerarContrato(negocioId, undefined, empresaEmissora);
-  } catch (erro) {
-    return { error: erro instanceof Error ? erro.message : "Não consegui gerar o contrato." };
-  }
   revalidateFinanceiro();
   return { success: true };
 }

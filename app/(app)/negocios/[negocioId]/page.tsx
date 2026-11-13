@@ -6,13 +6,15 @@ import { mensagensDasTarefas } from "@/lib/server/tarefa-mensagem";
 import { prisma } from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileSignature } from "lucide-react";
 import { centavosParaReais } from "@/lib/utils/money";
 import { EtapaBreadcrumb } from "@/app/(app)/negocios/[negocioId]/etapa-breadcrumb";
 import { DadosTab } from "@/app/(app)/negocios/[negocioId]/dados-tab";
 import { TarefasTab } from "@/app/(app)/negocios/[negocioId]/tarefas-tab";
 import { HistoricoTab } from "@/app/(app)/negocios/[negocioId]/historico-tab";
 import { ChecklistEtapa } from "@/app/(app)/negocios/[negocioId]/checklist-etapa";
+
+const STATUS_CONTRATO = { RASCUNHO: "rascunho", GERADO: "gerado", ENVIADO: "enviado", ASSINADO: "assinado", CANCELADO: "cancelado" } as const;
 
 export default async function NegocioDetalhePage({
   params,
@@ -27,10 +29,11 @@ export default async function NegocioDetalhePage({
   const negocio = await getNegocioDetalhado(negocioId);
   if (!negocio) notFound();
 
-  const [usuarios, contatos, mensagens] = await Promise.all([
+  const [usuarios, contatos, mensagens, contratos] = await Promise.all([
     prisma.user.findMany({ orderBy: { nome: "asc" } }),
     prisma.contato.findMany({ select: { id: true, nome: true }, orderBy: { nome: "asc" } }),
     mensagensDasTarefas(negocio.tarefas.map((t) => t.id)),
+    prisma.contrato.findMany({ where: { negocioId }, select: { id: true, numero: true, status: true }, orderBy: { numero: "desc" } }),
   ]);
   const isFunilVenda = negocio.funil.nome === "Funil de venda";
   const isFunilPosVenda = negocio.funil.nome === "Funil de pós-venda";
@@ -64,24 +67,28 @@ export default async function NegocioDetalhePage({
         etapas={negocio.funil.etapas.map((e) => ({ id: e.id, nome: e.nome, ordem: e.ordem, tipo: e.tipo }))}
         isFunilVenda={isFunilVenda}
         isFunilPosVenda={isFunilPosVenda}
-        contato={
-          negocio.contato
-            ? {
-                id: negocio.contato.id,
-                nome: negocio.contato.nome,
-                cnpj: negocio.contato.cnpj,
-                razaoSocial: negocio.contato.razaoSocial,
-                endereco: negocio.contato.endereco,
-                cidade: negocio.contato.cidade,
-                uf: negocio.contato.uf,
-                cep: negocio.contato.cep,
-                representanteLegalNome: negocio.contato.representanteLegalNome,
-                representanteLegalCpf: negocio.contato.representanteLegalCpf,
-              }
-            : null
-        }
-        formaPagamentoAtual={negocio.formaPagamento}
       />
+
+      {(contratos.length > 0 || isFunilPosVenda) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3.5 py-2.5 text-sm shadow-sm">
+          <FileSignature className="size-4 text-muted-foreground" />
+          <span className="font-medium text-foreground">Contrato</span>
+          {contratos.map((c) => (
+            <Link
+              key={c.id}
+              href={`/contratos/${c.id}`}
+              className="rounded-md border px-2 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              nº {String(c.numero).padStart(4, "0")} · {STATUS_CONTRATO[c.status]}
+            </Link>
+          ))}
+          {contratos.length === 0 && (
+            <Link href={`/contratos/novo?negocio=${negocio.id}`} className="text-xs text-primary underline underline-offset-2">
+              Gerar contrato
+            </Link>
+          )}
+        </div>
+      )}
 
       <ChecklistEtapa
         negocioId={negocio.id}

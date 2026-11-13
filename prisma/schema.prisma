@@ -414,7 +414,10 @@ model ModeloContrato {
   atualizadoEm DateTime @updatedAt
 }
 
+// RASCUNHO (desde 2026-11-12): texto ainda editável no CRM, PDF com a marca
+// "Rascunho". Finalizar passa pra GERADO (PDF final, sem a marca).
 enum StatusContrato {
+  RASCUNHO
   GERADO
   ENVIADO
   ASSINADO
@@ -439,6 +442,9 @@ model Contrato {
   // momento da geração, igual `conteudo` — trocar o padrão depois não
   // muda contrato já emitido.
   empresaEmissora EmpresaEmissora @default(LEGAUS)
+  // Respostas do formulário do contrato (cliente, produto, pagamento, prazos
+  // — DadosContrato em lib/utils/contrato.ts), pra refazer o texto depois.
+  dados           Json?
   criadoEm        DateTime        @default(now())
   atualizadoEm    DateTime        @updatedAt
 }

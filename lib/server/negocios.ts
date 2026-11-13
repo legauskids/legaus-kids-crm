@@ -1,8 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { onNegocioEtapaChanged } from "@/lib/server/automations";
+import { onNegocioEtapaChanged, type OpcoesGanho } from "@/lib/server/automations";
 import { validarDadosParaContrato } from "@/lib/server/contratos";
-import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 import { negociosComTarefaAtiva } from "@/lib/utils/dates";
 
 /** Ids dos negócios com tarefa ativa — pra regra de negócio parado (negocioParado, lib/utils/dates.ts). */
@@ -89,11 +88,7 @@ export function listNegociosPorContato(contatoId: string) {
  * contrato (CNPJ, representante legal etc.) e o pós-venda nasce direto na
  * etapa Pagamento, sem gerar contrato nem a tarefa "Emissão de contrato".
  */
-export async function moverNegocio(
-  negocioId: string,
-  novaEtapaId: string,
-  opcoes?: { semContrato?: boolean; empresaEmissora?: ChaveEmpresaEmissora },
-): Promise<void> {
+export async function moverNegocio(negocioId: string, novaEtapaId: string, opcoes?: OpcoesGanho): Promise<{ contratoId?: string }> {
   const etapaAlvo = await prisma.etapa.findUniqueOrThrow({ where: { id: novaEtapaId } });
   if (etapaAlvo.tipo === "GANHO" && !opcoes?.semContrato) {
     const faltando = await validarDadosParaContrato(negocioId);
@@ -102,12 +97,12 @@ export async function moverNegocio(
     }
   }
 
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     await tx.negocio.update({
       where: { id: negocioId },
       data: { etapaId: novaEtapaId, dataEntradaNaEtapa: new Date() },
     });
-    await onNegocioEtapaChanged(tx, negocioId, novaEtapaId, opcoes);
+    return onNegocioEtapaChanged(tx, negocioId, novaEtapaId, opcoes);
   });
 }
 

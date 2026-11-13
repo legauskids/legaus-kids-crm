@@ -1,9 +1,22 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { EMPRESAS_EMISSORAS, type ChaveEmpresaEmissora } from "@/lib/constants/empresa";
-import { centavosParaReais } from "@/lib/utils/money";
 import { normalizarTelefone } from "@/lib/server/contatos";
-import type { StatusContrato } from "@prisma/client";
+import { formatarDocumento } from "@/lib/utils/busca-cliente";
+import {
+  GARANTIA_PADRAO,
+  MODELO_PADRAO_CONTRATO,
+  PRAZO_ENTREGA_PADRAO,
+  dadosContratoSchema,
+  errosPorCampo,
+  mesclarModelo,
+  nomeProprio,
+  normalizarQuebras,
+  valoresDoContrato,
+  type DadosContrato,
+  type ErrosContrato,
+} from "@/lib/utils/contrato";
+import type { Prisma, StatusContrato } from "@prisma/client";
 
 // Derivado do client de verdade (com a extensão de soft-delete de Negocio
 // aplicada em lib/db.ts) em vez de Prisma.TransactionClient genérico — os
@@ -11,34 +24,39 @@ import type { StatusContrato } from "@prisma/client";
 type Cliente = Parameters<Parameters<typeof prisma.$transaction>[0]>[0] | typeof prisma;
 
 export const CAMPOS_MODELO_CONTRATO = [
-  { chave: "cliente_nome", descricao: "Nome do cliente" },
-  { chave: "cliente_razao_social", descricao: "Razão social do cliente (cai pro nome se não tiver)" },
-  { chave: "cliente_cnpj", descricao: "CNPJ do cliente" },
+  { chave: "cliente_qualificacao", descricao: "Comprador por extenso (nome, CPF ou CNPJ, endereço, quem assina) — já certo pra pessoa física ou jurídica" },
+  { chave: "cliente_nome", descricao: "Nome do cliente (pessoa física) ou razão social (empresa)" },
+  { chave: "cliente_documento", descricao: "CPF ou CNPJ do cliente" },
   { chave: "cliente_endereco", descricao: "Endereço do cliente" },
   { chave: "cliente_cidade_uf", descricao: "Cidade/UF do cliente" },
   { chave: "cliente_telefone", descricao: "Telefone do cliente" },
-  { chave: "cliente_representante_nome", descricao: "Nome de quem assina pelo cliente" },
+  { chave: "cliente_representante_nome", descricao: "Quem assina pelo cliente" },
   { chave: "cliente_representante_cpf", descricao: "CPF de quem assina pelo cliente" },
-  { chave: "negocio_titulo", descricao: "Título do negócio" },
-  { chave: "negocio_produto", descricao: "Produto do negócio" },
-  { chave: "negocio_descricao", descricao: "Descrição do negócio" },
+  { chave: "negocio_produto", descricao: "Produto (objeto do contrato)" },
+  { chave: "especificacoes", descricao: "\"Especificações: ...\" (some se ficar em branco)" },
   { chave: "valor", descricao: "Valor total, já formatado em R$" },
-  { chave: "forma_pagamento", descricao: "Forma de pagamento combinada" },
-  { chave: "previsao_entrega", descricao: "Previsão de fechamento/entrega" },
-  { chave: "previsao_instalacao", descricao: "Previsão de instalação" },
+  { chave: "valor_extenso", descricao: "Valor total por extenso" },
+  { chave: "forma_pagamento", descricao: "Condições de pagamento" },
+  { chave: "prazo_entrega", descricao: "Prazo de entrega (ex: 30 (trinta) dias corridos)" },
+  { chave: "garantia", descricao: "Garantia (ex: 6 (seis) meses)" },
+  { chave: "local_instalacao", descricao: "Onde vai ser instalado" },
+  { chave: "negocio_titulo", descricao: "Título do negócio" },
+  { chave: "previsao_entrega", descricao: "Previsão de fechamento/entrega do negócio" },
+  { chave: "previsao_instalacao", descricao: "Previsão de instalação do negócio" },
   { chave: "data_hoje", descricao: "Data de hoje" },
-  { chave: "empresa_razao_social", descricao: "Razão social da Legaus Kids" },
-  { chave: "empresa_nome_fantasia", descricao: "Nome fantasia da Legaus Kids" },
-  { chave: "empresa_cnpj", descricao: "CNPJ da Legaus Kids" },
-  { chave: "empresa_endereco", descricao: "Endereço da Legaus Kids" },
-  { chave: "empresa_cidade_uf", descricao: "Cidade/UF da Legaus Kids" },
-  { chave: "empresa_representante_nome", descricao: "Nome de quem assina pela Legaus Kids" },
-  { chave: "empresa_representante_cpf", descricao: "CPF de quem assina pela Legaus Kids" },
+  { chave: "empresa_razao_social", descricao: "Razão social de quem vende (Legaus Kids ou Idezza)" },
+  { chave: "empresa_nome_fantasia", descricao: "Nome fantasia de quem vende" },
+  { chave: "empresa_cnpj", descricao: "CNPJ de quem vende" },
+  { chave: "empresa_endereco", descricao: "Endereço de quem vende" },
+  { chave: "empresa_cidade_uf", descricao: "Cidade/UF de quem vende" },
+  { chave: "empresa_representante_nome", descricao: "Quem assina por quem vende" },
+  { chave: "empresa_representante_cpf", descricao: "CPF de quem assina por quem vende" },
 ] as const;
 
-// Convertido do modelo real que a Legaus Kids já usa (contrato Legaus x Dom
-// Quixote, 28/07/2026) — clausulado mantido como está, só parametrizado.
-const MODELO_PADRAO_INICIAL = `CONTRATO PARTICULAR DE COMPRA E VENDA
+// Modelo padrão até 11/11/2026 — o mesmo que estava salvo no banco, nunca
+// personalizado. getModeloContratoAtivo troca ele pelo padrão novo
+// (MODELO_PADRAO_CONTRATO); um modelo editado de verdade fica como está.
+const MODELO_PADRAO_ATE_2026_11 = `CONTRATO PARTICULAR DE COMPRA E VENDA
 
 Do presente contrato participam as seguintes partes:
 
@@ -82,51 +100,44 @@ Do presente contrato participam as seguintes partes:
 
 {{empresa_cidade_uf}}, {{data_hoje}}.`;
 
-function formatarData(data: Date): string {
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" }).format(data);
-}
-
-/** Sempre existe um só modelo "ativo" — cria o padrão inicial na primeira vez que alguém acessa. */
+/** Sempre existe um só modelo "ativo" — cria o padrão na primeira vez que alguém acessa. */
 export async function getModeloContratoAtivo(cliente: Cliente = prisma) {
   const existente = await cliente.modeloContrato.findFirst({ orderBy: { criadoEm: "asc" } });
-  if (existente) return existente;
-  return cliente.modeloContrato.create({ data: { conteudo: MODELO_PADRAO_INICIAL } });
+  if (!existente) return cliente.modeloContrato.create({ data: { conteudo: MODELO_PADRAO_CONTRATO } });
+  if (normalizarQuebras(existente.conteudo).trim() === MODELO_PADRAO_ATE_2026_11) {
+    return cliente.modeloContrato.update({ where: { id: existente.id }, data: { conteudo: MODELO_PADRAO_CONTRATO } });
+  }
+  return existente;
 }
 
 export async function salvarModeloContrato(conteudo: string) {
   const atual = await getModeloContratoAtivo();
-  return prisma.modeloContrato.update({ where: { id: atual.id }, data: { conteudo } });
+  return prisma.modeloContrato.update({ where: { id: atual.id }, data: { conteudo: normalizarQuebras(conteudo).trim() } });
 }
-
-function mesclarPlaceholders(texto: string, valores: Record<string, string>): string {
-  return texto.replace(/\{\{(\w+)\}\}/g, (correspondencia, chave) => valores[chave] ?? correspondencia);
-}
-
-const CAMPOS_OBRIGATORIOS_CONTRATO = [
-  { campo: "razaoSocial", label: "Razão social (ou nome) do cliente", checar: (c: { razaoSocial: string | null; nome: string }) => Boolean(c.razaoSocial || c.nome) },
-  { campo: "cnpj", label: "CNPJ do cliente", checar: (c: { cnpj: string | null }) => Boolean(c.cnpj) },
-  { campo: "endereco", label: "Endereço do cliente", checar: (c: { endereco: string | null }) => Boolean(c.endereco) },
-  { campo: "cidadeUf", label: "Cidade/UF do cliente", checar: (c: { cidade: string | null; uf: string | null }) => Boolean(c.cidade && c.uf) },
-  { campo: "representanteNome", label: "Nome do representante legal do cliente", checar: (c: { representanteLegalNome: string | null }) => Boolean(c.representanteLegalNome) },
-  { campo: "representanteCpf", label: "CPF do representante legal do cliente", checar: (c: { representanteLegalCpf: string | null }) => Boolean(c.representanteLegalCpf) },
-] as const;
 
 /**
  * Confere se o negócio tem os dados mínimos pro contrato antes de deixar
- * marcar como Ganho — evita fechar negócio e só descobrir depois que falta
- * CNPJ/representante/forma de pagamento na hora de gerar o contrato de
- * verdade. Retorna a lista do que falta (vazia = tudo certo).
+ * marcar como Ganho por fora do formulário (arrastando no quadro, pelo
+ * agente) — evita fechar negócio e só descobrir depois que falta documento,
+ * endereço ou forma de pagamento. Pessoa física (sem CNPJ) precisa do CPF;
+ * empresa, do CNPJ e de quem assina. Retorna o que falta (vazio = tudo certo).
  */
 export async function validarDadosParaContrato(negocioId: string, cliente: Cliente = prisma): Promise<string[]> {
   const negocio = await cliente.negocio.findUnique({ where: { id: negocioId }, include: { contato: true } });
   if (!negocio) return ["Negócio não encontrado"];
 
   const faltando: string[] = [];
-  if (!negocio.contato) {
+  const c = negocio.contato;
+  if (!c) {
     faltando.push("Cliente vinculado ao negócio");
   } else {
-    for (const item of CAMPOS_OBRIGATORIOS_CONTRATO) {
-      if (!item.checar(negocio.contato as never)) faltando.push(item.label);
+    if (!c.endereco) faltando.push("Endereço do cliente");
+    if (!c.cidade || !c.uf) faltando.push("Cidade/UF do cliente");
+    if (c.cnpj) {
+      if (!c.representanteLegalNome) faltando.push("Nome do representante legal do cliente");
+      if (!c.representanteLegalCpf) faltando.push("CPF do representante legal do cliente");
+    } else if (!c.representanteLegalCpf) {
+      faltando.push("CPF do cliente (ou o CNPJ, se for empresa)");
     }
   }
   if (!negocio.formaPagamento) faltando.push("Forma de pagamento (na aba Dados do negócio)");
@@ -134,48 +145,203 @@ export async function validarDadosParaContrato(negocioId: string, cliente: Clien
   return faltando;
 }
 
+/** Orçamento mais recente do cliente (aprovado antes de enviado, enviado antes de rascunho). */
+async function ultimoOrcamentoDoCliente(contatoId: string, cliente: Cliente) {
+  const orcamentos = await cliente.orcamento.findMany({
+    where: { contatoId, status: { in: ["APROVADO", "ENVIADO", "RASCUNHO"] } },
+    include: { itens: { orderBy: { ordem: "asc" } } },
+    orderBy: { updatedAt: "desc" },
+    take: 20,
+  });
+  const prioridade: Record<string, number> = { APROVADO: 0, ENVIADO: 1, RASCUNHO: 2 };
+  return orcamentos.filter((o) => o.itens.length > 0).sort((a, b) => prioridade[a.status] - prioridade[b.status])[0] ?? null;
+}
+
 /**
- * Gera um contrato novo (snapshot salvo) a partir do modelo ativo + dados
- * atuais do negócio. Aceita um client de transação pra rodar junto de
- * outras automações. `empresaEmissora` escolhe qual pessoa jurídica vendeu
- * (Legaus Kids ou Idezza, ver lib/constants/empresa.ts) — Legaus por
- * padrão, já que é o caso mais comum.
+ * Formulário do contrato já preenchido com o que o CRM sabe: cadastro do
+ * cliente e do negócio e, se o negócio não diz o produto, os itens do último
+ * orçamento do cliente. Nome em maiúsculas (vindo da Receita) já vem só com
+ * as iniciais maiúsculas, pra conferir antes de gerar.
  */
-export async function gerarContrato(negocioId: string, cliente: Cliente = prisma, empresaEmissora: ChaveEmpresaEmissora = "LEGAUS") {
+export async function dadosIniciaisContrato(
+  negocioId: string,
+  empresaEmissora: ChaveEmpresaEmissora = "LEGAUS",
+  cliente: Cliente = prisma,
+): Promise<{ dados: DadosContrato; origemProduto: string | null; temCliente: boolean }> {
   const negocio = await cliente.negocio.findUnique({ where: { id: negocioId }, include: { contato: true } });
   if (!negocio) throw new Error("Negócio não encontrado.");
-  const modelo = await getModeloContratoAtivo(cliente);
   const c = negocio.contato;
-  const EMPRESA = EMPRESAS_EMISSORAS[empresaEmissora];
+  const pj = Boolean(c?.cnpj);
 
-  const valores: Record<string, string> = {
-    cliente_nome: c?.nome ?? "(cliente não vinculado)",
-    cliente_razao_social: c?.razaoSocial || c?.nome || "(cliente não vinculado)",
-    cliente_cnpj: c?.cnpj || "não informado",
-    cliente_endereco: c?.endereco || "não informado",
-    cliente_cidade_uf: c?.cidade ? `${c.cidade}/${c.uf}` : "não informado",
-    cliente_telefone: c?.telefone || "não informado",
-    cliente_representante_nome: c?.representanteLegalNome || "não informado",
-    cliente_representante_cpf: c?.representanteLegalCpf || "não informado",
-    negocio_titulo: negocio.titulo,
-    negocio_produto: negocio.produto || negocio.titulo,
-    negocio_descricao: negocio.descricao || "",
-    valor: centavosParaReais(negocio.valorCentavos),
-    forma_pagamento: negocio.formaPagamento || "a combinar entre as partes",
-    previsao_entrega: negocio.previsaoFechamento ? formatarData(negocio.previsaoFechamento) : "a combinar",
-    previsao_instalacao: negocio.dataInstalacao ? formatarData(negocio.dataInstalacao) : "a combinar",
-    data_hoje: formatarData(new Date()),
-    empresa_razao_social: EMPRESA.razaoSocial,
-    empresa_nome_fantasia: EMPRESA.nomeFantasia,
-    empresa_cnpj: EMPRESA.cnpj,
-    empresa_endereco: `${EMPRESA.endereco}, ${EMPRESA.bairro}`,
-    empresa_cidade_uf: `${EMPRESA.cidade}/${EMPRESA.uf}`,
-    empresa_representante_nome: EMPRESA.representanteNome,
-    empresa_representante_cpf: EMPRESA.representanteCpf,
+  let produto = negocio.produto?.trim() ?? "";
+  let valorCentavos = negocio.valorCentavos;
+  let origemProduto: string | null = null;
+  if (!produto && c) {
+    const orcamento = await ultimoOrcamentoDoCliente(c.id, cliente);
+    if (orcamento) {
+      produto = orcamento.itens.map((i) => (i.quantidade > 1 ? `${i.nome} (${i.quantidade} un.)` : i.nome)).join("\n");
+      if (!valorCentavos) {
+        valorCentavos = orcamento.itens.reduce((s, i) => s + i.quantidade * i.valorUnitarioCentavos, 0) - orcamento.descontoCentavos;
+      }
+      origemProduto = `orçamento nº ${String(orcamento.numero).padStart(4, "0")}`;
+    }
+  }
+
+  return {
+    origemProduto,
+    temCliente: Boolean(c),
+    dados: {
+      empresaEmissora,
+      clienteTipo: pj ? "PJ" : "PF",
+      clienteNome: nomeProprio((pj ? c?.razaoSocial || c?.nome : c?.representanteLegalNome || c?.nome) ?? ""),
+      clienteDocumento: formatarDocumento(pj ? c?.cnpj : c?.representanteLegalCpf) ?? "",
+      clienteEndereco: nomeProprio(c?.endereco ?? ""),
+      clienteCidade: nomeProprio(c?.cidade ?? ""),
+      clienteUf: (c?.uf ?? "").toUpperCase(),
+      clienteCep: c?.cep ?? "",
+      representanteNome: pj ? nomeProprio(c?.representanteLegalNome ?? "") : "",
+      representanteCpf: pj ? (formatarDocumento(c?.representanteLegalCpf) ?? "") : "",
+      produto,
+      especificacoes: negocio.descricao?.trim() ?? "",
+      valorCentavos: Math.max(0, valorCentavos),
+      formaPagamento: negocio.formaPagamento?.trim() ?? "",
+      prazoEntregaDias: PRAZO_ENTREGA_PADRAO,
+      garantiaMeses: GARANTIA_PADRAO,
+      localInstalacao: "",
+    },
   };
+}
 
-  const conteudo = mesclarPlaceholders(modelo.conteudo, valores);
-  return cliente.contrato.create({ data: { negocioId, conteudo, empresaEmissora } });
+/**
+ * O que foi digitado no formulário volta pro cadastro do cliente e pro
+ * negócio, pra vir preenchido da próxima vez. Pessoa física: o nome completo
+ * e o CPF ficam em "quem assina" (o cadastro não tem CPF próprio; o nome do
+ * contato, que veio do WhatsApp, não muda).
+ */
+export async function guardarDadosDoContratoNoCadastro(negocioId: string, d: DadosContrato, cliente: Cliente = prisma): Promise<void> {
+  const negocio = await cliente.negocio.findUnique({ where: { id: negocioId }, select: { contatoId: true } });
+  if (!negocio) throw new Error("Negócio não encontrado.");
+  if (negocio.contatoId) {
+    const endereco = { endereco: d.clienteEndereco, cidade: d.clienteCidade, uf: d.clienteUf, ...(d.clienteCep ? { cep: d.clienteCep } : {}) };
+    await cliente.contato.update({
+      where: { id: negocio.contatoId },
+      data:
+        d.clienteTipo === "PJ"
+          ? {
+              ...endereco,
+              razaoSocial: d.clienteNome,
+              cnpj: formatarDocumento(d.clienteDocumento),
+              representanteLegalNome: d.representanteNome,
+              representanteLegalCpf: formatarDocumento(d.representanteCpf),
+            }
+          : { ...endereco, representanteLegalNome: d.clienteNome, representanteLegalCpf: formatarDocumento(d.clienteDocumento) },
+    });
+  }
+  await cliente.negocio.update({ where: { id: negocioId }, data: { produto: d.produto, formaPagamento: d.formaPagamento } });
+}
+
+type NegocioDoContrato = Prisma.NegocioGetPayload<{ include: { contato: true } }>;
+
+async function textoDoContrato(negocio: NegocioDoContrato, dados: DadosContrato, cliente: Cliente): Promise<string> {
+  const modelo = await getModeloContratoAtivo(cliente);
+  return mesclarModelo(
+    modelo.conteudo,
+    valoresDoContrato(dados, EMPRESAS_EMISSORAS[dados.empresaEmissora], {
+      negocioTitulo: negocio.titulo,
+      clienteTelefone: negocio.contato?.telefone ?? null,
+      previsaoEntrega: negocio.previsaoFechamento,
+      previsaoInstalacao: negocio.dataInstalacao,
+      hoje: new Date(),
+    }),
+  );
+}
+
+const comoJson = (dados: DadosContrato) => dados as unknown as Prisma.InputJsonObject;
+
+/**
+ * Gera um contrato novo em RASCUNHO a partir do modelo ativo. Com `dados`
+ * (respostas do formulário), usa eles; sem (Ganho pelo quadro ou pelo
+ * agente), preenche com o que o CRM sabe e o formulário fica pra conferir na
+ * tela do contrato. Aceita um client de transação pra rodar junto de outras
+ * automações. `empresaEmissora` (Legaus Kids ou Idezza, ver
+ * lib/constants/empresa.ts) só vale quando não vêm `dados`.
+ */
+export async function gerarContrato(
+  negocioId: string,
+  cliente: Cliente = prisma,
+  opcoes: { empresaEmissora?: ChaveEmpresaEmissora; dados?: DadosContrato } = {},
+) {
+  const negocio = await cliente.negocio.findUnique({ where: { id: negocioId }, include: { contato: true } });
+  if (!negocio) throw new Error("Negócio não encontrado.");
+  const dados = opcoes.dados ?? (await dadosIniciaisContrato(negocioId, opcoes.empresaEmissora ?? "LEGAUS", cliente)).dados;
+  const conteudo = await textoDoContrato(negocio, dados, cliente);
+  return cliente.contrato.create({
+    data: { negocioId, conteudo, empresaEmissora: dados.empresaEmissora, dados: comoJson(dados), status: "RASCUNHO" },
+  });
+}
+
+export type ErroFormularioContrato = { error: string; campos?: ErrosContrato };
+
+/** Valida as respostas do formulário; erro por campo pra marcar no formulário. */
+export function validarFormularioContrato(bruto: unknown): { dados: DadosContrato } | ErroFormularioContrato {
+  const r = dadosContratoSchema.safeParse(bruto);
+  if (r.success) return { dados: r.data };
+  return { error: "Faltam dados ou tem dado errado — confira os campos marcados.", campos: errosPorCampo(r.error.issues) };
+}
+
+/** "Gerar contrato" do Financeiro: formulário → cadastro atualizado → rascunho. */
+export async function criarContratoComFormulario(negocioId: string, bruto: unknown): Promise<{ contratoId: string } | ErroFormularioContrato> {
+  const validado = validarFormularioContrato(bruto);
+  if ("error" in validado) return validado;
+  await guardarDadosDoContratoNoCadastro(negocioId, validado.dados);
+  const contrato = await gerarContrato(negocioId, prisma, { dados: validado.dados });
+  return { contratoId: contrato.id };
+}
+
+const SO_RASCUNHO = "Esse contrato já foi finalizado — clique em Reabrir pra mudar.";
+
+/** Refaz o texto do rascunho com os dados novos do formulário (as mudanças feitas à mão no texto se perdem). */
+export async function atualizarDadosDoContrato(contratoId: string, bruto: unknown): Promise<{ conteudo: string } | ErroFormularioContrato> {
+  const validado = validarFormularioContrato(bruto);
+  if ("error" in validado) return validado;
+  const contrato = await prisma.contrato.findUnique({ where: { id: contratoId }, select: { negocioId: true, status: true } });
+  if (!contrato) return { error: "Contrato não encontrado." };
+  if (contrato.status !== "RASCUNHO") return { error: SO_RASCUNHO };
+
+  await guardarDadosDoContratoNoCadastro(contrato.negocioId, validado.dados);
+  const negocio = await prisma.negocio.findUniqueOrThrow({ where: { id: contrato.negocioId }, include: { contato: true } });
+  const conteudo = await textoDoContrato(negocio, validado.dados, prisma);
+  await prisma.contrato.update({
+    where: { id: contratoId },
+    data: { conteudo, dados: comoJson(validado.dados), empresaEmissora: validado.dados.empresaEmissora },
+  });
+  return { conteudo };
+}
+
+export const TEXTO_CONTRATO_MAX = 100_000;
+
+/** Texto editado à mão na tela do contrato (só enquanto é rascunho). */
+export async function salvarTextoDoContrato(contratoId: string, conteudo: string): Promise<{ ok: true } | { error: string }> {
+  const texto = normalizarQuebras(conteudo).trim();
+  if (!texto) return { error: "O contrato não pode ficar vazio." };
+  if (texto.length > TEXTO_CONTRATO_MAX) return { error: "Texto grande demais." };
+  const { count } = await prisma.contrato.updateMany({ where: { id: contratoId, status: "RASCUNHO" }, data: { conteudo: texto } });
+  return count > 0 ? { ok: true } : { error: SO_RASCUNHO };
+}
+
+/** Rascunho → Gerado: o PDF sai sem a marca de rascunho. */
+export async function finalizarContrato(contratoId: string): Promise<{ ok: true } | { error: string }> {
+  const { count } = await prisma.contrato.updateMany({ where: { id: contratoId, status: "RASCUNHO" }, data: { status: "GERADO" } });
+  return count > 0 ? { ok: true } : { error: "Esse contrato não está mais em rascunho." };
+}
+
+/** Volta pra rascunho pra mexer no texto (contrato assinado ou cancelado não volta). */
+export async function reabrirContrato(contratoId: string): Promise<{ ok: true } | { error: string }> {
+  const { count } = await prisma.contrato.updateMany({
+    where: { id: contratoId, status: { in: ["GERADO", "ENVIADO"] } },
+    data: { status: "RASCUNHO" },
+  });
+  return count > 0 ? { ok: true } : { error: "Contrato assinado ou cancelado não volta pra rascunho." };
 }
 
 export function listarContratos() {
@@ -271,6 +437,6 @@ export async function criarContratoDeOrcamentoAntigo(input: {
     },
   });
 
-  const contrato = await gerarContrato(negocio.id, prisma, input.empresaEmissora);
+  const contrato = await gerarContrato(negocio.id, prisma, { empresaEmissora: input.empresaEmissora });
   return { negocio, contrato, contatoNovo: contato };
 }

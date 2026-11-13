@@ -10,12 +10,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ cont
 
   const { contratoId } = await params;
 
+  // ?ver=1: abre no navegador (botão "Ver PDF" da tela do contrato) em vez de baixar.
+  const disposicao = new URL(request.url).searchParams.get("ver") === "1" ? "inline" : "attachment";
+
   try {
     const { buffer, nomeArquivo } = await gerarPdfContrato(contratoId);
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${nomeArquivo}"`,
+        "Content-Disposition": `${disposicao}; filename="${nomeArquivo}"`,
         "Cache-Control": "no-store",
       },
     });

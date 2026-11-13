@@ -15,6 +15,7 @@ import { moverNegocioAction, marcarPerdidoAction } from "@/app/(app)/negocios/ac
 import { atualizarEtapaAction } from "@/app/(app)/negocios/funis/actions";
 import { NovoNegocioDialog } from "@/app/(app)/negocios/novo-negocio-dialog";
 import { MotivoPerdaDialog } from "@/app/(app)/negocios/motivo-perda-dialog";
+import { GanhoContratoDialog, type AlvoGanho } from "@/app/(app)/negocios/ganho-contrato-dialog";
 
 type Etapa = { id: string; nome: string; ordem: number; slaDias: number | null; tipo: "NORMAL" | "GANHO" | "PERDIDO" | "CONCLUIDO" };
 type Funil = { id: string; nome: string; etapas: Etapa[] };
@@ -57,6 +58,7 @@ export function NegociosBoardShell({
   const [negociosAnteriores, setNegociosAnteriores] = useState(negocios);
   const [novoOpen, setNovoOpen] = useState(false);
   const [motivoDialog, setMotivoDialog] = useState<{ negocioId: string; etapaId: string } | null>(null);
+  const [ganho, setGanho] = useState<AlvoGanho | null>(null);
   const [somenteParados, setSomenteParados] = useState(somenteParadosInicial);
 
   if (negocios !== negociosAnteriores) {
@@ -111,6 +113,11 @@ export function NegociosBoardShell({
     if (!etapaDestino) return;
     if (etapaDestino.tipo === "PERDIDO") {
       setMotivoDialog({ negocioId, etapaId: toEtapaId });
+      return;
+    }
+    // Ganho pede os dados do contrato antes (cliente, produto, pagamento).
+    if (etapaDestino.tipo === "GANHO") {
+      setGanho({ negocioId, etapaGanhoId: toEtapaId, empresa: "LEGAUS" });
       return;
     }
     commitMove(negocioId, toEtapaId);
@@ -241,6 +248,7 @@ export function NegociosBoardShell({
           router.refresh();
         }}
       />
+      <GanhoContratoDialog alvo={ganho} onFechar={() => setGanho(null)} />
     </div>
   );
 }
