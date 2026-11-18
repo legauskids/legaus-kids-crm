@@ -68,7 +68,13 @@ export function getNegocioDetalhado(negocioId: string) {
       funil: { include: { etapas: { orderBy: { ordem: "asc" } } } },
       etapa: true,
       tarefas: { include: { responsavel: true }, orderBy: { prazo: "asc" } },
-      atividades: { include: { autor: true }, orderBy: { criadoEm: "desc" } },
+      atividades: {
+        include: {
+          autor: true,
+          arquivos: { select: { id: true, nome: true, mime: true, tamanho: true }, orderBy: { criadoEm: "asc" } },
+        },
+        orderBy: { criadoEm: "desc" },
+      },
       checklistEtapas: { orderBy: { ordem: "asc" } },
     },
   });

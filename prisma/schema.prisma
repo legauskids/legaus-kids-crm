@@ -44,6 +44,8 @@ enum TipoAtividade {
   NOTA
   WHATSAPP
   SISTEMA
+  // Arquivo(s) anexado(s) ao negócio, com nota opcional — ver NegocioArquivo.
+  ARQUIVO
 }
 
 enum StatusTarefa {
@@ -377,6 +379,7 @@ model Negocio {
   despesas            Despesa[]
   avisosBancarios     AvisoBancario[]
   postagens           Postagem[]
+  arquivos            NegocioArquivo[]
 
   @@index([contatoId])
 }
@@ -530,14 +533,47 @@ model RespostaRapida {
 }
 
 model Atividade {
-  id        String        @id @default(cuid())
+  id        String           @id @default(cuid())
   negocioId String
-  negocio   Negocio       @relation(fields: [negocioId], references: [id])
+  negocio   Negocio          @relation(fields: [negocioId], references: [id])
   tipo      TipoAtividade
   texto     String
   autorId   String?
-  autor     User?         @relation(fields: [autorId], references: [id])
-  criadoEm  DateTime      @default(now())
+  autor     User?            @relation(fields: [autorId], references: [id])
+  criadoEm  DateTime         @default(now())
+  arquivos  NegocioArquivo[]
+}
+
+// Arquivos anexados ao negócio (pedido de 2026-11-18): qualquer tipo, até
+// 50 MB. Cada envio vira uma Atividade ARQUIVO no histórico, com a nota
+// opcional. A Vercel recusa corpo acima de ~4,5 MB, então o navegador manda
+// o arquivo em partes de 3 MB (lib/utils/negocio-arquivos.ts) e a rota
+// /api/negocios/arquivo/[id] devolve as partes em stream. atividadeId fica
+// null enquanto as partes chegam; envio abandonado é apagado depois.
+model NegocioArquivo {
+  id          String                @id @default(cuid())
+  negocioId   String
+  negocio     Negocio               @relation(fields: [negocioId], references: [id])
+  atividadeId String?
+  atividade   Atividade?            @relation(fields: [atividadeId], references: [id], onDelete: Cascade)
+  nome        String
+  mime        String
+  tamanho     Int
+  partesTotal Int
+  criadoEm    DateTime              @default(now())
+  partes      NegocioArquivoParte[]
+
+  @@index([negocioId])
+  @@index([atividadeId])
+}
+
+model NegocioArquivoParte {
+  arquivoId String
+  arquivo   NegocioArquivo @relation(fields: [arquivoId], references: [id], onDelete: Cascade)
+  indice    Int
+  bytes     Bytes
+
+  @@id([arquivoId, indice])
 }
 
 model Meta {
