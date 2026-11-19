@@ -99,7 +99,7 @@ export async function obterLinkPublicoOrcamentoAction(orcamentoId: string): Prom
   return { link: `${URL_BASE}/publico/orcamento/${token}` };
 }
 
-export async function enviarOrcamentoWhatsAppAction(orcamentoId: string, telefoneDestino: string): Promise<EnvioResultado> {
+export async function enviarOrcamentoWhatsAppAction(orcamentoId: string, telefoneDestino: string, nomeContato?: string): Promise<EnvioResultado> {
   await requireUser();
 
   const telefone = telefoneDestino.replace(/\D/g, "");
@@ -112,16 +112,15 @@ export async function enviarOrcamentoWhatsAppAction(orcamentoId: string, telefon
 
   const token = await garantirTokenPublico(orcamentoId);
   const link = `${URL_BASE}/publico/orcamento/${token}`;
-  const total = orcamento.itens.reduce((soma, i) => soma + i.quantidade * i.valorUnitarioCentavos, 0) - orcamento.descontoCentavos;
 
   // Só o PDF anexado e a mensagem, sem o link do CRM (pedido do Marcos,
   // 2026-10-14) — antes ia só o texto com o link, sem o arquivo.
-  const texto = textoEnvioOrcamentoWhatsApp(orcamento.numero, total);
+  const texto = textoEnvioOrcamentoWhatsApp(orcamento.numero);
 
   try {
     const conversa = await encontrarOuCriarConversaPorTelefone({
       telefone,
-      nomeContato: orcamento.contato?.nome,
+      nomeContato: nomeContato || orcamento.contato?.nome,
     });
     await registrarMensagem({
       conversaId: conversa.id,

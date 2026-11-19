@@ -929,10 +929,10 @@ const FERRAMENTAS: Ferramenta[] = [
       if (ctx.telefoneOrigem) {
         const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: ctx.telefoneOrigem });
         for (const produto of produtos) {
-          const precoTexto = produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "Consulte";
+          // Preço só no card, nunca na mensagem (pedido de 2026-11-17).
           await registrarMensagem({
             conversaId: conversa.id,
-            texto: a.ocultarValor ? produto.nome : `${produto.nome} — ${precoTexto}`,
+            texto: produto.nome,
             direcao: "SAIDA",
             origem: "SISTEMA",
             anexoUrl: `${URL_BASE}/api/imagem/produto-card/${produto.id}${sufixo}`,
@@ -996,10 +996,10 @@ const FERRAMENTAS: Ferramenta[] = [
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: destino.telefone, nomeContato: destino.nomeExibicao });
       const sufixo = a.ocultarValor ? "?ocultarValor=1" : "";
       for (const produto of produtos) {
-        const precoTexto = produto.valorCentavos != null ? centavosParaReais(produto.valorCentavos) : "Consulte";
+        // Preço só no card, nunca na mensagem (pedido de 2026-11-17).
         await registrarMensagem({
           conversaId: conversa.id,
-          texto: a.ocultarValor ? produto.nome : `${produto.nome} — ${precoTexto}`,
+          texto: produto.nome,
           direcao: "SAIDA",
           origem: "SISTEMA",
           anexoUrl: `${URL_BASE}/api/imagem/produto-card/${produto.id}${sufixo}`,
@@ -1402,7 +1402,7 @@ const FERRAMENTAS: Ferramenta[] = [
       if (telefoneFinal.length < 10) throw new Error("Não tenho um telefone válido pra esse cliente.");
 
       // Só o PDF e a mensagem, sem o link do CRM (pedido do Marcos, 2026-10-14).
-      const texto = textoEnvioOrcamentoWhatsApp(orcamento.numero, calcularTotalCentavos(orcamento.itens, orcamento.descontoCentavos));
+      const texto = textoEnvioOrcamentoWhatsApp(orcamento.numero);
 
       const conversa = await encontrarOuCriarConversaPorTelefone({ telefone: telefoneFinal, nomeContato: orcamento.contato?.nome });
       await registrarMensagem({

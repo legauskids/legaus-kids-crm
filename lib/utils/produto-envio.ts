@@ -1,20 +1,15 @@
 // Envio de um produto do catálogo pelo WhatsApp, em card (imagem) ou PDF
 // (ficha do produto) — pedido do Marcos de 2026-10-14. Puro e testável.
 
-import { centavosParaReais } from "./money";
-
 export type FormatoEnvioProduto = "CARD" | "PDF";
 
-/** Texto que vai junto do arquivo: o que a pessoa escreveu ou o padrão (com o preço, se não estiver oculto). */
-export function textoEnvioProduto(
-  produto: { nome: string; valorCentavos: number | null },
-  formato: FormatoEnvioProduto,
-  ocultarValor: boolean,
-  mensagem?: string | null,
-): string {
+/**
+ * Texto que vai junto do arquivo: o que a pessoa escreveu ou o padrão. O
+ * preço fica só no card/PDF, nunca na mensagem (pedido de 2026-11-17).
+ */
+export function textoEnvioProduto(produto: { nome: string }, formato: FormatoEnvioProduto, mensagem?: string | null): string {
   if (mensagem?.trim()) return mensagem.trim();
-  const preco = !ocultarValor && produto.valorCentavos != null ? ` — ${centavosParaReais(produto.valorCentavos)}` : "";
-  return formato === "PDF" ? `Segue a ficha do produto *${produto.nome}*${preco}.` : `*${produto.nome}*${preco}`;
+  return formato === "PDF" ? `Segue a ficha do produto *${produto.nome}*.` : `*${produto.nome}*`;
 }
 
 /** "Kidplay Loja" -> "kidplay-loja.pdf" / ".jpg". */

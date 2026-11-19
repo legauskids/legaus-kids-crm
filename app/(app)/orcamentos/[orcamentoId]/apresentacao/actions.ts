@@ -55,7 +55,11 @@ export async function excluirImagemApresentacaoAction(orcamentoId: string, image
 }
 
 /** Manda o PDF da apresentação pelo WhatsApp (mesma fila do PDF do orçamento). */
-export async function enviarApresentacaoWhatsAppAction(orcamentoId: string, telefoneDestino: string): Promise<{ ok: true } | { error: string }> {
+export async function enviarApresentacaoWhatsAppAction(
+  orcamentoId: string,
+  telefoneDestino: string,
+  nomeContato?: string,
+): Promise<{ ok: true } | { error: string }> {
   await requireModulo("orcamentos");
   const telefone = telefoneDestino.replace(/\D/g, "");
   if (telefone.length < 10) return { error: "Telefone inválido." };
@@ -64,7 +68,7 @@ export async function enviarApresentacaoWhatsAppAction(orcamentoId: string, tele
   if (!orcamento) return { error: "Orçamento não encontrado." };
 
   try {
-    const conversa = await encontrarOuCriarConversaPorTelefone({ telefone, nomeContato: orcamento.contato?.nome });
+    const conversa = await encontrarOuCriarConversaPorTelefone({ telefone, nomeContato: nomeContato || orcamento.contato?.nome });
     await registrarMensagem({
       conversaId: conversa.id,
       texto: textoEnvioApresentacaoWhatsApp(orcamento.numero),

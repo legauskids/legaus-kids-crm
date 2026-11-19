@@ -7,6 +7,7 @@ import { OrcamentoDocumento } from "@/app/(app)/orcamentos/orcamento-documento";
 import { AnexosDoOrcamento } from "@/app/(app)/orcamentos/folha-anexos";
 import { BotaoImprimir } from "@/app/(app)/orcamentos/[orcamentoId]/imprimir/botao-imprimir";
 import { EnviarOrcamentoDialog } from "@/app/(app)/orcamentos/enviar-orcamento-dialog";
+import { destinatarioDoContato } from "@/lib/utils/destinatario";
 
 export default async function ImprimirOrcamentoPage({
   params,
@@ -23,7 +24,8 @@ export default async function ImprimirOrcamentoPage({
       <div className="mx-auto mb-4 flex max-w-3xl justify-end gap-2 print:hidden">
         <EnviarOrcamentoDialog
           orcamentoId={orcamento.id}
-          telefoneInicial={orcamento.contato?.telefone ?? null}
+          numero={orcamento.numero}
+          destinatarioInicial={destinatarioDoContato(orcamento.contato)}
           emailInicial={orcamento.contato?.email ?? null}
           emailHabilitado={emailConfigurado()}
         />

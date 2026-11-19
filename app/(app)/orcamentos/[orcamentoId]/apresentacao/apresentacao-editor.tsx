@@ -23,7 +23,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
@@ -37,11 +36,14 @@ import {
   paginaVazia,
   paginasDoCliente,
   semImagem,
+  textoEnvioApresentacaoWhatsApp,
   type ImagemApresentacaoVM,
   type OrcamentoParaApresentacao,
   type PaginaApresentacao,
   type TipoPagina,
 } from "@/lib/utils/apresentacao";
+import { CampoDestinatario, useDestinatario } from "@/components/shared/destinatario-whatsapp";
+import type { DestinatarioEnvio } from "@/lib/utils/destinatario";
 import { reduzirImagem } from "@/lib/utils/reduzir-imagem";
 import { CamposPagina, urlImagem } from "./campos-pagina";
 import {
@@ -106,13 +108,13 @@ export function ApresentacaoEditor({
   orcamento,
   paginasIniciais,
   imagensIniciais,
-  telefoneCliente,
+  destinatarioCliente,
 }: {
   orcamentoId: string;
   orcamento: OrcamentoParaApresentacao;
   paginasIniciais: PaginaApresentacao[];
   imagensIniciais: ImagemApresentacaoVM[];
-  telefoneCliente: string | null;
+  destinatarioCliente: DestinatarioEnvio | null;
 }) {
   const [paginas, setPaginas] = useState(paginasIniciais);
   const [imagens, setImagens] = useState(imagensIniciais);
@@ -122,7 +124,7 @@ export function ApresentacaoEditor({
   const [enviandoImagens, setEnviandoImagens] = useState(0);
   const [aviso, setAviso] = useState<string | null>(null);
   const [whatsAberto, setWhatsAberto] = useState(false);
-  const [telefone, setTelefone] = useState(telefoneCliente ?? "");
+  const destinatario = useDestinatario(destinatarioCliente);
   const [enviandoWhats, setEnviandoWhats] = useState(false);
   const [resultadoWhats, setResultadoWhats] = useState<{ ok: boolean; texto: string } | null>(null);
 
@@ -289,13 +291,15 @@ export function ApresentacaoEditor({
   }
 
   async function enviarWhatsApp() {
+    const escolha = destinatario.escolha;
+    if (!escolha) return;
     setResultadoWhats(null);
     setEnviandoWhats(true);
     if (estado !== "salvo" && !(await salvarAgora())) {
       setEnviandoWhats(false);
       return;
     }
-    const r = await enviarApresentacaoWhatsAppAction(orcamentoId, telefone).catch(() => ({ error: "Não foi possível enviar agora." }));
+    const r = await enviarApresentacaoWhatsAppAction(orcamentoId, escolha.telefone, escolha.nome).catch(() => ({ error: "Não foi possível enviar agora." }));
     setEnviandoWhats(false);
     setResultadoWhats("ok" in r ? { ok: true, texto: "Entrou na fila de envio do WhatsApp." } : { ok: false, texto: r.error });
   }
@@ -499,16 +503,19 @@ export function ApresentacaoEditor({
             <DialogTitle>Enviar a apresentação pelo WhatsApp</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="telefone-apresentacao">Telefone do cliente</Label>
-            <Input id="telefone-apresentacao" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(55) 99999-9999" inputMode="tel" />
-            <p className="text-xs text-muted-foreground">Vai o PDF com as {doCliente.length} páginas marcadas, com uma mensagem curta.</p>
-            {resultadoWhats && <p className={cn("text-sm", resultadoWhats.ok ? "text-emerald-700 dark:text-emerald-400" : "text-destructive")}>{resultadoWhats.texto}</p>}
+            <Label htmlFor="destino-apresentacao">Para</Label>
+            <CampoDestinatario id="destino-apresentacao" estado={destinatario} disabled={enviandoWhats} />
           </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Vai o PDF com as {doCliente.length} páginas marcadas, com esta mensagem:</p>
+            <p className="whitespace-pre-line rounded-md border bg-muted/30 px-3 py-2 text-sm">{textoEnvioApresentacaoWhatsApp(orcamento.numero).replace(/\*/g, "")}</p>
+          </div>
+          {resultadoWhats && <p className={cn("text-sm", resultadoWhats.ok ? "text-emerald-700 dark:text-emerald-400" : "text-destructive")}>{resultadoWhats.texto}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setWhatsAberto(false)}>
               Fechar
             </Button>
-            <Button onClick={() => void enviarWhatsApp()} disabled={enviandoWhats || resultadoWhats?.ok === true}>
+            <Button onClick={() => void enviarWhatsApp()} disabled={enviandoWhats || !destinatario.escolha || resultadoWhats?.ok === true}>
               {enviandoWhats ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
               Enviar
             </Button>

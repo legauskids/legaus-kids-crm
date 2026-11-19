@@ -16,6 +16,7 @@ import {
   type OrcamentoParaApresentacao,
   type PaginaApresentacao,
 } from "@/lib/utils/apresentacao";
+import { destinatarioDoContato } from "@/lib/utils/destinatario";
 
 // Apresentação do orçamento (lib/utils/apresentacao.ts): o que fica guardado
 // é só a lista de páginas (JSON) e as imagens extras. O PDF é gerado na hora
@@ -27,7 +28,7 @@ async function buscarOrcamento(orcamentoId: string) {
   return prisma.orcamento.findUnique({
     where: { id: orcamentoId },
     include: {
-      contato: { select: { nome: true, telefone: true } },
+      contato: { select: { id: true, nome: true, telefone: true } },
       itens: { orderBy: { ordem: "asc" }, include: { produto: { select: { imagemUrl: true } } } },
       apresentacao: { select: { paginas: true } },
     },
@@ -70,7 +71,7 @@ export async function carregarApresentacao(orcamentoId: string) {
   const guardadas = normalizarPaginas(orcamento.apresentacao?.paginas);
   return {
     orcamentoId: orcamento.id,
-    telefoneCliente: orcamento.contato?.telefone ?? null,
+    destinatarioCliente: destinatarioDoContato(orcamento.contato),
     orcamento: vm,
     paginas: guardadas ?? apresentacaoPadrao(vm),
     salva: guardadas !== null,

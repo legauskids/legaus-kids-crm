@@ -29,7 +29,7 @@ export default async function ApresentacaoOrcamentoPage({ params }: { params: Pr
         orcamento={dados.orcamento}
         paginasIniciais={dados.paginas}
         imagensIniciais={dados.imagens}
-        telefoneCliente={dados.telefoneCliente}
+        destinatarioCliente={dados.destinatarioCliente}
       />
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireModulo, requireUser } from "@/lib/auth/guards";
-import { buscarDestinatarios, enviarProdutoPorWhatsApp, enviarProdutosPdfPorWhatsApp, type DestinatarioEnvio } from "@/lib/server/produto-envio";
+import { enviarProdutoPorWhatsApp, enviarProdutosPdfPorWhatsApp } from "@/lib/server/produto-envio";
 import type { FormatoEnvioProduto } from "@/lib/utils/produto-envio";
 import {
   criarProduto,
@@ -162,12 +162,6 @@ export async function aplicarPrecoEmMassaAction(
 
   await aplicarPrecoEmMassa(categoria, campo, valor);
   return { ok: true };
-}
-
-/** Pra quem mandar o produto: clientes com telefone, pelo nome ou pelo número. */
-export async function buscarDestinatariosAction(termo: string): Promise<DestinatarioEnvio[]> {
-  await requireModulo("produtos");
-  return buscarDestinatarios(termo);
 }
 
 /** Manda o produto (card ou PDF) pelo WhatsApp — entra na fila do whatsapp-service. */

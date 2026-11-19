@@ -13,31 +13,40 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Send, MessageCircle, Mail, Check } from "lucide-react";
+import { CampoDestinatario, useDestinatario } from "@/components/shared/destinatario-whatsapp";
 import { enviarOrcamentoWhatsAppAction, enviarOrcamentoEmailAction } from "@/app/(app)/orcamentos/actions";
+import { textoEnvioOrcamentoWhatsApp } from "@/lib/utils/orcamento-mensagem";
+import type { DestinatarioEnvio } from "@/lib/utils/destinatario";
 
 export function EnviarOrcamentoDialog({
   orcamentoId,
-  telefoneInicial,
+  numero,
+  destinatarioInicial,
   emailInicial,
   emailHabilitado,
 }: {
   orcamentoId: string;
-  telefoneInicial: string | null;
+  numero: number;
+  destinatarioInicial: DestinatarioEnvio | null;
   emailInicial: string | null;
   emailHabilitado: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [telefone, setTelefone] = useState(telefoneInicial ?? "");
+  const destinatario = useDestinatario(destinatarioInicial);
   const [email, setEmail] = useState(emailInicial ?? "");
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const escolha = destinatario.escolha;
 
   function enviarWhatsApp() {
+    if (!escolha) return;
     setErro(null);
     setSucesso(null);
     startTransition(async () => {
-      const resultado = await enviarOrcamentoWhatsAppAction(orcamentoId, telefone);
+      const resultado = await enviarOrcamentoWhatsAppAction(orcamentoId, escolha.telefone, escolha.nome).catch(() => ({
+        error: "Não foi possível enviar agora — confira a internet e tente de novo.",
+      }));
       if ("error" in resultado) {
         setErro(resultado.error);
         return;
@@ -92,20 +101,15 @@ export function EnviarOrcamentoDialog({
 
           <TabsContent value="whatsapp" className="space-y-4 pt-2">
             <div className="space-y-2">
-              <Label htmlFor="telefone-envio">Telefone (com DDD)</Label>
-              <Input
-                id="telefone-envio"
-                value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
-                placeholder="55999999999"
-              />
-              <p className="text-xs text-muted-foreground">
-                A mensagem entra na fila do WhatsApp e é enviada pelo número da Legaus Kids assim que o serviço de conexão
-                processar.
-              </p>
+              <Label htmlFor="destino-orcamento">Para</Label>
+              <CampoDestinatario id="destino-orcamento" estado={destinatario} disabled={pending} />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Vai o PDF do orçamento com esta mensagem:</p>
+              <p className="whitespace-pre-line rounded-md border bg-muted/30 px-3 py-2 text-sm">{textoEnvioOrcamentoWhatsApp(numero).replace(/\*/g, "")}</p>
             </div>
             <DialogFooter>
-              <Button onClick={enviarWhatsApp} disabled={pending || !telefone.trim()}>
+              <Button onClick={enviarWhatsApp} disabled={pending || !escolha}>
                 {pending ? "Enviando..." : "Enviar pelo WhatsApp"}
               </Button>
             </DialogFooter>

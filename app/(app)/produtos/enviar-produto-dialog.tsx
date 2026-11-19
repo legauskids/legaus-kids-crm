@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,19 +9,17 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CampoDestinatario, useDestinatario } from "@/components/shared/destinatario-whatsapp";
 import {
   Check,
   FileText,
   Image as ImageIcon,
   MessageCircle,
-  X,
 } from "lucide-react";
 import {
-  buscarDestinatariosAction,
   enviarProdutosPdfWhatsAppAction,
   enviarProdutoWhatsAppAction,
 } from "@/app/(app)/produtos/actions";
@@ -33,8 +31,6 @@ import {
   textoEnvioProdutos,
   type FormatoEnvioProduto,
 } from "@/lib/utils/produto-envio";
-import { telefoneLegivel, telefonePadraoBR } from "@/lib/utils/telefone";
-import type { DestinatarioEnvio } from "@/lib/server/produto-envio";
 import type { ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 
 /**
@@ -51,29 +47,11 @@ export function EnviarProdutoDialog({
 }) {
   const [formato, setFormato] = useState<FormatoEnvioProduto>("CARD");
   const [mostrarPreco, setMostrarPreco] = useState(true);
-  const [busca, setBusca] = useState("");
-  const [destino, setDestino] = useState<DestinatarioEnvio | null>(null);
-  const [sugestoes, setSugestoes] = useState<DestinatarioEnvio[]>([]);
+  const destinatario = useDestinatario();
   const [mensagem, setMensagem] = useState("");
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
-
-  // Sugestões de cliente enquanto digita o nome ou o telefone (a lista
-  // visível é filtrada na renderização — ver sugestoesVisiveis).
-  useEffect(() => {
-    if (destino || busca.trim().length < 2) return;
-    let cancelado = false;
-    const espera = setTimeout(() => {
-      buscarDestinatariosAction(busca)
-        .then((lista) => !cancelado && setSugestoes(lista))
-        .catch(() => !cancelado && setSugestoes([]));
-    }, 300);
-    return () => {
-      cancelado = true;
-      clearTimeout(espera);
-    };
-  }, [busca, destino]);
 
   if (produtos.length === 0) return null;
 
@@ -81,16 +59,9 @@ export function EnviarProdutoDialog({
   const produto = produtos[0];
   const formatoFinal: FormatoEnvioProduto = varios ? "PDF" : formato;
   const ocultarValor = !mostrarPreco;
-  const sugestoesVisiveis =
-    !destino && busca.trim().length >= 2 ? sugestoes : [];
-  const telefoneDigitado = telefonePadraoBR(busca);
-  const telefoneValido =
-    !destino &&
-    telefoneDigitado.length >= 12 &&
-    /^[\d\s()+.-]+$/.test(busca.trim());
+  const escolha = destinatario.escolha;
   const acimaDoLimite = produtos.length > LIMITE_PRODUTOS_PDF;
-  const podeEnviar =
-    Boolean(destino || telefoneValido) && !pending && !acimaDoLimite;
+  const podeEnviar = Boolean(escolha) && !pending && !acimaDoLimite;
   const arquivo = varios
     ? caminhoArquivoProdutos(
         produtos.map((p) => p.id),
@@ -99,28 +70,30 @@ export function EnviarProdutoDialog({
     : caminhoArquivoProduto(produto.id, formatoFinal, ocultarValor);
   const textoPadrao = varios
     ? textoEnvioProdutos(produtos)
-    : textoEnvioProduto(produto, formatoFinal, ocultarValor);
+    : textoEnvioProduto(produto, formatoFinal);
 
   function enviar() {
+    if (!escolha) return;
     setErro(null);
     setSucesso(null);
     startTransition(async () => {
       const comum = {
-        telefone: destino?.telefone ?? busca,
+        telefone: escolha.telefone,
         ocultarValor,
         mensagem: mensagem.trim() || undefined,
-        nomeContato: destino?.nome,
+        nomeContato: escolha.nome,
       };
-      const r = varios
-        ? await enviarProdutosPdfWhatsAppAction({
+      const r = await (varios
+        ? enviarProdutosPdfWhatsAppAction({
             ...comum,
             produtoIds: produtos.map((p) => p.id),
           })
-        : await enviarProdutoWhatsAppAction({
+        : enviarProdutoWhatsAppAction({
             ...comum,
             produtoId: produto.id,
             formato: formatoFinal,
-          });
+          })
+      ).catch(() => ({ error: "Não foi possível enviar agora — confira a internet e tente de novo." }));
       if ("error" in r) setErro(r.error);
       else setSucesso(`Entrou na fila do WhatsApp para ${r.para}.`);
     });
@@ -220,60 +193,7 @@ export function EnviarProdutoDialog({
 
         <div className="space-y-2">
           <Label htmlFor="destino-produto">Para</Label>
-          {destino ? (
-            <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-              <span>
-                <span className="font-medium">{destino.nome}</span>{" "}
-                <span className="text-muted-foreground">
-                  — {destino.telefoneFormatado}
-                </span>
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setDestino(null)}
-                aria-label="Trocar destinatário"
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="relative">
-              <Input
-                id="destino-produto"
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Nome do cliente ou telefone com DDD"
-                autoComplete="off"
-              />
-              {sugestoesVisiveis.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-md">
-                  {sugestoesVisiveis.map((s) => (
-                    <button
-                      key={s.contatoId}
-                      type="button"
-                      className="flex w-full justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-                      onClick={() => {
-                        setDestino(s);
-                        setSugestoes([]);
-                      }}
-                    >
-                      <span className="truncate">{s.nome}</span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {s.telefoneFormatado}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {telefoneValido && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Vai para {telefoneLegivel(telefoneDigitado)}.
-                </p>
-              )}
-            </div>
-          )}
+          <CampoDestinatario id="destino-produto" estado={destinatario} />
         </div>
 
         <div className="space-y-2">
