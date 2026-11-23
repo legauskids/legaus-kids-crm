@@ -38,6 +38,9 @@ export type ContaPagarVM = {
   registradaPorNome: string;
 };
 
+/** Rascunho do agente que ninguém confirmou (a aba mostra para lançar, editar ou descartar). */
+export type RascunhoContaVM = ContaPagarVM & { vencimentoInformado: boolean; faltando: string[] };
+
 /** Projeto (negócio) ou centro geral da conta. */
 export function centroDaConta(c: Pick<ContaPagarVM, "negocioTitulo" | "centroGeralNome">): string {
   return c.negocioTitulo ?? c.centroGeralNome ?? "Sem centro";

@@ -545,10 +545,12 @@ export function pareceRespostaDeDespesa(texto: string): boolean {
 const PALAVRAS_CONFIRMAR_FORTES = new Set([
   "1", "um", "sim", "s", "ss", "ok", "okay", "oke", "isso", "certo", "correto", "exato", "beleza", "perfeito", "positivo", "fechado", "claro",
   "confirma", "confirmo", "confirmado", "confirmar", "confirme", "confirmada", "pode", "registra", "registrar", "registre", "salva", "salvar", "salve",
+  // Conta a pagar (2026-11-23): "pode lançar".
+  "lanca", "lancar", "lance",
 ]);
-const PALAVRAS_CONFIRMAR_LIGACAO = new Set(["ta", "esta", "tudo", "mesmo", "ai", "e", "pode", "la", "entao", "por", "favor", "a", "despesa", "essa", "isso"]);
+const PALAVRAS_CONFIRMAR_LIGACAO = new Set(["ta", "esta", "tudo", "mesmo", "ai", "e", "pode", "la", "entao", "por", "favor", "a", "despesa", "conta", "essa", "isso"]);
 const PALAVRAS_DESCARTAR_FORTES = new Set(["cancela", "cancelar", "cancele", "descarta", "descartar", "descarte", "esquece", "esqueca", "apaga", "apagar", "apague", "exclui", "excluir"]);
-const PALAVRAS_DESCARTAR_LIGACAO = new Set(["nao", "pode", "essa", "isso", "a", "despesa", "pra", "la", "deixa", "tudo", "por", "favor", "registra", "registrar"]);
+const PALAVRAS_DESCARTAR_LIGACAO = new Set(["nao", "pode", "essa", "isso", "a", "despesa", "conta", "pra", "la", "deixa", "tudo", "por", "favor", "registra", "registrar", "lanca", "lancar"]);
 
 /**
  * "1"/"sim"/"pode confirmar" = confirmar; "cancela"/"descarta" = descartar;

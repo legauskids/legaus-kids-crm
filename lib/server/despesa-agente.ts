@@ -29,6 +29,7 @@ import {
   type ExtracaoDespesa,
 } from "@/lib/utils/despesa-agente";
 import type { Botoes, PedidoBotao } from "@/lib/utils/agente-canal";
+import { perguntarPagamentoDaDespesa } from "@/lib/server/conta-pagamento";
 
 // Agente financeiro do WhatsApp (pedido de 2026-10-07): a parte que mexe no
 // banco. As regras (o que é "dito", data falada, registrar direto ou pedir
@@ -127,9 +128,12 @@ export async function registrarDespesaDaMensagem(input: {
 
   const canal = canalDoIdentificador(input.identificador);
   if (registrarDireto) {
+    // Com o valor de uma conta a pagar aberta: "É o pagamento dela?" (2026-11-23).
+    const pagamento = await perguntarPagamentoDaDespesa(despesa.id, input.identificador);
     return {
-      mensagem: mensagemDeRegistro(montada, hoje),
-      botoes: canal === "telegram" ? botoesDeRegistro(despesa.id) : undefined,
+      mensagem: mensagemDeRegistro(montada, hoje) + (pagamento ? `\n\n${pagamento.mensagem}` : ""),
+      enquete: pagamento?.enquete,
+      botoes: canal === "telegram" ? [...(pagamento?.botoes ?? []), ...botoesDeRegistro(despesa.id)] : undefined,
       despesaId: despesa.id,
       registradaDireto: true,
     };
@@ -338,13 +342,21 @@ export async function confirmarRascunho(id: string, identificador: string): Prom
     return { mensagem: `Ainda falta: ${resumo.faltando.join(", ")}. Me diga pra eu completar (ex.: "o centro é Produção").` };
   }
   await confirmarDespesa(id);
-  const registrado = mensagemDeRegistro(resumo, hoje);
+  const telegram = canalDoIdentificador(identificador) === "telegram";
+  // Com o valor de uma conta a pagar aberta: "É o pagamento dela?" (2026-11-23).
+  const pagamento = await perguntarPagamentoDaDespesa(id, identificador);
+  const registrado = mensagemDeRegistro(resumo, hoje) + (pagamento ? `\n\n${pagamento.mensagem}` : "");
   const proximo = await buscarRascunhoAtivo(identificador);
   if (!proximo) {
-    return { mensagem: registrado, botoes: canalDoIdentificador(identificador) === "telegram" ? botoesDeRegistro(id) : undefined };
+    return { mensagem: registrado, enquete: pagamento?.enquete, botoes: telegram ? [...(pagamento?.botoes ?? []), ...botoesDeRegistro(id)] : undefined };
   }
   const pedido = await pedirConfirmacao(proximo.id, identificador, "Tem mais uma esperando:");
-  return { mensagem: `${registrado}\n\n${pedido.mensagem}`, enquete: pedido.enquete, botoes: pedido.botoes };
+  // No WhatsApp vai uma enquete só: a do pagamento, se houver (a próxima despesa confirma com "sim").
+  return {
+    mensagem: `${registrado}\n\n${pedido.mensagem}`,
+    enquete: pagamento?.enquete ?? pedido.enquete,
+    botoes: telegram ? [...(pagamento?.botoes ?? []), ...(pedido.botoes ?? [])] : undefined,
+  };
 }
 
 export async function descartarRascunho(id: string): Promise<RespostaDespesa> {

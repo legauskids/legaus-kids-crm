@@ -28,7 +28,7 @@ import { filtroDaUrl, type FiltroDespesas } from "@/lib/utils/despesas";
 import { diaBrasilia, inicioDoDiaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { DespesasTab } from "@/app/(app)/financeiro/despesas-tab";
 import { ContasPagarTab } from "@/app/(app)/financeiro/contas-pagar-tab";
-import { listarContasPagar, resumoContasPagar } from "@/lib/server/contas-pagar";
+import { listarContasPagar, listarRascunhosConta, resumoContasPagar } from "@/lib/server/contas-pagar";
 import { filtroContasDaUrl, type FiltroContas } from "@/lib/utils/contas-pagar";
 import { getDashboardFinanceiro, resolverPeriodoFinanceiro } from "@/lib/server/resultado-financeiro";
 import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
@@ -186,7 +186,8 @@ async function ContasPagarTabData({ filtro }: { filtro: FiltroContas }) {
   const hoje = diaBrasilia(new Date());
   // listarContasPagar cria antes os meses que faltam das contas fixas — o resumo vem depois para já contar com eles.
   const contas = await listarContasPagar(filtro);
-  const [resumo, categorias, centrosGerais, negocios] = await Promise.all([
+  const [rascunhos, resumo, categorias, centrosGerais, negocios] = await Promise.all([
+    listarRascunhosConta(),
     resumoContasPagar(hoje),
     listCentrosCusto(),
     listCentrosGerais(),
@@ -195,6 +196,7 @@ async function ContasPagarTabData({ filtro }: { filtro: FiltroContas }) {
   return (
     <ContasPagarTab
       contas={contas}
+      rascunhos={rascunhos}
       resumo={resumo}
       filtro={filtro}
       hoje={hoje}

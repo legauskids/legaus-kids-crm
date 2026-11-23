@@ -30,6 +30,13 @@ export const LIMITE_DADOS_BOTAO = 64;
  *   ca:<comandoId> / cx:<comandoId>   confirma / cancela a ação pendente do agente
  *   an:<avisoId>:<negocioId>          entrada do push: é desse negócio
  *   ax:<avisoId>                      entrada do push: não é de negócio
+ * Contas a pagar (2026-11-23):
+ *   cp:<acao>:<contaId>               ok confirmar · co corrigir · x descartar · ng é de um negócio
+ *                                    vc ver categorias · vg ver centros · re mostrar de novo
+ *   cpc:<contaId>:<prefixoCategoria>  escolhe a categoria
+ *   cpg:<contaId>:<centroGeralId>     escolhe o centro geral
+ *   pg:<contaId>:<despesaId>          o pagamento (despesa) é dessa conta: ligar
+ *   pn:<despesaId>                    não é pagamento de conta
  */
 export type PedidoBotao =
   | { tipo: "despesa"; acao: "ok" | "co" | "x" | "ng" | "vc" | "vg" | "re" | "u" | "ou"; despesaId: string }
@@ -38,9 +45,15 @@ export type PedidoBotao =
   | { tipo: "juntar"; despesaId: string; existenteId: string }
   | { tipo: "pendente"; confirmar: boolean; comandoId: string }
   | { tipo: "aviso-negocio"; avisoId: string; negocioId: string }
-  | { tipo: "aviso-ignorar"; avisoId: string };
+  | { tipo: "aviso-ignorar"; avisoId: string }
+  | { tipo: "conta"; acao: "ok" | "co" | "x" | "ng" | "vc" | "vg" | "re"; contaId: string }
+  | { tipo: "conta-categoria"; contaId: string; prefixo: string }
+  | { tipo: "conta-centro"; contaId: string; centroGeralId: string }
+  | { tipo: "pagamento"; contaId: string; despesaId: string }
+  | { tipo: "pagamento-nao"; despesaId: string };
 
 const ACOES_DESPESA = new Set(["ok", "co", "x", "ng", "vc", "vg", "re", "u", "ou"]);
+const ACOES_CONTA = new Set(["ok", "co", "x", "ng", "vc", "vg", "re"]);
 const ID = /^[\w-]{1,40}$/;
 
 export function lerBotao(dados: string | null | undefined): PedidoBotao | null {
@@ -63,6 +76,16 @@ export function lerBotao(dados: string | null | undefined): PedidoBotao | null {
       return partes.length === 3 && ok(a, b) ? { tipo: "aviso-negocio", avisoId: a, negocioId: b } : null;
     case "ax":
       return partes.length === 2 && ok(a) ? { tipo: "aviso-ignorar", avisoId: a } : null;
+    case "cp":
+      return partes.length === 3 && ACOES_CONTA.has(a) && ok(b) ? { tipo: "conta", acao: a as never, contaId: b } : null;
+    case "cpc":
+      return partes.length === 3 && ok(a, b) ? { tipo: "conta-categoria", contaId: a, prefixo: b } : null;
+    case "cpg":
+      return partes.length === 3 && ok(a, b) ? { tipo: "conta-centro", contaId: a, centroGeralId: b } : null;
+    case "pg":
+      return partes.length === 3 && ok(a, b) ? { tipo: "pagamento", contaId: a, despesaId: b } : null;
+    case "pn":
+      return partes.length === 2 && ok(a) ? { tipo: "pagamento-nao", despesaId: a } : null;
     default:
       return null;
   }

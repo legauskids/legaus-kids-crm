@@ -11,6 +11,7 @@ import {
   agruparContas,
   centroDaConta,
   dataBR,
+  filtroVazio,
   rotuloParcela,
   totaisPor,
   type ContaPagarVM,
@@ -100,7 +101,7 @@ function Totais({ titulo, linhas }: { titulo: string; linhas: { nome: string; qu
   );
 }
 
-function ContasPagarPdf({ contas, hoje, filtro, geradoEm }: { contas: ContaPagarVM[]; hoje: string; filtro: string; geradoEm: string }) {
+function ContasPagarPdf({ contas, hoje, filtro, geradoEm, vazio }: { contas: ContaPagarVM[]; hoje: string; filtro: string; geradoEm: string; vazio: string }) {
   const grupos = agruparContas(contas, hoje);
   const total = contas.reduce((soma, c) => soma + c.valorCentavos, 0);
   const doGrupo = (g: string) => grupos.find((x) => x.grupo === g)?.totalCentavos ?? 0;
@@ -144,7 +145,7 @@ function ContasPagarPdf({ contas, hoje, filtro, geradoEm }: { contas: ContaPagar
           )}
         </View>
 
-        {contas.length === 0 && <Text style={styles.vazio}>Nenhuma conta com esse filtro.</Text>}
+        {contas.length === 0 && <Text style={styles.vazio}>{vazio}</Text>}
 
         {grupos.map((g) => (
           <View key={g.grupo}>
@@ -184,12 +185,13 @@ function ContasPagarPdf({ contas, hoje, filtro, geradoEm }: { contas: ContaPagar
 }
 
 /** O PDF a partir das contas já carregadas (separado para testar sem banco). */
-export function renderizarPdfContas(contas: ContaPagarVM[], filtro: string, agora = new Date()): Promise<Buffer> {
+export function renderizarPdfContas(contas: ContaPagarVM[], filtro: string, agora = new Date(), vazio = "Nenhuma conta com esse filtro."): Promise<Buffer> {
   const geradoEm = agora.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
-  return renderToBuffer(<ContasPagarPdf contas={contas} hoje={diaBrasilia(agora)} filtro={filtro} geradoEm={geradoEm} />);
+  return renderToBuffer(<ContasPagarPdf contas={contas} hoje={diaBrasilia(agora)} filtro={filtro} geradoEm={geradoEm} vazio={vazio} />);
 }
 
 export async function gerarPdfContasPagar(filtro: FiltroContas): Promise<{ buffer: Buffer; nomeArquivo: string }> {
   const [contas, descricao] = await Promise.all([listarContasPagar(filtro), descreverFiltro(filtro)]);
-  return { buffer: await renderizarPdfContas(contas, descricao), nomeArquivo: `contas-a-pagar-${diaBrasilia(new Date())}.pdf` };
+  const vazio = filtroVazio(filtro) && filtro.situacao === "ABERTAS" ? "Nenhuma conta em aberto." : "Nenhuma conta com esse filtro.";
+  return { buffer: await renderizarPdfContas(contas, descricao, new Date(), vazio), nomeArquivo: `contas-a-pagar-${diaBrasilia(new Date())}.pdf` };
 }

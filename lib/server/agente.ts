@@ -74,10 +74,23 @@ import {
   type RespostaDespesa,
 } from "@/lib/server/despesa-agente";
 import { interpretarRespostaRascunho, pareceRespostaDeDespesa, type Enquete, type ExtracaoDespesa } from "@/lib/utils/despesa-agente";
+import {
+  registrarContaDaMensagem,
+  corrigirContaDaConversa,
+  buscarRascunhoContaAtivo,
+  confirmarRascunhoConta,
+  descartarRascunhoConta,
+  descreverRascunhoConta,
+  responderBotaoConta,
+} from "@/lib/server/conta-agente";
+import { listarContasPagar } from "@/lib/server/contas-pagar";
+import { diaBrasilia } from "@/lib/utils/brasilia";
+import { pareceRespostaDeConta, type ExtracaoConta } from "@/lib/utils/conta-agente";
+import { centroDaConta, dataBR, filtroContasDaUrl, prazoLegivel, rotuloParcela, situacaoLegivel } from "@/lib/utils/contas-pagar";
 import { canalDoIdentificador, lerBotao, type Botoes, type CanalAgente } from "@/lib/utils/agente-canal";
 import { responderBotaoAviso } from "@/lib/server/push-bancario";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
-import type { ComandoAgente, OrigemComando, OrigemDespesa, Prisma, StatusOrcamento } from "@prisma/client";
+import type { ComandoAgente, OrigemComando, OrigemContaPagar, OrigemDespesa, Prisma, StatusOrcamento } from "@prisma/client";
 
 // O PDF do orçamento (@react-pdf) só é carregado quando um orçamento vira
 // arquivo: pesa na partida de toda chamada do agente e não roda fora do
@@ -204,6 +217,38 @@ function extracaoDosArgs(args: ArgsFerramenta): ExtracaoDespesa {
     categoria: texto(args.categoria),
     centro: texto(args.centro),
     descricao: texto(args.descricao),
+  };
+}
+
+// Contas a pagar pelo agente (pedido de 2026-11-23, etapa 2).
+const PROPRIEDADES_CONTA = {
+  valor: { type: "number", description: "Valor em reais da conta (de CADA parcela, se for parcelada)." },
+  fornecedor: { type: "string", description: "A quem pagar: beneficiário/cedente do boleto, empresa da fatura (ex.: RGE, Unimed, Banco do Brasil — fatura do cartão)." },
+  vencimentoTexto: { type: "string", description: "Vencimento como está no documento (dd/mm/aaaa) ou como a pessoa falou ('dia 10', 'sexta', '10/12'). Vazio se não aparecer." },
+  categoria: PROPRIEDADES_DESPESA.categoria,
+  centro: PROPRIEDADES_DESPESA.centro,
+  descricao: { type: "string", description: "Detalhe útil opcional (ex.: 'fatura de novembro', 'aluguel do pavilhão')." },
+  codigoPagamento: {
+    type: "string",
+    description: "Linha digitável do boleto, código de barras ou Pix copia e cola, copiado EXATAMENTE como aparece no documento (só se aparecer; nunca invente).",
+  },
+  parcelas: { type: "number", description: "Número de parcelas, se for compra parcelada ou carnê (ex.: 3). Vazio se for uma conta só." },
+  repeteTodoMes: { type: "boolean", description: "true se a pessoa disser que é conta fixa que se repete todo mês (aluguel, internet, plano de saúde)." },
+};
+
+function extracaoContaDosArgs(args: ArgsFerramenta): ExtracaoConta {
+  const texto = (v: unknown) => (typeof v === "string" ? v : null);
+  const numero = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" ? Number(v.replace(",", ".")) || null : null);
+  return {
+    valor: numero(args.valor),
+    fornecedor: texto(args.fornecedor),
+    vencimentoTexto: texto(args.vencimentoTexto),
+    categoria: texto(args.categoria),
+    centro: texto(args.centro),
+    descricao: texto(args.descricao),
+    codigoPagamento: texto(args.codigoPagamento),
+    parcelas: numero(args.parcelas),
+    repeteTodoMes: typeof args.repeteTodoMes === "boolean" ? args.repeteTodoMes : null,
   };
 }
 
@@ -2444,7 +2489,7 @@ const FERRAMENTAS: Ferramenta[] = [
         usuarioId: ctx.usuarioId,
         anexo,
       });
-      return { mensagem: r.mensagem, enquete: r.enquete, despesaId: r.despesaId };
+      return { mensagem: r.mensagem, enquete: r.enquete, botoes: r.botoes, despesaId: r.despesaId };
     },
   },
   {
@@ -2459,6 +2504,87 @@ const FERRAMENTAS: Ferramenta[] = [
         correcao: extracaoDosArgs(args),
         texto: ctx.textoMensagem ?? "",
       });
+    },
+  },
+  {
+    // Contas a pagar (pedido de 2026-11-23): sempre nasce rascunho e pede
+    // confirmação — o código decide, o modelo só passa o que entendeu.
+    name: "registrar_conta_pagar",
+    description:
+      "Lança uma CONTA A PAGAR — boleto, fatura (inclusive do cartão de crédito), carnê, parcelas ou conta fixa do mês que AINDA VAI SER PAGA, com vencimento. Use quando vier foto/PDF de boleto ou fatura (sem comprovante de pagamento) ou quando a pessoa disser 'tenho que pagar', 'vence dia 10', 'lança a conta de luz de 480 pra dia 10', 'comprei parcelado em 3x', 'o aluguel é todo dia 5'. Uma chamada por conta (parcelas da mesma compra = uma chamada com parcelas). Passe só o que entendeu, sem perguntar nada antes: a ferramenta resolve categoria e centro pelos nomes, sempre pede confirmação e a resposta dela vai direto pro usuário.",
+    input_schema: { type: "object", properties: PROPRIEDADES_CONTA },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      const origem: OrigemContaPagar = ctx.anexoImagem || ctx.anexoPdf ? "ARQUIVO" : ctx.anexoAudio ? "AUDIO" : "TEXTO";
+      const anexo = ctx.anexoImagem
+        ? { bytes: ctx.anexoImagem.bytes, mime: ctx.anexoImagem.mimetype, nome: `boleto.${ctx.anexoImagem.mimetype.split("/")[1] ?? "jpg"}` }
+        : ctx.anexoPdf
+          ? { bytes: ctx.anexoPdf.bytes, mime: "application/pdf", nome: ctx.anexoPdf.nomeArquivo }
+          : undefined;
+      // A foto do boleto fica com a conta: não sobra pra virar foto de produto.
+      if (ctx.anexoImagem) ctx.imagemConsumida = true;
+      const r = await registrarContaDaMensagem({
+        extracao: extracaoContaDosArgs(args),
+        texto: ctx.textoMensagem ?? "",
+        origem,
+        identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`,
+        usuarioId: ctx.usuarioId,
+        anexo,
+      });
+      return { mensagem: r.mensagem, enquete: r.enquete, botoes: r.botoes, contaId: r.contaId };
+    },
+  },
+  {
+    name: "corrigir_conta_pagar",
+    description:
+      "Corrige a conta a pagar que está esperando confirmação quando a pessoa disser o que mudar: 'não, vence dia 15', 'são 3 parcelas', 'é conta fixa', 'o valor é 512', 'a categoria é energia', 'é da obra do Arco-Íris'. Se a pessoa só disser um nome de cliente/obra depois de perguntarem qual negócio, é o centro. Passe só os campos que mudam. A resposta vai direto pro usuário.",
+    input_schema: { type: "object", properties: PROPRIEDADES_CONTA },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      return corrigirContaDaConversa({
+        identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`,
+        correcao: extracaoContaDosArgs(args),
+        texto: ctx.textoMensagem ?? "",
+      });
+    },
+  },
+  {
+    name: "listar_contas_pagar",
+    description:
+      "Lista as contas a pagar (boletos, faturas, contas fixas, parcelas) pra responder perguntas como 'o que vence essa semana?', 'tem conta atrasada?', 'quanto tenho pra pagar em dezembro?', 'já paguei a Unimed?'. Sem datas = todas em aberto (as atrasadas vêm marcadas). Responda curto: o total, as atrasadas primeiro, depois por data.",
+    input_schema: {
+      type: "object",
+      properties: {
+        de: { type: "string", description: "Vencimento a partir de (AAAA-MM-DD)." },
+        ate: { type: "string", description: "Vencimento até (AAAA-MM-DD)." },
+        situacao: { type: "string", enum: ["ABERTAS", "PAGAS", "TODAS"], description: "Padrão: ABERTAS." },
+        fornecedor: { type: "string", description: "Parte do nome do fornecedor, se a pergunta for sobre um." },
+      },
+    },
+    async executar(args) {
+      const texto = (v: unknown) => (typeof v === "string" ? v : undefined);
+      const contas = await listarContasPagar(filtroContasDaUrl({ de: texto(args.de), ate: texto(args.ate), situacao: texto(args.situacao), fornecedor: texto(args.fornecedor) }));
+      const hoje = diaBrasilia(new Date());
+      const atrasadas = contas.filter((c) => c.status === "ABERTA" && c.vencimento < hoje);
+      return {
+        hoje: dataBR(hoje),
+        quantidade: contas.length,
+        total: centavosParaReais(contas.reduce((soma, c) => soma + c.valorCentavos, 0)),
+        atrasadas: { quantidade: atrasadas.length, total: centavosParaReais(atrasadas.reduce((soma, c) => soma + c.valorCentavos, 0)) },
+        contas: contas.slice(0, 60).map((c) => ({
+          vencimento: dataBR(c.vencimento),
+          prazo: c.status === "ABERTA" ? prazoLegivel(c.vencimento, hoje) : undefined,
+          fornecedor: c.fornecedor,
+          valor: centavosParaReais(c.valorCentavos),
+          situacao: situacaoLegivel(c, hoje),
+          pagaEm: c.pagaEm ? dataBR(c.pagaEm) : undefined,
+          parcela: rotuloParcela(c.parcela, c.totalParcelas) ?? undefined,
+          contaFixa: c.repeteTodoMes || undefined,
+          categoria: c.categoriaNome,
+          centro: centroDaConta(c),
+        })),
+        ...(contas.length > 60 ? { aviso: `Mostrando 60 de ${contas.length} — peça um período menor pra ver o resto.` } : {}),
+      };
     },
   },
 ];
@@ -2510,12 +2636,13 @@ Regras:
 - Telefone: mostre sempre EXATAMENTE como a ferramenta devolveu (já vem no padrão brasileiro com o 9 do celular, ex.: (54) 99696-0296) — nunca reformate, encurte nem tire dígitos.
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
+- Contas a pagar: boleto, fatura (inclusive do cartão de crédito), carnê ou conta que AINDA VAI SER PAGA, com vencimento — foto/PDF de boleto ou fatura sem comprovante de pagamento, ou "tenho que pagar", "vence dia 10", "lança a conta de luz", "comprei parcelado em 3x", "o aluguel é todo dia 5" — é registrar_conta_pagar, não despesa. Comprovante de pagamento ou "paguei" continua sendo registrar_despesa (se o valor bater com uma conta aberta, a ferramenta já pergunta se é o pagamento dela). Se houver conta esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela, use corrigir_conta_pagar. Perguntas sobre contas a pagar ("o que vence essa semana?", "tem boleto atrasado?") → listar_contas_pagar; no WhatsApp ela não existe (consulta financeira é só no Telegram e no CRM, decisão do Marcos): diga isso e que dá pra ver em Financeiro → Contas a pagar. Igual à despesa: nunca escreva você mesmo o resumo de uma conta nem diga que lançou sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 
 const NOME_DO_CANAL: Record<CanalAgente, string> = { whatsapp: "WhatsApp", telegram: "Telegram (privado do Marcos)", crm: "chat do agente dentro do CRM" };
 
-async function montarSystemPromptDinamico(rascunhoId: string | null, canal: CanalAgente): Promise<string> {
+async function montarSystemPromptDinamico(rascunhoId: string | null, canal: CanalAgente, rascunhoContaId: string | null = null): Promise<string> {
   const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "full", timeStyle: "short" });
   const { categorias, centrosGerais } = await carregarCadastrosDespesa();
   const linhas = [
@@ -2525,6 +2652,7 @@ async function montarSystemPromptDinamico(rascunhoId: string | null, canal: Cana
     `Centros de custo gerais: ${centrosGerais.map((g) => g.nome).join("; ")} — ou uma obra/negócio pelo nome.`,
   ];
   if (rascunhoId) linhas.push(await descreverRascunho(rascunhoId));
+  if (rascunhoContaId) linhas.push(await descreverRascunhoConta(rascunhoContaId));
   return linhas.join("\n");
 }
 
@@ -2614,11 +2742,19 @@ const MODULO_DA_FERRAMENTA: Partial<Record<string, ModuloKey>> = {
   opinar_pauta_reuniao: "reunioes",
   registrar_despesa: "financeiro",
   corrigir_despesa: "financeiro",
+  registrar_conta_pagar: "financeiro",
+  corrigir_conta_pagar: "financeiro",
+  listar_contas_pagar: "financeiro",
 };
 
-function ferramentasPermitidas(usuario: UsuarioAgente | null): Ferramenta[] {
+// Consulta financeira não vai no WhatsApp, que a Dani também usa (decisão do
+// Marcos de 2026-10-07): só no Telegram e no chat do CRM. Lançar pode.
+const FORA_DO_WHATSAPP = new Set(["listar_contas_pagar"]);
+
+function ferramentasPermitidas(usuario: UsuarioAgente | null, canal: CanalAgente): Ferramenta[] {
   if (!usuario) return [];
   return FERRAMENTAS.filter((f) => {
+    if (canal === "whatsapp" && FORA_DO_WHATSAPP.has(f.name)) return false;
     const modulo = MODULO_DA_FERRAMENTA[f.name];
     return !modulo || moduloPermitido(usuario, modulo);
   });
@@ -2642,6 +2778,7 @@ async function rodarAgenteClaude(
   extras: {
     anexoAudio?: { base64: string; mimetype: string };
     rascunhoDespesaId?: string | null;
+    rascunhoContaId?: string | null;
     usuario?: UsuarioAgente | null;
     canal?: CanalAgente;
     // Quem chamou lê daqui, no fim, se a imagem da mensagem foi usada
@@ -2726,11 +2863,14 @@ async function rodarAgenteClaude(
   });
   const system: Anthropic.TextBlockParam[] = [
     { type: "text", text: montarSystemPromptFixo(), cache_control: { type: "ephemeral" } },
-    { type: "text", text: await montarSystemPromptDinamico(extras.rascunhoDespesaId ?? null, extras.canal ?? canalDoIdentificador(identificador)) },
+    {
+      type: "text",
+      text: await montarSystemPromptDinamico(extras.rascunhoDespesaId ?? null, extras.canal ?? canalDoIdentificador(identificador), extras.rascunhoContaId ?? null),
+    },
   ];
   // Só as ferramentas que o usuário pode usar (módulos liberados pra ele): a
   // IA nem fica sabendo das outras.
-  const permitidas = ferramentasPermitidas(extras.usuario ?? null);
+  const permitidas = ferramentasPermitidas(extras.usuario ?? null, extras.canal ?? canalDoIdentificador(identificador));
   const tools = permitidas.map(paraToolAnthropic);
   const acoes: AcaoAgente[] = [];
   // Cada turno de tool-calling é uma chamada HTTP própria pra Anthropic, com
@@ -2742,7 +2882,7 @@ async function rodarAgenteClaude(
   let tokensSaida = 0;
   // Ferramenta de despesa obrigatória no próximo turno — ver a guarda de
   // pareceRespostaDeDespesa abaixo.
-  let ferramentaObrigatoria: "registrar_despesa" | "corrigir_despesa" | null = null;
+  let ferramentaObrigatoria: "registrar_despesa" | "corrigir_despesa" | "registrar_conta_pagar" | "corrigir_conta_pagar" | null = null;
   let jaForcouDespesa = false;
   let jaPediuTexto = false;
 
@@ -2790,14 +2930,18 @@ async function rodarAgenteClaude(
         .trim();
       // Resumo/registro de despesa escrito pelo modelo sem a ferramenta ter
       // rodado = nada foi gravado. Uma volta a mais, obrigando a ferramenta.
-      const usouDespesa = ferramentasChamadas.some((n) => n === "registrar_despesa" || n === "corrigir_despesa");
-      if (!usouDespesa && !jaForcouDespesa && pareceRespostaDeDespesa(textoFinal)) {
+      // A resposta de uma consulta de contas (listar_contas_pagar) fala de contas
+      // sem ser um lançamento — visto no teste de 2026-11-23, virou rascunho vazio.
+      const usouDespesa = ferramentasChamadas.some((n) => /^(registrar|corrigir)_(despesa|conta_pagar)$|^listar_contas_pagar$/.test(n));
+      const ehConta = pareceRespostaDeConta(textoFinal);
+      if (!usouDespesa && !jaForcouDespesa && (ehConta || pareceRespostaDeDespesa(textoFinal))) {
         jaForcouDespesa = true;
-        ferramentaObrigatoria = /corrigi/i.test(textoFinal) ? "corrigir_despesa" : "registrar_despesa";
+        const corrigiu = /corrigi/i.test(textoFinal);
+        ferramentaObrigatoria = ehConta ? (corrigiu ? "corrigir_conta_pagar" : "registrar_conta_pagar") : corrigiu ? "corrigir_despesa" : "registrar_despesa";
         console.warn(`[agente] resposta de despesa sem ferramenta — chamando ${ferramentaObrigatoria} de verdade.`);
         messages.push({
           role: "user",
-          content: "Sistema: essa resposta descreve uma despesa, mas nenhuma ferramenta foi chamada e nada foi gravado. Chame a ferramenta agora com os dados da mensagem.",
+          content: `Sistema: essa resposta descreve ${ehConta ? "uma conta a pagar" : "uma despesa"}, mas nenhuma ferramenta foi chamada e nada foi gravado. Chame a ferramenta agora com os dados da mensagem.`,
         });
         continue;
       }
@@ -3064,7 +3208,45 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
   // uma ação sensível pendente, vale a mais recente das duas.
   const rascunho = await buscarRascunhoAtivo(input.identificador);
   const semAnexoDeArquivo = !input.anexoPdf && !input.anexoImagem && !input.anexoArquivo;
-  if (rascunho && semAnexoDeArquivo && (!pendente?.ferramentaPendente || rascunho.atualizadoEm > pendente.criadoEm)) {
+  // Conta a pagar esperando confirmação (2026-11-23): mesmo atalho; com uma
+  // despesa também esperando, vale o rascunho mais recente dos dois.
+  const rascunhoConta = await buscarRascunhoContaAtivo(input.identificador);
+  if (
+    rascunhoConta &&
+    semAnexoDeArquivo &&
+    (!rascunho || rascunhoConta.atualizadoEm > rascunho.atualizadoEm) &&
+    (!pendente?.ferramentaPendente || rascunhoConta.atualizadoEm > pendente.criadoEm)
+  ) {
+    const decisao = interpretarRespostaRascunho(input.texto);
+    if (decisao !== "outro") {
+      let r: RespostaDespesa;
+      let ok = true;
+      try {
+        r =
+          decisao === "confirmar"
+            ? await confirmarRascunhoConta(rascunhoConta.id, input.identificador)
+            : decisao === "descartar"
+              ? await descartarRascunhoConta(rascunhoConta.id)
+              : perguntarOQueCorrigir();
+      } catch (erro) {
+        ok = false;
+        r = { mensagem: `Não consegui ${decisao === "confirmar" ? "lançar" : "descartar"} a conta: ${erro instanceof Error ? erro.message : "erro desconhecido"}` };
+      }
+      await salvarComando(input, {
+        textoComando: input.texto,
+        resposta: r.mensagem,
+        status: "CONCLUIDO",
+        acoes: [{ ferramenta: `conta:${decisao}`, entrada: rascunhoConta.id, ok }] as Prisma.InputJsonValue,
+      });
+      return { resposta: r.mensagem, enquete: r.enquete, botoes: r.botoes };
+    }
+  }
+  if (
+    rascunho &&
+    semAnexoDeArquivo &&
+    (!rascunhoConta || rascunho.atualizadoEm > rascunhoConta.atualizadoEm) &&
+    (!pendente?.ferramentaPendente || rascunho.atualizadoEm > pendente.criadoEm)
+  ) {
     const decisao = interpretarRespostaRascunho(input.texto);
     if (decisao !== "outro") {
       let r: RespostaDespesa;
@@ -3090,7 +3272,12 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
     }
   }
 
-  if (pendente && pendente.ferramentaPendente && !(rascunho && rascunho.atualizadoEm > pendente.criadoEm)) {
+  if (
+    pendente &&
+    pendente.ferramentaPendente &&
+    !(rascunho && rascunho.atualizadoEm > pendente.criadoEm) &&
+    !(rascunhoConta && rascunhoConta.atualizadoEm > pendente.criadoEm)
+  ) {
     const decisao = interpretarConfirmacao(input.texto);
     if (decisao === "sim") {
       const { resposta, arquivos } = await executarPendente(pendente, input);
@@ -3120,6 +3307,7 @@ export async function processarComandoAgente(input: EntradaComando): Promise<Res
   const resultado = await rodarAgenteClaude(input.texto, input.usuarioId, input.identificador, input.anexoPdf, input.anexoImagem, input.anexoArquivo, {
     anexoAudio: input.anexoAudio,
     rascunhoDespesaId: rascunho?.id ?? null,
+    rascunhoContaId: rascunhoConta?.id ?? null,
     usuario,
     canal,
     estado,
@@ -3186,7 +3374,9 @@ export async function processarBotaoAgente(input: { identificador: string; usuar
   const r =
     pedido.tipo === "aviso-negocio" || pedido.tipo === "aviso-ignorar"
       ? await responderBotaoAviso(pedido, input.identificador)
-      : await responderBotaoDespesa(pedido, input.identificador);
+      : pedido.tipo === "conta" || pedido.tipo === "conta-categoria" || pedido.tipo === "conta-centro" || pedido.tipo === "pagamento" || pedido.tipo === "pagamento-nao"
+        ? await responderBotaoConta(pedido, input.identificador)
+        : await responderBotaoDespesa(pedido, input.identificador);
   return r ? { resposta: r.mensagem, enquete: r.enquete, botoes: r.botoes } : null;
 }
 

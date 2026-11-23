@@ -16,8 +16,10 @@ import {
   vencimentosDasParcelas,
   type ContaPagarVM,
   type FiltroContas,
+  type RascunhoContaVM,
   type RepeticaoConta,
 } from "@/lib/utils/contas-pagar";
+import { pendenciasDaConta } from "@/lib/utils/conta-agente";
 
 // Contas a pagar (pedido de 2026-11-23) — ver ContaPagar no schema. Paga,
 // a conta vira uma Despesa aguardando conciliação, ou é ligada a uma despesa
@@ -136,12 +138,9 @@ type Soma = { quantidade: number; totalCentavos: number };
 
 /** Topo da aba (não depende do filtro). */
 export async function resumoContasPagar(hoje: string) {
-  const [abertas, aConfirmar] = await Promise.all([
-    prisma.contaPagar.findMany({ where: { status: "ABERTA" }, select: { vencimento: true, valorCentavos: true } }),
-    prisma.contaPagar.count({ where: { status: "A_CONFIRMAR" } }),
-  ]);
+  const abertas = await prisma.contaPagar.findMany({ where: { status: "ABERTA" }, select: { vencimento: true, valorCentavos: true } });
   const vazio = (): Soma => ({ quantidade: 0, totalCentavos: 0 });
-  const resumo = { atrasadas: vazio(), hoje: vazio(), seteDias: vazio(), emAberto: vazio(), aConfirmar };
+  const resumo = { atrasadas: vazio(), hoje: vazio(), seteDias: vazio(), emAberto: vazio() };
   for (const c of abertas) {
     const grupo = grupoDaConta({ status: "ABERTA", vencimento: diaBrasilia(c.vencimento) }, hoje);
     const alvo = grupo === "ATRASADAS" ? resumo.atrasadas : grupo === "HOJE" ? resumo.hoje : grupo === "SETE_DIAS" ? resumo.seteDias : null;
@@ -162,7 +161,8 @@ export async function resumoContasPagar(hoje: string) {
 export async function gerarContasFixas(hoje = diaBrasilia(new Date())): Promise<number> {
   const horizonte = horizonteDasFixas(hoje);
   const ultimas = await prisma.contaPagar.findMany({
-    where: { repeteTodoMes: true, serieId: { not: null } },
+    // Rascunho do agente nunca é modelo (e nem tem série ainda).
+    where: { repeteTodoMes: true, serieId: { not: null }, status: { not: "A_CONFIRMAR" } },
     distinct: ["serieId"],
     orderBy: [{ serieId: "asc" }, { vencimento: "desc" }],
     select: {
@@ -280,7 +280,7 @@ export async function criarContaPagar(
 async function contaExistente(tx: Tx, id: string) {
   const conta = await tx.contaPagar.findUnique({
     where: { id },
-    select: { status: true, serieId: true, repeteTodoMes: true, parcela: true, vencimento: true },
+    select: { status: true, serieId: true, repeteTodoMes: true, parcela: true, vencimento: true, extracao: true },
   });
   if (!conta || conta.status === "CANCELADA") throw new Error("Conta não encontrada.");
   return conta;
@@ -300,6 +300,22 @@ export async function atualizarContaPagar(
   const ligouRepeticao = await prisma.$transaction(async (tx) => {
     const atual = await contaExistente(tx, id);
     if (atual.status === "PAGA") throw new Error("Essa conta já está paga — desfaça o pagamento antes de alterar.");
+
+    // Rascunho do agente editado na tela: só os dados e a intenção de repetir
+    // (a série nasce quando for lançado); o vencimento passa a valer como dito.
+    if (atual.status === "A_CONFIRMAR") {
+      const log = (atual.extracao ?? {}) as Prisma.JsonObject;
+      await tx.contaPagar.update({
+        where: { id },
+        data: {
+          ...campos,
+          ...(d.anexo === undefined ? {} : camposDoAnexo(d.anexo)),
+          ...(d.repeteTodoMes !== undefined ? { repeteTodoMes: d.repeteTodoMes } : {}),
+          extracao: { ...log, vencimentoInformado: true, categoriaDeclarada: true, centroDeclarado: true } as Prisma.InputJsonValue,
+        },
+      });
+      return false;
+    }
 
     let serie: { serieId?: string; repeteTodoMes?: boolean } = {};
     if (d.repeteTodoMes !== undefined && atual.parcela === null && d.repeteTodoMes !== atual.repeteTodoMes) {
@@ -469,4 +485,18 @@ export async function desfazerPagamento(id: string): Promise<void> {
 
 export function getAnexoContaPagar(id: string) {
   return prisma.contaPagar.findUnique({ where: { id }, select: { anexoBytes: true, anexoMime: true, anexoNome: true } });
+}
+
+/** Rascunhos do agente (WhatsApp/Telegram) que ninguém confirmou: a aba mostra para lançar, editar ou descartar. */
+export async function listarRascunhosConta(): Promise<RascunhoContaVM[]> {
+  const contas = await prisma.contaPagar.findMany({
+    where: { status: "A_CONFIRMAR" },
+    select: { ...SELECT_LISTA, extracao: true },
+    orderBy: { criadoEm: "desc" },
+    take: 50,
+  });
+  return contas.map(({ extracao, ...c }) => {
+    const vencimentoInformado = ((extracao ?? {}) as Prisma.JsonObject).vencimentoInformado !== false;
+    return { ...paraVM(c), vencimentoInformado, faltando: pendenciasDaConta({ ...c, vencimentoInformado }) };
+  });
 }

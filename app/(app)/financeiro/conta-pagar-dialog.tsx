@@ -49,7 +49,7 @@ export function ContaPagarDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
-  const [valorTexto, setValorTexto] = useState(conta ? centavosParaTexto(conta.valorCentavos) : "");
+  const [valorTexto, setValorTexto] = useState(conta && conta.valorCentavos > 0 ? centavosParaTexto(conta.valorCentavos) : "");
   const [vencimento, setVencimento] = useState(conta?.vencimento ?? "");
   const [fornecedor, setFornecedor] = useState(conta?.fornecedor ?? "");
   const [categoriaId, setCategoriaId] = useState(conta?.categoriaId ?? "");
@@ -142,7 +142,9 @@ export function ContaPagarDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] grid-cols-1 overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{conta ? (parcela ? `Editar parcela ${parcela}` : "Editar conta a pagar") : "Nova conta a pagar"}</DialogTitle>
+          <DialogTitle>
+            {!conta ? "Nova conta a pagar" : conta.status === "A_CONFIRMAR" ? "Conferir conta do WhatsApp/Telegram" : parcela ? `Editar parcela ${parcela}` : "Editar conta a pagar"}
+          </DialogTitle>
           <DialogDescription>Boleto, fatura, conta fixa ou parcela. Quando for paga, vira despesa e segue para a conciliação.</DialogDescription>
         </DialogHeader>
 
@@ -275,7 +277,7 @@ export function ContaPagarDialog({
             />
           </div>
 
-          {conta && !conta.parcela && (
+          {conta && !conta.parcela && !conta.totalParcelas && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={repeteTodoMes} onChange={(e) => setRepeteTodoMes(e.target.checked)} className="mt-0.5 size-4 accent-primary" />
               <span>

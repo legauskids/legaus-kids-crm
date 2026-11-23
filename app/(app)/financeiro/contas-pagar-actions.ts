@@ -12,6 +12,8 @@ import {
   marcarContaPaga,
   type AnexoConta,
 } from "@/lib/server/contas-pagar";
+import { confirmarRascunhoConta } from "@/lib/server/conta-agente";
+import { prisma } from "@/lib/db";
 import { MAX_PARCELAS, TAMANHO_MAXIMO_ANEXO_CONTA, mimeAnexoConta } from "@/lib/utils/contas-pagar";
 import { nomeArquivoSeguro } from "@/lib/utils/negocio-arquivos";
 
@@ -133,5 +135,21 @@ export async function desfazerPagamentoAction(id: string): Promise<AcaoContaStat
     return { success: true };
   } catch (erro) {
     return { error: mensagemDeErro(erro, "Não consegui desfazer o pagamento.") };
+  }
+}
+
+/** "Lançar" na tela: o rascunho que veio do WhatsApp/Telegram vira conta aberta (parcelas e conta fixa como no agente). */
+export async function lancarRascunhoContaAction(id: string): Promise<AcaoContaState> {
+  const user = await requireModulo("financeiro");
+  try {
+    const conta = await prisma.contaPagar.findUnique({ where: { id }, select: { status: true, telefoneOrigem: true } });
+    if (conta?.status !== "A_CONFIRMAR") return { error: "Essa conta não está mais esperando confirmação — atualize a tela." };
+    await confirmarRascunhoConta(id, conta.telefoneOrigem ?? `crm:${user.id}`);
+    const depois = await prisma.contaPagar.findUnique({ where: { id }, select: { status: true } });
+    if (depois?.status === "A_CONFIRMAR") return { error: "Ainda falta informar algo (valor, fornecedor, vencimento, categoria ou centro) — edite a conta antes." };
+    revalidar();
+    return { success: true };
+  } catch (erro) {
+    return { error: mensagemDeErro(erro, "Não consegui lançar a conta.") };
   }
 }

@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { centavosParaReais } from "@/lib/utils/money";
 import {
   ROTULO_GRUPO,
+  ROTULO_ORIGEM_CONTA,
   ROTULO_SITUACAO,
   agruparContas,
   centroDaConta,
@@ -26,15 +27,16 @@ import {
   type ContaPagarVM,
   type FiltroContas,
   type GrupoConta,
+  type RascunhoContaVM,
   type SituacaoFiltro,
 } from "@/lib/utils/contas-pagar";
-import { desfazerPagamentoAction, excluirContaPagarAction } from "@/app/(app)/financeiro/contas-pagar-actions";
+import { desfazerPagamentoAction, excluirContaPagarAction, lancarRascunhoContaAction } from "@/app/(app)/financeiro/contas-pagar-actions";
 import { ContaPagarDialog } from "@/app/(app)/financeiro/conta-pagar-dialog";
 import { PagarContaDialog } from "@/app/(app)/financeiro/pagar-conta-dialog";
 import { SeletorCentroDespesa, type CategoriaVM, type CentroGeralVM, type ProjetoDespesaVM } from "@/app/(app)/financeiro/despesa-dialog";
 
 type Soma = { quantidade: number; totalCentavos: number };
-export type ResumoContas = { atrasadas: Soma; hoje: Soma; seteDias: Soma; emAberto: Soma; aConfirmar: number };
+export type ResumoContas = { atrasadas: Soma; hoje: Soma; seteDias: Soma; emAberto: Soma };
 
 const SITUACOES: SituacaoFiltro[] = ["ABERTAS", "PAGAS", "TODAS"];
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -55,6 +57,7 @@ function hrefDoFiltro(f: FiltroContas, base = "/financeiro?aba=contas-pagar") {
  */
 export function ContasPagarTab({
   contas,
+  rascunhos,
   resumo,
   filtro,
   hoje,
@@ -63,6 +66,7 @@ export function ContasPagarTab({
   projetos,
 }: {
   contas: ContaPagarVM[];
+  rascunhos: RascunhoContaVM[];
   resumo: ResumoContas;
   filtro: FiltroContas;
   hoje: string;
@@ -92,6 +96,25 @@ export function ContasPagarTab({
     });
   }
 
+  function lancar(r: RascunhoContaVM) {
+    startTransition(async () => {
+      const res = await lancarRascunhoContaAction(r.id);
+      if (res.error) toast.error(res.error);
+      else toast.success("Conta lançada.");
+      router.refresh();
+    });
+  }
+
+  function descartar(r: RascunhoContaVM) {
+    if (!window.confirm(`Descartar o rascunho${r.fornecedor ? ` de ${r.fornecedor}` : ""}? Nada é lançado.`)) return;
+    startTransition(async () => {
+      const res = await excluirContaPagarAction(r.id);
+      if (res.error) toast.error(res.error);
+      else toast.success("Rascunho descartado.");
+      router.refresh();
+    });
+  }
+
   function desfazer(c: ContaPagarVM) {
     if (!window.confirm(`Voltar a conta ${c.fornecedor} para em aberto? A despesa criada pelo pagamento é apagada; uma despesa que já existia antes só é desligada.`)) return;
     startTransition(async () => {
@@ -110,9 +133,31 @@ export function ContasPagarTab({
           <Numero valor={resumo.hoje} rotulo={`${plural(resumo.hoje.quantidade, "vence", "vencem")} hoje`} className={resumo.hoje.quantidade ? "text-warning" : ""} />
           <Numero valor={resumo.seteDias} rotulo="nos próximos 7 dias" />
           <Numero valor={resumo.emAberto} rotulo={`em aberto (${plural(resumo.emAberto.quantidade, "conta", "contas")})`} />
-          {resumo.aConfirmar > 0 && <p className="text-sm text-muted-foreground">{plural(resumo.aConfirmar, "rascunho", "rascunhos")} do WhatsApp/Telegram a confirmar</p>}
         </CardContent>
       </Card>
+
+      {rascunhos.length > 0 && (
+        <Card className="border-warning/40">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold">A confirmar · {plural(rascunhos.length, "conta veio", "contas vieram")} do WhatsApp/Telegram</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">Ficaram sem resposta na conversa. Confira, edite o que faltar e lance — ou descarte.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y">
+              {rascunhos.map((r) => (
+                <LinhaRascunho
+                  key={r.id}
+                  rascunho={r}
+                  pending={pending}
+                  onLancar={() => lancar(r)}
+                  onEditar={() => setEditando(r.vencimentoInformado ? r : { ...r, vencimento: "" })}
+                  onDescartar={() => descartar(r)}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
@@ -425,6 +470,57 @@ function LinhaConta({
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LinhaRascunho({
+  rascunho: r,
+  pending,
+  onLancar,
+  onEditar,
+  onDescartar,
+}: {
+  rascunho: RascunhoContaVM;
+  pending: boolean;
+  onLancar: () => void;
+  onEditar: () => void;
+  onDescartar: () => void;
+}) {
+  const detalhes = [
+    r.vencimentoInformado ? `vence ${dataBR(r.vencimento)}` : "sem vencimento",
+    r.categoriaNome ?? "sem categoria",
+    centroDaConta(r),
+    r.totalParcelas ? `${r.totalParcelas} parcelas` : null,
+    r.repeteTodoMes ? "todo mês" : null,
+    `${ROTULO_ORIGEM_CONTA[r.origem]} · ${r.registradaPorNome}`,
+  ].filter(Boolean);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+      <div className="min-w-0">
+        <p className="break-words font-medium text-foreground">{r.fornecedor || "Sem fornecedor"}</p>
+        <p className="text-xs text-muted-foreground">{detalhes.join(" · ")}</p>
+        {r.faltando.length > 0 && <p className="text-xs font-medium text-warning">Falta: {r.faltando.join(", ")}</p>}
+        {r.temAnexo && (
+          <a href={`/api/contas-pagar/${r.id}/anexo`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+            <Paperclip className="size-3" />
+            Ver boleto
+          </a>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="mr-1 font-bold tabular-nums">{r.valorCentavos > 0 ? centavosParaReais(r.valorCentavos) : "valor?"}</span>
+        <Button size="sm" disabled={pending || r.faltando.length > 0} onClick={onLancar} title={r.faltando.length ? "Edite o que falta antes" : "Lançar a conta"}>
+          <Check className="size-3.5" />
+          Lançar
+        </Button>
+        <Button variant="ghost" size="icon-sm" title="Editar" disabled={pending} onClick={onEditar}>
+          <Pencil className="size-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon-sm" title="Descartar" disabled={pending} onClick={onDescartar}>
+          <X className="size-3.5" />
+        </Button>
       </div>
     </div>
   );

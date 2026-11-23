@@ -4,6 +4,7 @@ import { Prisma, type ContaBancaria } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { criarDespesa } from "@/lib/server/despesas";
 import { carregarCadastrosDespesa, pedirConfirmacao, type RespostaDespesa } from "@/lib/server/despesa-agente";
+import { perguntarPagamentoDaDespesa } from "@/lib/server/conta-pagamento";
 import { diaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { dataDaDespesa, ROTULO_CONTA } from "@/lib/utils/despesas";
 import { botoesDeParecida, montarDespesaDaMensagem, negociosParecidos } from "@/lib/utils/despesa-agente";
@@ -215,6 +216,10 @@ async function avisoDeSaida(
 
   const meio = lido.meio === "PIX" ? "Pix" : "Pagamento";
   const intro = `🔔 *${ROTULO_CONTA[conta]}* · ${meio} de *${reais(lido.valorCentavos)}* para ${lido.contraparte ?? "?"} (${quando(dataHora)}).`;
+  // Com o valor de uma conta a pagar aberta (2026-11-23): pergunta primeiro se
+  // é o pagamento dela; "Não é" segue para a confirmação normal da despesa.
+  const pagamento = parecida ? null : await perguntarPagamentoDaDespesa(despesa.id, identificador);
+  if (pagamento) return { mensagem: `${intro}\n\n${pagamento.mensagem}`, botoes: pagamento.botoes };
   if (parecida) {
     const diaParecida = diaBrasilia(parecida.data).split("-").reverse().slice(0, 2).join("/");
     return {
