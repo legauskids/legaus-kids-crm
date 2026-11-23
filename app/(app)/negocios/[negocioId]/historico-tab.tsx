@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
   iniciarArquivoNegocioAction,
   registrarArquivosNegocioAction,
 } from "@/app/(app)/negocios/[negocioId]/arquivos-actions";
+import { AnexarOrcamentoDialog } from "@/app/(app)/negocios/[negocioId]/anexar-orcamento-dialog";
 import {
   MAX_ARQUIVOS_POR_ENVIO,
   TAMANHO_MAXIMO_ARQUIVO_NEGOCIO,
@@ -30,6 +32,7 @@ type Atividade = {
   criadoEm: Date;
   autor: { nome: string } | null;
   arquivos: ArquivoNegocioVM[];
+  orcamento: { id: string; numero: number } | null;
 };
 
 const TIPO_LABEL: Record<string, string> = {
@@ -37,6 +40,7 @@ const TIPO_LABEL: Record<string, string> = {
   WHATSAPP: "WhatsApp",
   SISTEMA: "Sistema",
   ARQUIVO: "Arquivo",
+  ORCAMENTO: "Orçamento",
 };
 
 function IconeDoArquivo({ mime, nome }: { mime: string; nome: string }) {
@@ -207,6 +211,7 @@ export function HistoricoTab({ negocioId, atividades }: { negocioId: string; ati
                   adicionar(escolhidos);
                 }}
               />
+              <AnexarOrcamentoDialog negocioId={negocioId} disabled={pending} />
               {arquivos.length === 0 && (
                 <span className="text-xs text-muted-foreground">
                   Qualquer tipo, até {TAMANHO_MAXIMO_ARQUIVO_NEGOCIO / (1024 * 1024)} MB cada. Pode arrastar para cá.
@@ -229,6 +234,22 @@ export function HistoricoTab({ negocioId, atividades }: { negocioId: string; ati
                 </span>
               </div>
               {atividade.texto && <p className="mt-1 text-sm">{atividade.texto}</p>}
+              {atividade.orcamento && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <Link href={`/orcamentos/${atividade.orcamento.id}`} className="inline-flex items-center gap-1.5 text-primary hover:underline">
+                    <FileText className="size-4 shrink-0" />
+                    Abrir orçamento nº {String(atividade.orcamento.numero).padStart(4, "0")}
+                  </Link>
+                  <a
+                    href={`/api/pdf/orcamento/${atividade.orcamento.id}?ver=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    Ver PDF
+                  </a>
+                </div>
+              )}
               {atividade.arquivos.length > 0 && (
                 <ul className="mt-1.5 space-y-1">
                   {atividade.arquivos.map((a) => (

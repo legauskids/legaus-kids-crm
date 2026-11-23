@@ -46,6 +46,8 @@ enum TipoAtividade {
   SISTEMA
   // Arquivo(s) anexado(s) ao negócio, com nota opcional — ver NegocioArquivo.
   ARQUIVO
+  // Orçamento anexado ao negócio — ver Atividade.orcamentoId.
+  ORCAMENTO
 }
 
 enum StatusTarefa {
@@ -380,6 +382,7 @@ model Negocio {
   avisosBancarios     AvisoBancario[]
   postagens           Postagem[]
   arquivos            NegocioArquivo[]
+  orcamentos          Orcamento[]
 
   @@index([contatoId])
 }
@@ -542,6 +545,13 @@ model Atividade {
   autor     User?            @relation(fields: [autorId], references: [id])
   criadoEm  DateTime         @default(now())
   arquivos  NegocioArquivo[]
+
+  // Orçamento anexado (tipo ORCAMENTO): link vivo, abre o orçamento e o PDF
+  // como estão hoje. Orçamento apagado deixa só o texto.
+  orcamentoId String?
+  orcamento   Orcamento? @relation(fields: [orcamentoId], references: [id], onDelete: SetNull)
+
+  @@index([orcamentoId])
 }
 
 // Arquivos anexados ao negócio (pedido de 2026-11-18): qualquer tipo, até
@@ -651,14 +661,23 @@ model Orcamento {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  // Negócio do orçamento (pedido de 2026-11-23), escolhido no editor ou pelo
+  // "Anexar orçamento" do negócio. Vincular põe uma Atividade ORCAMENTO no
+  // histórico dele; no Ganho, o pós-venda nasce com os orçamentos do negócio
+  // de venda no histórico (lib/server/orcamento-negocio.ts).
+  negocioId String?
+  negocio   Negocio? @relation(fields: [negocioId], references: [id], onDelete: SetNull)
+
   itens        OrcamentoItem[]
   notasFiscais NotaFiscal[]
+  atividades   Atividade[]
 
   apresentacao        ApresentacaoOrcamento?
   imagensApresentacao ApresentacaoImagem[]
   anexos              OrcamentoAnexo[]
 
   @@index([contatoId])
+  @@index([negocioId])
 }
 
 // Imagens anexas ao orçamento (pedido de 2026-11-11): saem em página(s) depois

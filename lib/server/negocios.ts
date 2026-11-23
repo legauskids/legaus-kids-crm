@@ -72,6 +72,7 @@ export function getNegocioDetalhado(negocioId: string) {
         include: {
           autor: true,
           arquivos: { select: { id: true, nome: true, mime: true, tamanho: true }, orderBy: { criadoEm: "asc" } },
+          orcamento: { select: { id: true, numero: true } },
         },
         orderBy: { criadoEm: "desc" },
       },

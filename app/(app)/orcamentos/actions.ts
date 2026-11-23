@@ -11,6 +11,8 @@ import {
   garantirTokenPublico,
   type SalvarOrcamentoInput,
 } from "@/lib/server/orcamentos";
+import { negocioParaVincular } from "@/lib/server/orcamento-negocio";
+import { prisma } from "@/lib/db";
 import { criarContato } from "@/lib/server/contatos";
 import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
 import { enviarEmail, emailConfigurado } from "@/lib/server/email";
@@ -43,6 +45,7 @@ export async function salvarOrcamentoAction(input: {
   observacoes?: string;
   descontoReais?: number;
   validadeDias?: number;
+  negocioId?: string | null;
   itens: { produtoId?: string | null; nome: string; descricao?: string | null; quantidade: number; valorUnitarioReais: number }[];
 }): Promise<{ id: string } | { error: string }> {
   const user = await requireUser();
@@ -53,6 +56,15 @@ export async function salvarOrcamentoAction(input: {
   if (input.itens.some((i) => !i.nome.trim())) {
     return { error: "Todo item precisa de um nome." };
   }
+  // Negócio novo tem que existir e não estar excluído; o que já era dele passa.
+  if (input.negocioId) {
+    const atual = input.orcamentoId
+      ? (await prisma.orcamento.findUnique({ where: { id: input.orcamentoId }, select: { negocioId: true } }))?.negocioId
+      : null;
+    if (input.negocioId !== atual && !(await negocioParaVincular(input.negocioId))) {
+      return { error: "Esse negócio não existe mais — escolha outro." };
+    }
+  }
 
   const payload: SalvarOrcamentoInput = {
     orcamentoId: input.orcamentoId,
@@ -61,6 +73,7 @@ export async function salvarOrcamentoAction(input: {
     observacoes: input.observacoes || null,
     descontoCentavos: input.descontoReais ? reaisParaCentavos(input.descontoReais) : 0,
     validadeDias: input.validadeDias ?? 15,
+    negocioId: input.negocioId === undefined ? undefined : input.negocioId || null,
     itens: input.itens.map((i) => ({
       produtoId: i.produtoId || null,
       nome: i.nome,
@@ -73,6 +86,7 @@ export async function salvarOrcamentoAction(input: {
   const orcamento = await salvarOrcamento(payload);
   revalidatePath("/orcamentos");
   revalidatePath(`/orcamentos/${orcamento.id}`);
+  if (orcamento.negocioId) revalidatePath(`/negocios/${orcamento.negocioId}`);
   return { id: orcamento.id };
 }
 

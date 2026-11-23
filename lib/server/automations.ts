@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { URL_BASE } from "@/lib/constants/app";
 import { gerarContrato } from "@/lib/server/contratos";
+import { anexarOrcamentosNoPosVenda } from "@/lib/server/orcamento-negocio";
 import type { ChaveEmpresaEmissora } from "@/lib/constants/empresa";
 import type { DadosContrato } from "@/lib/utils/contrato";
 import { SUFIXO_POS_VENDA } from "@/lib/utils/negocio-pos-venda";
@@ -179,6 +180,8 @@ async function handleNegocioGanho(
       },
     ],
   });
+  // Pedido de 2026-11-23: o pós-venda nasce com o orçamento em anexo.
+  await anexarOrcamentosNoPosVenda(tx, negocioOriginal.id, negocioPosVenda.id);
   return { contratoId };
 }
 

@@ -66,14 +66,14 @@ export function SeletorCliente({
       }}
     >
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" role="combobox" aria-expanded={aberto} className="h-auto min-h-9 w-full min-w-0 justify-between py-1.5 font-normal">
+        <Button type="button" variant="outline" role="combobox" aria-expanded={aberto} className="h-auto min-h-9 w-full min-w-0 shrink justify-between py-1.5 font-normal">
           {escolhido ? (
             <span className="min-w-0 text-left">
               <span className="block truncate">{escolhido.nome}</span>
               {detalhes(escolhido) && <span className="block truncate text-xs text-muted-foreground">{detalhes(escolhido)}</span>}
             </span>
           ) : (
-            <span className="text-muted-foreground">Buscar cliente por nome, CPF ou CNPJ</span>
+            <span className="min-w-0 truncate text-muted-foreground">Buscar cliente por nome, CPF ou CNPJ</span>
           )}
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </Button>

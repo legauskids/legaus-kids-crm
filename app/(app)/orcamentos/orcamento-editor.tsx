@@ -13,12 +13,17 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, UserPlus } from "lucide-react";
 import { centavosParaReais } from "@/lib/utils/money";
 import { AdicionarProdutoDialog, type ProdutoParaEscolha } from "@/app/(app)/orcamentos/adicionar-produto-dialog";
 import { salvarOrcamentoAction, criarClienteRapidoAction } from "@/app/(app)/orcamentos/actions";
 import { SeletorCliente } from "@/app/(app)/orcamentos/seletor-cliente";
 import type { ClienteBuscavel } from "@/lib/utils/busca-cliente";
+import type { NegocioParaOrcamento } from "@/lib/server/orcamento-negocio";
+
+// Valor do "Nenhum" no campo Negócio (o Select não aceita valor vazio).
+const SEM_NEGOCIO = "nenhum";
 
 type ItemEditavel = {
   chave: string;
@@ -35,6 +40,7 @@ export type ContatoParaEscolha = ClienteBuscavel;
 export type OrcamentoParaEditar = {
   id: string;
   contatoId: string | null;
+  negocioId: string | null;
   observacoes: string | null;
   descontoCentavos: number;
   validadeDias: number;
@@ -58,16 +64,22 @@ export function OrcamentoEditor({
   orcamento,
   contatos,
   produtos,
+  negocios,
+  inicial,
 }: {
   orcamento?: OrcamentoParaEditar;
   contatos: ContatoParaEscolha[];
   produtos: ProdutoParaEscolha[];
+  negocios: NegocioParaOrcamento[];
+  /** Orçamento novo aberto de dentro de um negócio (/orcamentos/novo?negocio=). */
+  inicial?: { contatoId: string | null; negocioId: string };
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
 
-  const [contatoId, setContatoId] = useState<string>(orcamento?.contatoId ?? "");
+  const [contatoId, setContatoId] = useState<string>(orcamento?.contatoId ?? inicial?.contatoId ?? "");
+  const [negocioId, setNegocioId] = useState<string>(orcamento?.negocioId ?? inicial?.negocioId ?? "");
   const [listaContatos, setListaContatos] = useState(contatos);
   const [itens, setItens] = useState<ItemEditavel[]>(
     orcamento?.itens.map((i) => ({
@@ -137,11 +149,27 @@ export function OrcamentoEditor({
         ...atual,
         { id: resultado.id, nome: resultado.nome, empresa: null, razaoSocial: null, cnpj: null, cpf: null, telefone: novoClienteTelefone.replace(/\D/g, "") || null, tipo: "CLIENTE" },
       ]);
-      setContatoId(resultado.id);
+      trocarCliente(resultado.id);
       setNovoClienteAberto(false);
       setNovoClienteNome("");
       setNovoClienteTelefone("");
     });
+  }
+
+  // Negócio (pedido de 2026-11-23): com cliente escolhido, só os negócios dele
+  // (e o já escolhido); escolher um negócio sem cliente traz o cliente dele.
+  const negocioEscolhido = negocios.find((n) => n.id === negocioId) ?? null;
+  const negociosVisiveis = contatoId ? negocios.filter((n) => n.contatoId === contatoId || n.id === negocioId) : negocios;
+
+  function trocarCliente(id: string) {
+    setContatoId(id);
+    if (negocioEscolhido?.contatoId && negocioEscolhido.contatoId !== id) setNegocioId("");
+  }
+
+  function trocarNegocio(id: string) {
+    setNegocioId(id);
+    const negocio = negocios.find((n) => n.id === id);
+    if (!contatoId && negocio?.contatoId && listaContatos.some((c) => c.id === negocio.contatoId)) setContatoId(negocio.contatoId);
   }
 
   function salvar() {
@@ -154,6 +182,7 @@ export function OrcamentoEditor({
       const resultado = await salvarOrcamentoAction({
         orcamentoId: orcamento?.id,
         contatoId: contatoId || null,
+        negocioId: negocioId || null,
         observacoes,
         descontoReais,
         validadeDias,
@@ -183,7 +212,7 @@ export function OrcamentoEditor({
             <SeletorCliente
               clientes={listaContatos}
               valor={contatoId}
-              onChange={setContatoId}
+              onChange={trocarCliente}
               onNovoCliente={(termo) => {
                 // Digitou um nome: já vem preenchido no cadastro rápido (CPF/CNPJ se completa em Cadastros).
                 if (!/^[\d\s./()+-]+$/.test(termo)) setNovoClienteNome(termo);
@@ -194,6 +223,28 @@ export function OrcamentoEditor({
               <UserPlus className="size-4" />
             </Button>
           </div>
+        </div>
+        <div className="min-w-0 space-y-2">
+          <Label htmlFor="negocio-orcamento">Negócio (opcional)</Label>
+          <Select value={negocioId || SEM_NEGOCIO} onValueChange={(v) => trocarNegocio(v === SEM_NEGOCIO ? "" : v)}>
+            <SelectTrigger id="negocio-orcamento" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SEM_NEGOCIO}>Nenhum</SelectItem>
+              {negociosVisiveis.map((n) => (
+                <SelectItem key={n.id} value={n.id}>
+                  {n.titulo}
+                  {!contatoId && n.cliente ? ` · ${n.cliente}` : ""} · {n.etapa}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {contatoId && negociosVisiveis.length === 0
+              ? "Esse cliente não tem negócio em andamento."
+              : "O orçamento fica no histórico do negócio e, no Ganho, vai junto para o pós-venda."}
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="validade">Validade (dias)</Label>
