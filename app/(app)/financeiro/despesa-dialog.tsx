@@ -37,16 +37,19 @@ export function SeletorCentroDespesa({
   centrosGerais,
   projetos,
   className,
+  rotuloVazio = "Escolha...",
 }: {
   valor: string;
   onChange: (valor: string) => void;
   centrosGerais: CentroGeralVM[];
   projetos: ProjetoDespesaVM[];
   className?: string;
+  /** Texto da opção sem centro (nos filtros: "Todos"). */
+  rotuloVazio?: string;
 }) {
   return (
     <select value={valor} onChange={(e) => onChange(e.target.value)} className={cn("h-9 rounded-md border bg-background px-2 text-sm", className)}>
-      <option value="">Escolha...</option>
+      <option value="">{rotuloVazio}</option>
       <optgroup label="Centros gerais">
         {centrosGerais.map((c) => (
           <option key={c.id} value={`g:${c.id}`}>

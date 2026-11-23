@@ -27,6 +27,9 @@ import { listDespesas, listNegociosParaDespesa, resumoDespesas } from "@/lib/ser
 import { filtroDaUrl, type FiltroDespesas } from "@/lib/utils/despesas";
 import { diaBrasilia, inicioDoDiaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { DespesasTab } from "@/app/(app)/financeiro/despesas-tab";
+import { ContasPagarTab } from "@/app/(app)/financeiro/contas-pagar-tab";
+import { listarContasPagar, resumoContasPagar } from "@/lib/server/contas-pagar";
+import { filtroContasDaUrl, type FiltroContas } from "@/lib/utils/contas-pagar";
 import { getDashboardFinanceiro, resolverPeriodoFinanceiro } from "@/lib/server/resultado-financeiro";
 import { sugerirCentroCusto } from "@/lib/utils/centro-custo";
 import { negociosDosAvisos } from "@/lib/server/push-bancario";
@@ -38,6 +41,7 @@ const ABAS = [
   { id: "visao-geral", label: "Visão geral", href: "/financeiro" },
   { id: "dashboard", label: "Dashboard financeiro", href: "/financeiro?aba=dashboard" },
   { id: "despesas", label: "Despesas", href: "/financeiro?aba=despesas" },
+  { id: "contas-pagar", label: "Contas a pagar", href: "/financeiro?aba=contas-pagar" },
   { id: "conciliacao", label: "Conciliação bancária", href: "/financeiro?aba=conciliacao" },
   { id: "centros-custo", label: "Categorias e centros", href: "/financeiro?aba=centros-custo" },
   { id: "contratos", label: "Contratos", href: "/financeiro?aba=contratos" },
@@ -48,10 +52,24 @@ const ABAS = [
 export default async function FinanceiroPage({
   searchParams,
 }: {
-  searchParams: Promise<{ aba?: string; resolvidos?: string; filtroDespesa?: string; mes?: string; ano?: string }>;
+  searchParams: Promise<{
+    aba?: string;
+    resolvidos?: string;
+    filtroDespesa?: string;
+    mes?: string;
+    ano?: string;
+    // Contas a pagar (lib/utils/contas-pagar.ts → filtroContasDaUrl).
+    situacao?: string;
+    de?: string;
+    ate?: string;
+    categoria?: string;
+    centro?: string;
+    fornecedor?: string;
+  }>;
 }) {
   await requireModulo("financeiro");
-  const { aba, resolvidos, filtroDespesa, mes, ano } = await searchParams;
+  const parametros = await searchParams;
+  const { aba, resolvidos, filtroDespesa, mes, ano } = parametros;
   const abaAtual = ABAS.find((a) => a.id === aba)?.id ?? "visao-geral";
 
   return (
@@ -59,7 +77,7 @@ export default async function FinanceiroPage({
       <div className="border-b bg-card px-6 py-3.5 shadow-xs">
         <h1 className="text-xl font-bold tracking-tight text-foreground">Financeiro</h1>
         <p className="text-sm text-muted-foreground">
-          Resultado de caixa por projeto e centro de custo, despesas, faturamento, conciliação bancária, contratos e notas fiscais.
+          Resultado de caixa por projeto e centro de custo, despesas, contas a pagar, faturamento, conciliação bancária, contratos e notas fiscais.
         </p>
         <div className="mt-3 flex flex-wrap gap-1">
           {ABAS.map((a) => (
@@ -79,6 +97,7 @@ export default async function FinanceiroPage({
 
       {abaAtual === "dashboard" && <DashboardFinanceiroTabData mes={mes} ano={ano} />}
       {abaAtual === "despesas" && <DespesasTabData filtro={filtroDaUrl(filtroDespesa)} />}
+      {abaAtual === "contas-pagar" && <ContasPagarTabData filtro={filtroContasDaUrl(parametros)} />}
       {abaAtual === "conciliacao" && <ConciliacaoTabData resolvidosTodos={resolvidos === "todos"} />}
       {abaAtual === "centros-custo" && <CentrosCustoTabData />}
       {abaAtual === "contratos" && <ContratosTabData />}
@@ -159,6 +178,29 @@ async function DespesasTabData({ filtro }: { filtro: FiltroDespesas }) {
         registradaPorNome: d.registradaPor.nome,
         contaBancaria: d.avisosBancarios[0]?.conta ?? null,
       }))}
+    />
+  );
+}
+
+async function ContasPagarTabData({ filtro }: { filtro: FiltroContas }) {
+  const hoje = diaBrasilia(new Date());
+  // listarContasPagar cria antes os meses que faltam das contas fixas — o resumo vem depois para já contar com eles.
+  const contas = await listarContasPagar(filtro);
+  const [resumo, categorias, centrosGerais, negocios] = await Promise.all([
+    resumoContasPagar(hoje),
+    listCentrosCusto(),
+    listCentrosGerais(),
+    listNegociosParaDespesa(),
+  ]);
+  return (
+    <ContasPagarTab
+      contas={contas}
+      resumo={resumo}
+      filtro={filtro}
+      hoje={hoje}
+      categorias={categorias.filter((c) => c.tipo === "DESPESA").map((c) => ({ id: c.id, nome: c.nome, centroGeralPadraoId: c.centroGeralPadraoId }))}
+      centrosGerais={centrosGerais.map((g) => ({ id: g.id, nome: g.nome }))}
+      projetos={negocios.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null }))}
     />
   );
 }

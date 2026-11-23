@@ -102,29 +102,30 @@ model User {
   canaisAgente Json     @default("{}")
   createdAt    DateTime @default(now())
 
-  conversasAtendidas    Conversa[]                  @relation("AtendenteConversa")
-  negociosResponsavel   Negocio[]                   @relation("ResponsavelNegocio")
-  tarefasResponsavel    Tarefa[]                    @relation("ResponsavelTarefa")
-  tarefasSolicitadas    Tarefa[]                    @relation("SolicitanteTarefa")
-  lembretes             Lembrete[]
-  respostasRapidas      RespostaRapida[]
-  notasInternas         NotaInterna[]
-  mensagensEnviadas     Mensagem[]
-  atividades            Atividade[]
-  orcamentos            Orcamento[]                 @relation("ResponsavelOrcamento")
-  comandosAgente        ComandoAgente[]
-  postagens             Postagem[]
-  cotacoes              Cotacao[]
-  negociosExcluidos     Negocio[]                   @relation("ExclusorNegocio")
-  notasFiscaisCriadas   NotaFiscal[]                @relation("CriadorNotaFiscal")
-  extratosImportados    ExtratoBancarioImportacao[] @relation("ImportadorExtrato")
-  transacoesConciliadas TransacaoBancaria[]         @relation("ConciliadorTransacao")
-  simulacoesFinanceiras SimulacaoFinanceira[]       @relation("CriadorSimulacao")
-  reunioesCriadas       Reuniao[]                   @relation("CriadorReuniao")
-  opinioesPauta         OpiniaoPauta[]
-  compromissos          CompromissoUsuario[]
-  despesasRegistradas   Despesa[]                   @relation("RegistradorDespesa")
-  paresRejeitados       ParRejeitado[]              @relation("RejeitadorPar")
+  conversasAtendidas     Conversa[]                  @relation("AtendenteConversa")
+  negociosResponsavel    Negocio[]                   @relation("ResponsavelNegocio")
+  tarefasResponsavel     Tarefa[]                    @relation("ResponsavelTarefa")
+  tarefasSolicitadas     Tarefa[]                    @relation("SolicitanteTarefa")
+  lembretes              Lembrete[]
+  respostasRapidas       RespostaRapida[]
+  notasInternas          NotaInterna[]
+  mensagensEnviadas      Mensagem[]
+  atividades             Atividade[]
+  orcamentos             Orcamento[]                 @relation("ResponsavelOrcamento")
+  comandosAgente         ComandoAgente[]
+  postagens              Postagem[]
+  cotacoes               Cotacao[]
+  negociosExcluidos      Negocio[]                   @relation("ExclusorNegocio")
+  notasFiscaisCriadas    NotaFiscal[]                @relation("CriadorNotaFiscal")
+  extratosImportados     ExtratoBancarioImportacao[] @relation("ImportadorExtrato")
+  transacoesConciliadas  TransacaoBancaria[]         @relation("ConciliadorTransacao")
+  simulacoesFinanceiras  SimulacaoFinanceira[]       @relation("CriadorSimulacao")
+  reunioesCriadas        Reuniao[]                   @relation("CriadorReuniao")
+  opinioesPauta          OpiniaoPauta[]
+  compromissos           CompromissoUsuario[]
+  despesasRegistradas    Despesa[]                   @relation("RegistradorDespesa")
+  paresRejeitados        ParRejeitado[]              @relation("RejeitadorPar")
+  contasPagarRegistradas ContaPagar[]                @relation("RegistradorContaPagar")
 }
 
 enum OrigemComando {
@@ -383,6 +384,7 @@ model Negocio {
   postagens           Postagem[]
   arquivos            NegocioArquivo[]
   orcamentos          Orcamento[]
+  contasPagar         ContaPagar[]
 
   @@index([contatoId])
 }
@@ -1086,8 +1088,9 @@ model CentroCusto {
   centroGeralPadrao   CentroGeral?    @relation(fields: [centroGeralPadraoId], references: [id])
   criadoEm            DateTime        @default(now())
 
-  rateios  RateioTransacao[]
-  despesas Despesa[]
+  rateios     RateioTransacao[]
+  despesas    Despesa[]
+  contasPagar ContaPagar[]
 }
 
 // Centro de custo geral (Veículos, Produção, Instalação, Administrativo,
@@ -1103,6 +1106,7 @@ model CentroGeral {
   despesas         Despesa[]
   categoriasPadrao CentroCusto[]
   rateios          RateioTransacao[]
+  contasPagar      ContaPagar[]
 }
 
 enum StatusDespesa {
@@ -1165,9 +1169,84 @@ model Despesa {
   atualizadoEm    DateTime           @updatedAt
   paresRejeitados ParRejeitado[]
   avisosBancarios AvisoBancario[]
+  contaPagar      ContaPagar?
 
   @@index([status, data])
   @@index([valorCentavos])
+  @@index([negocioId])
+}
+
+enum StatusContaPagar {
+  // Rascunho do agente (WhatsApp/Telegram) esperando confirmação.
+  A_CONFIRMAR
+  ABERTA
+  PAGA
+  // Mês tirado de uma conta fixa: fica guardado só para a repetição não
+  // criar o mesmo mês de novo; não aparece em lista nem em total.
+  CANCELADA
+}
+
+enum OrigemContaPagar {
+  MANUAL
+  // Foto ou PDF do boleto/fatura mandado pelo WhatsApp ou Telegram.
+  ARQUIVO
+  TEXTO
+  AUDIO
+  // Mês novo de uma conta fixa, criado sozinho.
+  FIXA
+}
+
+// Conta a pagar: boleto, fatura (inclusive do cartão), conta fixa do mês ou
+// parcela — o que ainda vai ser pago, com vencimento. Paga, vira uma Despesa
+// aguardando conciliação (despesaId) e segue o caminho de sempre. Série
+// (serieId): as parcelas de uma compra ou os meses de uma conta fixa; na
+// fixa, o mês seguinte nasce copiando o último da série (repeteTodoMes vale
+// para a série inteira). Centro = um CentroGeral OU um projeto, como na
+// Despesa. vencimento/pagaEm: meio-dia de Brasília do dia, igual
+// Despesa.data. Pedido de 2026-11-23.
+model ContaPagar {
+  id              String           @id @default(cuid())
+  vencimento      DateTime
+  valorCentavos   Int
+  fornecedor      String
+  descricao       String?
+  categoriaId     String?
+  categoria       CentroCusto?     @relation(fields: [categoriaId], references: [id])
+  centroGeralId   String?
+  centroGeral     CentroGeral?     @relation(fields: [centroGeralId], references: [id])
+  negocioId       String?
+  negocio         Negocio?         @relation(fields: [negocioId], references: [id])
+  status          StatusContaPagar @default(ABERTA)
+  origem          OrigemContaPagar @default(MANUAL)
+  // Linha digitável, código de barras ou Pix copia-e-cola.
+  codigoPagamento String?
+  serieId         String?
+  parcela         Int?
+  totalParcelas   Int?
+  repeteTodoMes   Boolean          @default(false)
+  // Dia do vencimento da conta fixa (31 vira o último dia nos meses curtos).
+  diaVencimento   Int?
+  // Foto ou PDF do boleto/fatura.
+  anexoBytes      Bytes?
+  anexoMime       String?
+  anexoNome       String?
+  // Mensagem/transcrição, JSON da IA e conversa de origem (agente).
+  textoOriginal   String?
+  extracao        Json?
+  telefoneOrigem  String?
+  registradaPorId String
+  registradaPor   User             @relation("RegistradorContaPagar", fields: [registradaPorId], references: [id])
+  pagaEm          DateTime?
+  despesaId       String?          @unique
+  despesa         Despesa?         @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+  // true: a despesa nasceu do "Marcar como paga" (desfazer apaga); false: era
+  // uma despesa já registrada que foi ligada (desfazer só desliga).
+  despesaCriada   Boolean          @default(false)
+  criadoEm        DateTime         @default(now())
+  atualizadoEm    DateTime         @updatedAt
+
+  @@unique([serieId, vencimento])
+  @@index([status, vencimento])
   @@index([negocioId])
 }
 
