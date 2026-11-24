@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { lerBotao } from "./agente-canal";
 import {
   botoesCotacaoSalva,
+  cidadeEUf,
   dataDaCotacao,
   idadeDaCotacao,
   itensDaExtracao,
@@ -72,6 +73,21 @@ describe("itens, título e fornecedor", () => {
     expect(mesmoFornecedor("Madeireira São José", "Madeireira Sao Jose ME")).toBe(true);
     expect(mesmoFornecedor("Casa do Piso", "Casa do Parafuso")).toBe(false);
     expect(mesmoFornecedor("Sul", "Borrachas Sul")).toBe(false);
+    expect(mesmoFornecedor("Borrachas Sul", "Borrachas Sul Filial Ijuí")).toBe(true);
+    expect(mesmoFornecedor("Piso Facil Ltda", "Super Piso Fácil")).toBe(false);
+    expect(mesmoFornecedor("PISO FACIL LTDA", "Piso Fácil")).toBe(true);
+    expect(mesmoFornecedor("Madeireira", "Madeireira Pinheiro")).toBe(false);
+  });
+});
+
+describe("cidade e UF do fornecedor", () => {
+  it("separa quando dá", () => {
+    expect(cidadeEUf("Cascavel - PR")).toEqual({ cidade: "Cascavel", uf: "PR" });
+    expect(cidadeEUf("Ijuí/rs")).toEqual({ cidade: "Ijuí", uf: "RS" });
+    expect(cidadeEUf("Santa Maria, RS")).toEqual({ cidade: "Santa Maria", uf: "RS" });
+    expect(cidadeEUf("Ijuí")).toEqual({ cidade: "Ijuí", uf: null });
+    expect(cidadeEUf("Vila Xy - ZZ")).toEqual({ cidade: "Vila Xy - ZZ", uf: null });
+    expect(cidadeEUf("  ")).toEqual({ cidade: null, uf: null });
   });
 });
 
@@ -136,6 +152,7 @@ describe("mensagem e botão", () => {
     expect(m).toContain("🚚 Frete: FOB · ⏱️ Prazo: 15 dias · 🧾 IPI incluso");
     expect(m).toContain("🏗️ Obra: Playground Arco-Íris");
     expect(m).toContain("⚠️ Não achei a obra X.");
+    expect(m).toContain("📂 Está em Cadastros → Cotações de fornecedores.");
     // Não pode parecer resumo de despesa (a trava do agente forçaria registrar_despesa).
     expect(/para confirmar|confirme na enquete|✅ registrad|corrigi, confere|💸/i.test(m)).toBe(false);
   });

@@ -299,6 +299,18 @@ const PROPRIEDADES_COTACAO = {
   itens: { type: "array", description: "Todos os itens cotados, na ordem do documento.", items: { type: "object", properties: PROPRIEDADES_ITEM_COTACAO, required: ["descricao"] } },
 };
 
+/** Foto, PDF ou arquivo desta mensagem, pra guardar com a cotação (a foto não sobra pra virar foto de produto). */
+function anexosDaMensagem(ctx: CtxFerramenta): AnexoCotacao[] {
+  const anexos: AnexoCotacao[] = [];
+  if (ctx.anexoImagem) {
+    anexos.push({ bytes: ctx.anexoImagem.bytes, mime: ctx.anexoImagem.mimetype, nome: `cotacao.${ctx.anexoImagem.mimetype.split("/")[1] ?? "jpg"}` });
+    ctx.imagemConsumida = true;
+  }
+  if (ctx.anexoPdf) anexos.push({ bytes: ctx.anexoPdf.bytes, mime: "application/pdf", nome: ctx.anexoPdf.nomeArquivo });
+  if (ctx.anexoArquivo) anexos.push({ bytes: ctx.anexoArquivo.bytes, mime: ctx.anexoArquivo.mimetype, nome: ctx.anexoArquivo.nomeArquivo });
+  return anexos;
+}
+
 /** Número que o modelo às vezes manda como texto ("89,90"). */
 function numeroDoModelo(v: unknown): number | null {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -2692,18 +2704,20 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "registrar_cotacao_fornecedor",
     description:
-      "Salva uma COTAÇÃO DE FORNECEDOR — orçamento, cotação, proposta comercial ou tabela de preços que um fornecedor mandou pra Legaus COMPRAR (foto, print ou PDF), ou ditada ('cotei com a X o piso 15mm a 89 o m²'). Uma chamada por documento, com TODOS os itens e preços exatamente como vieram (não some IPI nem frete, não calcule nada). Salva direto, sem pedir confirmação; a resposta da ferramenta vai direto pro usuário. Vários prints seguidos do mesmo fornecedor juntam sozinhos na mesma cotação.",
-    input_schema: { type: "object", properties: PROPRIEDADES_COTACAO },
+      "Salva uma COTAÇÃO DE FORNECEDOR — orçamento, cotação, proposta comercial ou tabela de preços que um fornecedor mandou pra Legaus COMPRAR (foto, print ou PDF), ou ditada ('cotei com a X o piso 15mm a 89 o m²'). Uma chamada por documento: dois PDFs são duas cotações, mesmo do mesmo fornecedor. Todos os itens e preços exatamente como vieram (não some IPI nem frete, não calcule nada). Salva direto, sem pedir confirmação, cadastra o fornecedor se for novo, e a resposta da ferramenta vai direto pro usuário. Use só o documento DESTA mensagem ou o que foi ditado: se pedirem pra salvar um arquivo que não veio nesta mensagem, não chame — peça pra mandar o arquivo de novo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        ...PROPRIEDADES_COTACAO,
+        juntarComAnterior: {
+          type: "boolean",
+          description: "true SÓ quando esta foto/print for outra página da mesma cotação que acabou de ser salva nesta conversa (continuação). Outro PDF ou outro orçamento = false.",
+        },
+      },
+    },
     respostaDireta: true,
     async executar(args, ctx) {
-      const anexos: AnexoCotacao[] = [];
-      if (ctx.anexoImagem) {
-        anexos.push({ bytes: ctx.anexoImagem.bytes, mime: ctx.anexoImagem.mimetype, nome: `cotacao.${ctx.anexoImagem.mimetype.split("/")[1] ?? "jpg"}` });
-        // A foto fica com a cotação: não sobra pra virar foto de produto.
-        ctx.imagemConsumida = true;
-      }
-      if (ctx.anexoPdf) anexos.push({ bytes: ctx.anexoPdf.bytes, mime: "application/pdf", nome: ctx.anexoPdf.nomeArquivo });
-      if (ctx.anexoArquivo) anexos.push({ bytes: ctx.anexoArquivo.bytes, mime: ctx.anexoArquivo.mimetype, nome: ctx.anexoArquivo.nomeArquivo });
+      const anexos = anexosDaMensagem(ctx);
       const identificador = ctx.identificador ?? `crm:${ctx.usuarioId}`;
       const r = await registrarCotacaoDaMensagem({
         extracao: extracaoCotacaoDosArgs(args),
@@ -2712,6 +2726,7 @@ const FERRAMENTAS: Ferramenta[] = [
         identificador,
         usuarioId: ctx.usuarioId,
         anexos,
+        juntarComAnterior: args.juntarComAnterior === true,
       });
       const noTelegram = canalDoIdentificador(identificador) === "telegram";
       return { mensagem: r.mensagem, botoes: r.cotacaoId && noTelegram ? botoesCotacaoSalva(r.cotacaoId) : undefined, cotacaoId: r.cotacaoId };
@@ -2720,7 +2735,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "corrigir_cotacao_fornecedor",
     description:
-      "Corrige uma cotação de fornecedor salva nesta conversa (a última, ou a nº informada) quando a pessoa disser o que mudar: 'o preço do piso é 89,90', 'a validade é 15 dias', 'o fornecedor é a Borrachas Sul', 'tira o item 3', 'faltou a cola a 45 o galão', 'é pra obra do Arco-Íris'. Itens pelo número que aparece no resumo (1, 2, 3…). Passe só o que muda. A resposta vai direto pro usuário.",
+      "Corrige uma cotação de fornecedor salva nesta conversa (a última, ou a nº informada) quando a pessoa disser o que mudar: 'o preço do piso é 89,90', 'a validade é 15 dias', 'o fornecedor é a Borrachas Sul', 'tira o item 3', 'faltou a cola a 45 o galão', 'é pra obra do Arco-Íris'. Itens pelo número que aparece no resumo (1, 2, 3…). Passe só o que muda. Arquivo mandado junto com 'anexa na cotação 3' / 'esse é o PDF da cotação 3' fica guardado nela (use esta ferramenta, não registrar). A resposta vai direto pro usuário.",
     input_schema: {
       type: "object",
       properties: {
@@ -2736,13 +2751,14 @@ const FERRAMENTAS: Ferramenta[] = [
     },
     respostaDireta: true,
     async executar(args, ctx) {
-      const r = await corrigirCotacaoDaConversa({ identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`, correcao: extracaoCotacaoDosArgs(args), texto: ctx.textoMensagem ?? "" });
+      const r = await corrigirCotacaoDaConversa({ identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`, correcao: extracaoCotacaoDosArgs(args), texto: ctx.textoMensagem ?? "", anexos: anexosDaMensagem(ctx) });
       return { mensagem: r.mensagem };
     },
   },
   {
     name: "apagar_cotacao_fornecedor",
-    description: "Apaga uma cotação de fornecedor salva nesta conversa no último dia ('apaga essa cotação', 'desfaz', 'salvou errado'). A resposta vai direto pro usuário. Outras cotações só pela tela (Cadastros → Cotações de fornecedores).",
+    description:
+      "Apaga uma cotação de fornecedor salva nesta conversa no último dia — SÓ quando a pessoa pedir pra apagar ('apaga essa cotação', 'desfaz', 'não era cotação'). Pra separar, refazer, trocar ou juntar, NÃO apague (o arquivo se perde): corrija com corrigir_cotacao_fornecedor, ou peça pra mandar o arquivo de novo. A resposta vai direto pro usuário. Outras cotações só pela tela (Cadastros → Cotações de fornecedores).",
     input_schema: { type: "object", properties: { numero: { type: "number", description: "Nº da cotação, se a pessoa disser; senão a última desta conversa." } } },
     respostaDireta: true,
     async executar(args, ctx) {
@@ -2822,7 +2838,7 @@ Regras:
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
 - Contas a pagar: boleto, fatura (inclusive do cartão de crédito), carnê ou conta que AINDA VAI SER PAGA, com vencimento — foto/PDF de boleto ou fatura sem comprovante de pagamento, ou "tenho que pagar", "vence dia 10", "lança a conta de luz", "comprei parcelado em 3x", "o aluguel é todo dia 5" — é registrar_conta_pagar, não despesa. Comprovante de pagamento ou "paguei" continua sendo registrar_despesa (se o valor bater com uma conta aberta, a ferramenta já pergunta se é o pagamento dela). Se houver conta esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela, use corrigir_conta_pagar. Perguntas sobre contas a pagar ("o que vence essa semana?", "tem boleto atrasado?") → listar_contas_pagar; no WhatsApp ela não existe (consulta financeira é só no Telegram e no CRM, decisão do Marcos): diga isso e que dá pra ver em Financeiro → Contas a pagar. Igual à despesa: nunca escreva você mesmo o resumo de uma conta nem diga que lançou sem ter chamado a ferramenta.
-- Cotações de fornecedores: orçamento, cotação, proposta comercial ou tabela de preços que um FORNECEDOR mandou pra Legaus comprar (foto, print ou PDF, com ou sem texto), ou ditada ("cotei com a X o piso 15mm a 89 o m²", "guarda essa cotação") → registrar_cotacao_fornecedor, salvando todos os itens e preços como vieram. Não é despesa (nada foi pago), não é conta a pagar (não tem boleto nem vencimento de pagamento) e não é orçamento da Legaus Kids pra cliente (esse tem o logo/dados da Legaus como emitente). Correção ou "apaga essa cotação" logo depois → corrigir_cotacao_fornecedor / apagar_cotacao_fornecedor. "Busque nas cotações…", "quem cotou…", "menor preço de…", "quanto o fornecedor X cobrou…" → buscar_cotacoes_fornecedores. A calculadora de custo/margem (buscar_cotacoes) é outra coisa. Nunca escreva você mesmo o resumo de uma cotação salva sem ter chamado a ferramenta.
+- Cotações de fornecedores: orçamento, cotação, proposta comercial ou tabela de preços que um FORNECEDOR mandou pra Legaus comprar (foto, print ou PDF, com ou sem texto), ou ditada ("cotei com a X o piso 15mm a 89 o m²", "guarda essa cotação") → registrar_cotacao_fornecedor, salvando todos os itens e preços como vieram — cada documento é uma cotação (dois PDFs = duas cotações). Não é despesa (nada foi pago), não é conta a pagar (não tem boleto nem vencimento de pagamento) e não é orçamento da Legaus Kids pra cliente (esse tem o logo/dados da Legaus como emitente). Correção, ou arquivo pra anexar numa cotação já salva, → corrigir_cotacao_fornecedor; apagar_cotacao_fornecedor só quando pedirem pra apagar (nunca pra separar ou refazer). "Busque nas cotações…", "quem cotou…", "menor preço de…", "quanto o fornecedor X cobrou…" → buscar_cotacoes_fornecedores. A calculadora de custo/margem (buscar_cotacoes) é outra coisa. Nunca escreva você mesmo o resumo de uma cotação salva sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 

@@ -1,14 +1,15 @@
 import "server-only";
 import type { OrigemCotacaoFornecedor, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { buscarClientesPorTelefone, buscarNegociosSimilarIds } from "@/lib/server/busca-similar";
+import { buscarNegociosSimilarIds } from "@/lib/server/busca-similar";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 import { dataDaDespesa } from "@/lib/utils/despesas";
 import { PARTE_ARQUIVO_NEGOCIO, mimeSeguro, nomeArquivoSeguro, totalDePartes } from "@/lib/utils/negocio-arquivos";
 import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
-import { telefonePadraoBR } from "@/lib/utils/telefone";
+import { mesmoTelefone, telefonePadraoBR } from "@/lib/utils/telefone";
 import {
   campoDeTexto,
+  cidadeEUf,
   dataDaCotacao,
   idadeDaCotacao,
   itensDaExtracao,
@@ -29,7 +30,7 @@ import {
 // chat do CRM) a cotação é salva direto, sem confirmar (decisão do Marcos), e
 // se corrige ou apaga depois.
 
-/** Fotos/prints/PDF da mesma cotação mandados em sequência: juntam na mesma, se for o mesmo fornecedor. */
+/** Outra página (foto/print) da cotação que acabou de ser salva: junta na mesma, se o agente disser que é continuação. */
 const JANELA_JUNTAR_MS = 30 * 60 * 1000;
 /** O agente só corrige ou apaga cotação salva na mesma conversa, até 1 dia depois (o resto, na tela). */
 const JANELA_CONVERSA_MS = 24 * 60 * 60 * 1000;
@@ -41,43 +42,77 @@ function soDigitos(valor: string | null | undefined): string {
   return (valor ?? "").replace(/\D/g, "");
 }
 
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** Trava do cadastro de fornecedor (pg_advisory_xact_lock): uma mensagem de cada vez. */
+const TRAVA_FORNECEDOR = 724_100_001;
+
+const CAMPOS_FORNECEDOR = { id: true, nome: true, tipo: true, cnpj: true, razaoSocial: true, telefone: true, email: true, cidade: true, uf: true } as const;
+
+async function acharFornecedor(tx: Tx, busca: { nome: string; cnpj: string; telefone: string | null }) {
+  if (busca.cnpj.length === 14) {
+    const [porCnpj] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Contato" WHERE regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') = ${busca.cnpj} ORDER BY "createdAt" LIMIT 1
+    `;
+    if (porCnpj) return tx.contato.findUniqueOrThrow({ where: { id: porCnpj.id }, select: CAMPOS_FORNECEDOR });
+  }
+  if (busca.telefone) {
+    const candidatos = await tx.contato.findMany({ where: { telefone: { endsWith: busca.telefone.slice(-8) } }, select: CAMPOS_FORNECEDOR });
+    const porTelefone = candidatos.find((c) => c.telefone && mesmoTelefone(c.telefone, busca.telefone!));
+    if (porTelefone) return porTelefone;
+  }
+  const fornecedores = await tx.contato.findMany({ where: { tipo: "FORNECEDOR" }, orderBy: { createdAt: "asc" }, select: { ...CAMPOS_FORNECEDOR, empresa: true } });
+  return fornecedores.find((c) => [c.nome, c.empresa, c.razaoSocial].some((n) => n && mesmoFornecedor(n, busca.nome))) ?? null;
+}
+
 /**
- * Fornecedor do cadastro: pelo CNPJ, pelo telefone ou pelo nome (entre os
- * Fornecedores). Não achou: cria um Contato FORNECEDOR com o que veio.
+ * Fornecedor da cotação no cadastro (padrão pedido pelo Marcos em 24/11):
+ * acha pelo CNPJ, pelo telefone ou pelo nome; achou, completa só o que estiver
+ * vazio (e contato sem tipo vira Fornecedor — cliente fica como está); não
+ * achou, cadastra. Com trava: dois PDFs do mesmo fornecedor chegando juntos
+ * (o Telegram processa ao mesmo tempo) não cadastram duas vezes.
  */
 async function vincularFornecedor(f: ExtracaoCotacao["fornecedor"]): Promise<{ id: string; nome: string; novo: boolean } | null> {
   const nome = campoDeTexto(f?.nome);
   if (!nome) return null;
   const cnpj = soDigitos(f?.cnpj);
-  if (cnpj.length === 14) {
-    const [porCnpj] = await prisma.$queryRaw<{ id: string; nome: string }[]>`
-      SELECT id, nome FROM "Contato" WHERE regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') = ${cnpj} LIMIT 1
-    `;
-    if (porCnpj) return { ...porCnpj, novo: false };
-  }
   const telefone = soDigitos(f?.telefone).length >= 10 ? telefonePadraoBR(f!.telefone!) : null;
-  if (telefone) {
-    const [porTelefone] = await buscarClientesPorTelefone(telefone, 1);
-    if (porTelefone) return { id: porTelefone.id, nome: porTelefone.nome, novo: false };
-  }
-  const fornecedores = await prisma.contato.findMany({ where: { tipo: "FORNECEDOR" }, select: { id: true, nome: true, empresa: true, razaoSocial: true } });
-  const porNome = fornecedores.find((c) => [c.nome, c.empresa, c.razaoSocial].some((n) => n && mesmoFornecedor(n, nome)));
-  if (porNome) return { id: porNome.id, nome: porNome.nome, novo: false };
-
-  const criado = await prisma.contato.create({
-    data: {
-      nome,
-      tipo: "FORNECEDOR",
-      razaoSocial: cnpj.length === 14 ? nome : null,
-      cnpj: cnpj.length === 14 ? cnpj : null,
-      email: campoDeTexto(f?.email),
-      cidade: campoDeTexto(f?.cidade),
-      // telefone é único no cadastro: só se ninguém tiver (ver busca acima).
-      telefone,
-    },
-    select: { id: true, nome: true },
+  const local = cidadeEUf(campoDeTexto(f?.cidade));
+  const email = campoDeTexto(f?.email);
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${TRAVA_FORNECEDOR})`;
+    const achado = await acharFornecedor(tx, { nome, cnpj, telefone });
+    if (achado) {
+      if (achado.tipo !== "CLIENTE") {
+        const completar: Prisma.ContatoUpdateInput = {
+          ...(achado.tipo === "CONTATO" ? { tipo: "FORNECEDOR" } : {}),
+          ...(!achado.cnpj && cnpj.length === 14 ? { cnpj } : {}),
+          ...(!achado.razaoSocial && cnpj.length === 14 ? { razaoSocial: nome } : {}),
+          ...(!achado.email && email ? { email } : {}),
+          ...(!achado.cidade && local.cidade ? { cidade: local.cidade } : {}),
+          ...(!achado.uf && local.uf ? { uf: local.uf } : {}),
+          // Telefone é único: só se ninguém mais tiver (a busca acima já procurou).
+          ...(!achado.telefone && telefone ? { telefone } : {}),
+        };
+        if (Object.keys(completar).length) await tx.contato.update({ where: { id: achado.id }, data: completar });
+      }
+      return { id: achado.id, nome: achado.nome, novo: false };
+    }
+    const criado = await tx.contato.create({
+      data: {
+        nome,
+        tipo: "FORNECEDOR",
+        razaoSocial: cnpj.length === 14 ? nome : null,
+        cnpj: cnpj.length === 14 ? cnpj : null,
+        email,
+        cidade: local.cidade,
+        uf: local.uf,
+        telefone,
+      },
+      select: { id: true, nome: true },
+    });
+    return { ...criado, novo: true };
   });
-  return { ...criado, novo: true };
 }
 
 /** Negócio/obra pelo nome; só liga se achar um (o pós-venda ganha do de venda — mesmo projeto). */
@@ -164,9 +199,11 @@ function chaveItem(i: Pick<ItemCotacao, "descricao" | "precoUnitarioCentavos">):
 export type ResultadoCotacao = { mensagem: string; cotacaoId: string | null };
 
 /**
- * Salva a cotação que o modelo leu (foto, print, PDF, texto ou áudio). Foto
- * seguinte do mesmo fornecedor, na mesma conversa, em até 30 min, junta na
- * mesma cotação (cotação em vários prints).
+ * Salva a cotação que o modelo leu (foto, print, PDF, texto ou áudio). Cada
+ * documento é uma cotação: só junta na anterior (mesma conversa, mesmo
+ * fornecedor, até 30 min) quando o agente disser que é continuação — outra
+ * página/print da mesma. Juntar sozinho misturou dois PDFs diferentes da
+ * Piso Fácil (SBR e EPDM) em 24/11.
  */
 export async function registrarCotacaoDaMensagem(input: {
   extracao: ExtracaoCotacao;
@@ -175,6 +212,7 @@ export async function registrarCotacaoDaMensagem(input: {
   identificador: string;
   usuarioId: string;
   anexos: AnexoCotacao[];
+  juntarComAnterior?: boolean;
   agora?: Date;
 }): Promise<ResultadoCotacao> {
   const agora = input.agora ?? new Date();
@@ -186,11 +224,13 @@ export async function registrarCotacaoDaMensagem(input: {
     return { mensagem: "Não entendi produtos nem preços nessa cotação. Mande a foto, o print ou o PDF, ou diga o fornecedor, o produto e o preço.", cotacaoId: null };
   }
 
-  const anterior = await prisma.cotacaoFornecedor.findFirst({
-    where: { telefoneOrigem: input.identificador, criadoEm: { gte: new Date(agora.getTime() - JANELA_JUNTAR_MS) } },
-    orderBy: { criadoEm: "desc" },
-    select: { id: true, fornecedorNome: true, validade: true, frete: true, prazoEntrega: true, pagamento: true, impostos: true, observacoes: true, totalCentavos: true, extracao: true, itens: { select: { descricao: true, precoUnitarioCentavos: true, ordem: true } } },
-  });
+  const anterior = input.juntarComAnterior
+    ? await prisma.cotacaoFornecedor.findFirst({
+        where: { telefoneOrigem: input.identificador, criadoEm: { gte: new Date(agora.getTime() - JANELA_JUNTAR_MS) } },
+        orderBy: { criadoEm: "desc" },
+        select: { id: true, fornecedorNome: true, validade: true, frete: true, prazoEntrega: true, pagamento: true, impostos: true, observacoes: true, totalCentavos: true, extracao: true, itens: { select: { descricao: true, precoUnitarioCentavos: true, ordem: true } } },
+      })
+    : null;
   if (anterior && (!nomeLido || mesmoFornecedor(anterior.fornecedorNome, nomeLido))) {
     const jaTem = new Set(anterior.itens.map(chaveItem));
     const novos = itens.filter((i) => !jaTem.has(chaveItem(i)));
@@ -294,7 +334,7 @@ export type CorrecaoCotacao = Omit<ExtracaoCotacao, "itens"> & {
 };
 
 /** "O piso é 89,90", "a validade é 15 dias", "o fornecedor é a Borrachas Sul", "é da obra X". */
-export async function corrigirCotacaoDaConversa(input: { identificador: string; correcao: CorrecaoCotacao; texto: string }): Promise<ResultadoCotacao> {
+export async function corrigirCotacaoDaConversa(input: { identificador: string; correcao: CorrecaoCotacao; texto: string; anexos?: AnexoCotacao[] }): Promise<ResultadoCotacao> {
   const c = input.correcao;
   const alvo = await cotacaoDaConversa(input.identificador, c.numero);
   if (!alvo) {
@@ -383,8 +423,13 @@ export async function corrigirCotacaoDaConversa(input: { identificador: string; 
       data: { titulo: tituloDaCotacao(atual.fornecedorNome, campoDeTexto(c.resumo) ?? (typeof resumoLido === "string" ? resumoLido : null), atual.itens, diaBrasilia(atual.data)) },
     });
   });
+  // "Anexa esse PDF na cotação 3": o arquivo desta mensagem vai pra cotação.
+  const anexos = input.anexos ?? [];
+  avisos.push(...(await guardarArquivos(alvo.id, anexos)));
+  const soArquivo = anexos.length > 0 && !c.alterarItens?.length && !c.novosItens?.length && Object.keys(dados).every((k) => k === "extracao");
   const r = await resumo(alvo.id, fornecedorNovo);
-  return { mensagem: mensagemCotacaoSalva(r, { avisos }).replace(/^✅ Cotação de fornecedor salva — nº (\d+)/, "✏️ Corrigi a cotação de fornecedor nº $1:"), cotacaoId: alvo.id };
+  const titulo = soArquivo ? `📎 Guardei o arquivo na cotação de fornecedor nº ${r.numero}:` : `✏️ Corrigi a cotação de fornecedor nº ${r.numero}:`;
+  return { mensagem: mensagemCotacaoSalva(r, { avisos }).replace(/^✅ Cotação de fornecedor salva — nº \d+/, titulo), cotacaoId: alvo.id };
 }
 
 /** Apaga a cotação (com itens e arquivos) — pelo agente, só a salva nesta conversa no último dia. */

@@ -152,14 +152,29 @@ export function nomeDeEmpresaComparavel(nome: string): string {
     .trim();
 }
 
-/** O mesmo fornecedor pelo nome: igual, ou um contém o outro (com pelo menos 5 letras). */
+const UFS = new Set("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" "));
+
+/** "Cascavel - PR", "Ijuí/RS", "Ijuí, RS" → cidade e UF separadas (pro cadastro do fornecedor). */
+export function cidadeEUf(texto: string | null | undefined): { cidade: string | null; uf: string | null } {
+  const limpo = texto?.replace(/\s+/g, " ").trim();
+  if (!limpo) return { cidade: null, uf: null };
+  const m = limpo.match(/^(.*?)\s*[-/,–]\s*([A-Za-z]{2})$/);
+  if (m && UFS.has(m[2].toUpperCase()) && m[1].trim()) return { cidade: m[1].trim(), uf: m[2].toUpperCase() };
+  return { cidade: limpo, uf: null };
+}
+
+/**
+ * O mesmo fornecedor pelo nome: igual (sem Ltda, Comércio…), ou o nome mais
+ * longo começa pelo mais curto, de 2 palavras ou mais ("Borrachas Sul" =
+ * "Borrachas Sul Filial Ijuí"). "Super Piso Fácil" não é "Piso Fácil".
+ */
 export function mesmoFornecedor(a: string, b: string): boolean {
   const x = nomeDeEmpresaComparavel(a);
   const y = nomeDeEmpresaComparavel(b);
   if (!x || !y) return false;
   if (x === y) return true;
   const [curto, longo] = x.length <= y.length ? [x, y] : [y, x];
-  return curto.length >= 5 && ` ${longo} `.includes(` ${curto} `);
+  return curto.split(" ").length >= 2 && `${longo} `.startsWith(`${curto} `);
 }
 
 // Busca por produto. Medida junta ("15 mm" = "15mm", "50 x 50" = "50x50",
@@ -290,6 +305,7 @@ export function mensagemCotacaoSalva(c: ResumoCotacao, opcoes: { juntou?: boolea
   if (c.negocio) linhas.push(`🏗️ Obra: ${c.negocio}`);
   if (c.arquivos) linhas.push(`📎 ${c.arquivos === 1 ? "1 arquivo guardado" : `${c.arquivos} arquivos guardados`}`);
   for (const aviso of opcoes.avisos ?? []) linhas.push(`⚠️ ${aviso}`);
+  linhas.push("📂 Está em Cadastros → Cotações de fornecedores.");
   linhas.push("", 'Se algo estiver errado, me diga o que corrigir (ou "apaga essa cotação").');
   return linhas.join("\n");
 }

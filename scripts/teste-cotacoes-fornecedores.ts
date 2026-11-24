@@ -42,7 +42,7 @@ async function main() {
     // 1. PDF de fornecedor novo: salva direto, cria o fornecedor, guarda o arquivo em partes
     const r1 = await registrarCotacaoDaMensagem({
       extracao: {
-        fornecedor: { nome: `${MARCA} Borrachas Sul Ltda`, cnpj, cidade: "Ijuí" },
+        fornecedor: { nome: `${MARCA} Borrachas Sul Ltda`, cnpj, cidade: "Ijuí - RS" },
         dataTexto: "20/11/2026",
         validadeTexto: "Validade: 10 dias",
         resumo: "Piso emborrachado 15 e 20mm",
@@ -64,7 +64,7 @@ async function main() {
     const c1 = await prisma.cotacaoFornecedor.findUniqueOrThrow({ where: { id: r1.cotacaoId! }, include: { itens: { orderBy: { ordem: "asc" } }, arquivos: true, fornecedor: true } });
     if (c1.fornecedorId) contatosCriados.push(c1.fornecedorId);
     ok(c1.titulo === `${MARCA} Borrachas Sul Ltda · Piso emborrachado 15 e 20mm · nov/2026`, `nome fácil: ${c1.titulo}`);
-    ok(c1.fornecedor?.tipo === "FORNECEDOR" && c1.fornecedor.cnpj === cnpj && c1.fornecedor.cidade === "Ijuí", "fornecedor novo no cadastro, com CNPJ e cidade");
+    ok(c1.fornecedor?.tipo === "FORNECEDOR" && c1.fornecedor.cnpj === cnpj && c1.fornecedor.cidade === "Ijuí" && c1.fornecedor.uf === "RS", "fornecedor novo no cadastro, com CNPJ, cidade e UF");
     ok(c1.itens.length === 2 && c1.itens[0].precoUnitarioCentavos === 8990 && c1.itens[0].quantidade === 120 && c1.itens[1].totalCentavos === null, "itens como vieram");
     ok(c1.data.toISOString().startsWith("2026-11-20") && c1.validade?.toISOString().startsWith("2026-11-30"), "data e validade (10 dias)");
     ok(c1.frete === "FOB" && c1.impostos === "IPI incluso" && c1.totalCentavos === 1078800 && !c1.negocioId, "condições; obra não achada fica sem");
@@ -73,8 +73,21 @@ async function main() {
     const partes = await Promise.all([0, 1, 2].map((i) => lerParteArquivoCotacao(c1.arquivos[0].id, i)));
     ok(arq?.partesTotal === 3 && Buffer.concat(partes.map((p) => Buffer.from(p!))).equals(grande), "arquivo de 7 MB em 3 partes, igual ao original");
 
-    // 2. Print seguinte do mesmo fornecedor: junta na mesma (item repetido não duplica)
+    // 2. Outro PDF do mesmo fornecedor: cotação separada (juntar sozinho misturou SBR e EPDM em 24/11)
+    const separado = await registrarCotacaoDaMensagem({
+      extracao: { fornecedor: { nome: `${MARCA} Borrachas Sul` }, itens: [{ descricao: "Piso EPDM 30mm", unidade: "m²", precoUnitario: 720 }] },
+      texto: "",
+      origem: "ARQUIVO",
+      identificador: tg,
+      usuarioId: marcos.id,
+      anexos: [{ bytes: Buffer.from("%PDF epdm"), mime: "application/pdf", nome: "epdm.pdf" }],
+    });
+    ok(separado.cotacaoId && separado.cotacaoId !== r1.cotacaoId && separado.mensagem.startsWith("✅ Cotação de fornecedor salva"), "outro PDF do mesmo fornecedor: cotação separada");
+    await prisma.cotacaoFornecedor.delete({ where: { id: separado.cotacaoId! } });
+
+    // 2b. Outra página (print) da mesma cotação, com juntarComAnterior: junta (item repetido não duplica)
     const r2 = await registrarCotacaoDaMensagem({
+      juntarComAnterior: true,
       extracao: {
         fornecedor: { nome: `${MARCA} BORRACHAS SUL` },
         itens: [
@@ -126,14 +139,43 @@ async function main() {
     const vencida = nossos.find((i) => i.numero === c1.numero);
     ok(vencida?.validade === "2026-11-30" && vencida.arquivoIds.length === 2, "item com validade e os arquivos da cotação");
 
+    // 4b. Cadastro do fornecedor como padrão: dois ao mesmo tempo não duplicam; completa o vazio; contato sem tipo vira fornecedor; cliente não muda
+    const juntos = await Promise.all(
+      [1, 2].map((n) =>
+        registrarCotacaoDaMensagem({
+          extracao: { fornecedor: { nome: `${MARCA} Piso Facil Ltda`, cidade: "Cascavel/PR" }, itens: [{ descricao: `Piso SBR ${n}`, precoUnitario: 420 }] },
+          texto: "",
+          origem: "ARQUIVO",
+          identificador: `${tg}juntos`,
+          usuarioId: marcos.id,
+          anexos: [],
+        }),
+      ),
+    );
+    const pisoFacil = await prisma.contato.findMany({ where: { nome: { startsWith: `${MARCA} Piso Facil` } } });
+    ok(juntos[0].cotacaoId !== juntos[1].cotacaoId && pisoFacil.length === 1 && pisoFacil[0].uf === "PR", `dois PDFs ao mesmo tempo: 2 cotações, 1 fornecedor (${pisoFacil.length})`);
+    const telContato = `55559${String(Date.now()).slice(-8)}`;
+    const semTipo = await prisma.contato.create({ data: { nome: `${MARCA} Vendedor Zé`, telefone: telContato } });
+    const cliente = await prisma.contato.create({ data: { nome: `${MARCA} Escola Cliente`, tipo: "CLIENTE", cnpj: `88${String(Date.now()).slice(-12)}` } });
+    await registrarCotacaoDaMensagem({ extracao: { fornecedor: { nome: `${MARCA} Tintas Zé`, telefone: telContato, email: "ze@tintas.com" }, itens: [{ descricao: "Tinta", precoUnitario: 50 }] }, texto: "", origem: "TEXTO", identificador: `${tg}juntos`, usuarioId: marcos.id, anexos: [] });
+    const promovido = await prisma.contato.findUniqueOrThrow({ where: { id: semTipo.id } });
+    ok(promovido.tipo === "FORNECEDOR" && promovido.email === "ze@tintas.com" && promovido.nome === `${MARCA} Vendedor Zé`, "contato sem tipo achado pelo telefone vira fornecedor e ganha o e-mail (nome fica)");
+    await registrarCotacaoDaMensagem({ extracao: { fornecedor: { nome: `${MARCA} Qualquer`, cnpj: cliente.cnpj!, cidade: "Ijuí - RS" }, itens: [{ descricao: "X", precoUnitario: 1 }] }, texto: "", origem: "TEXTO", identificador: `${tg}juntos`, usuarioId: marcos.id, anexos: [] });
+    const clienteDepois = await prisma.contato.findUniqueOrThrow({ where: { id: cliente.id } });
+    ok(clienteDepois.tipo === "CLIENTE" && !clienteDepois.cidade, "cliente achado pelo CNPJ não muda");
+
     // 5. Corrigir pela conversa: preço, remover item, item novo, validade
     const corr = await corrigirCotacaoDaConversa({
       identificador: tg,
       texto: "o piso 20mm é 105, tira a cola e faltou o rodapé",
       correcao: { alterarItens: [{ item: 2, precoUnitario: 105 }, { item: 3, remover: true }], novosItens: [{ descricao: "Rodapé de borracha 1m", unidade: "un", precoUnitario: 32 }], validadeTexto: "15 dias" },
+      anexos: [{ bytes: Buffer.from("%PDF anexo"), mime: "application/pdf", nome: "pagina3.pdf" }],
     });
+    ok((await prisma.cotacaoFornecedorArquivo.count({ where: { cotacaoId: r1.cotacaoId! } })) === 3 && corr.mensagem.includes("📎 3 arquivos"), "arquivo mandado na correção fica na cotação");
     const c5 = await prisma.cotacaoFornecedor.findUniqueOrThrow({ where: { id: r1.cotacaoId! }, include: { itens: { orderBy: { ordem: "asc" } } } });
     ok(corr.mensagem.startsWith(`✏️ Corrigi a cotação de fornecedor nº ${c1.numero}:`), "resposta da correção");
+    const soAnexo = await corrigirCotacaoDaConversa({ identificador: tg, texto: "anexa na cotação", correcao: {}, anexos: [{ bytes: Buffer.from("%PDF 4"), mime: "application/pdf", nome: "p4.pdf" }] });
+    ok(soAnexo.mensagem.startsWith(`📎 Guardei o arquivo na cotação de fornecedor nº ${c1.numero}:`), "só anexar: resposta própria");
     ok(c5.itens.map((i) => `${i.descricao.split(" ")[0]}:${i.precoUnitarioCentavos}`).join() === "Piso:8990,Piso:10500,Rodapé:3200", `itens corrigidos: ${c5.itens.map((i) => i.descricao).join(" | ")}`);
     ok(c5.validade?.toISOString().startsWith("2026-12-05"), "validade corrigida (15 dias da cotação)");
     ok(c5.itens[1].totalCentavos === null && c5.itens[0].totalCentavos === 1078800, "item sem quantidade não ganha total; o outro fica");
@@ -174,10 +216,12 @@ async function main() {
 
     // 8. Tela: a lista traz o que sobrou, mais recente primeiro
     const lista = (await listarCotacoesFornecedores()).filter((c) => c.fornecedorNome.startsWith(MARCA) || c.itens.some((i) => i.descricao.startsWith(MARCA)));
-    ok(lista.length === 3 && lista.every((c) => !("bytes" in c)), `lista da aba: ${lista.length} cotações`);
+    ok(lista.length === 7 && lista.every((c) => !("bytes" in c)), `lista da aba: ${lista.length} cotações`);
   } finally {
-    const cotacoes = await prisma.cotacaoFornecedor.deleteMany({ where: { telefoneOrigem: { in: [tg, wa, `${wa}9`, `${tg}soma`] } } });
+    const cotacoes = await prisma.cotacaoFornecedor.deleteMany({ where: { telefoneOrigem: { in: [tg, wa, `${wa}9`, `${tg}soma`, `${tg}juntos`] } } });
     const contatos = await prisma.contato.deleteMany({ where: { OR: [{ id: { in: contatosCriados } }, { nome: { startsWith: MARCA } }] } });
+    // A numeração volta pra seguir a última que sobrou (o teste não deixa buraco nos números).
+    await prisma.$executeRaw`SELECT setval(pg_get_serial_sequence('"CotacaoFornecedor"', 'numero'), COALESCE((SELECT MAX(numero) FROM "CotacaoFornecedor"), 1), (SELECT COUNT(*) > 0 FROM "CotacaoFornecedor"))`;
     const depois = { contatos: await prisma.contato.count(), cotacoes: await prisma.cotacaoFornecedor.count() };
     console.log(`limpeza: ${cotacoes.count} cotações, ${contatos.count} fornecedores; depois:`, depois);
     ok(depois.contatos === antes.contatos && depois.cotacoes === antes.cotacoes, "contagens voltaram ao que eram");
