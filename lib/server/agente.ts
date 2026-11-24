@@ -83,6 +83,7 @@ import {
   descreverRascunhoConta,
   responderBotaoConta,
 } from "@/lib/server/conta-agente";
+import { responderBotaoPaguei } from "@/lib/server/conta-pagamento";
 import { listarContasPagar } from "@/lib/server/contas-pagar";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 import { pareceRespostaDeConta, type ExtracaoConta } from "@/lib/utils/conta-agente";
@@ -3369,6 +3370,14 @@ export async function processarBotaoAgente(input: { identificador: string; usuar
       return { resposta: "Combinado, não fiz nada." };
     }
     return executarPendente(pendente, input);
+  }
+
+  // "Já paguei" do aviso diário: não é de uma conversa, então confere o acesso ao Financeiro.
+  if (pedido.tipo === "paguei" || pedido.tipo === "paguei-ligar") {
+    const usuario = await prisma.user.findUnique({ where: { id: input.usuarioId }, select: { isAdmin: true, permissoes: true } });
+    if (!usuario || !moduloPermitido(usuario, "financeiro")) return { resposta: "Você não tem acesso ao Financeiro." };
+    const r = await responderBotaoPaguei(pedido, input.usuarioId);
+    return { resposta: r.mensagem, botoes: r.botoes };
   }
 
   const r =

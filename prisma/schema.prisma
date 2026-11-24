@@ -1250,6 +1250,29 @@ model ContaPagar {
   @@index([negocioId])
 }
 
+enum TurnoAvisoConta {
+  // 8h: atrasadas + vencem hoje + próximos 3 dias.
+  MANHA
+  // 17h: as que vencem hoje e ainda estão em aberto.
+  TARDE
+}
+
+// Aviso diário das contas a pagar já mandado (pedido de 2026-11-23): uma
+// linha por dia, turno e canal ("telegram" ou "whatsapp:<telefone>"), para o
+// relógio, que chama a cada minuto, não mandar de novo. Envio que falhou
+// apaga a linha e é tentado de novo no minuto seguinte, dentro da janela.
+// contas = 0: não havia nada para avisar e nada foi mandado.
+model AvisoContasPagar {
+  id        String          @id @default(cuid())
+  dia       String
+  turno     TurnoAvisoConta
+  canal     String
+  contas    Int             @default(0)
+  enviadoEm DateTime        @default(now())
+
+  @@unique([dia, turno, canal])
+}
+
 // Pedaço (total ou parcial) de um lançamento do extrato atribuído a UM
 // destino: um projeto (negocioId) OU uma categoria (centroCustoId) —
 // exatamente um dos dois (validado em lib/server/conciliacao-bancaria.ts).

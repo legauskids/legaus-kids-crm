@@ -37,6 +37,11 @@ export const LIMITE_DADOS_BOTAO = 64;
  *   cpg:<contaId>:<centroGeralId>     escolhe o centro geral
  *   pg:<contaId>:<despesaId>          o pagamento (despesa) é dessa conta: ligar
  *   pn:<despesaId>                    não é pagamento de conta
+ * "Já paguei" do aviso diário (2026-11-24):
+ *   jp:<contaId>                      já paguei (pergunta se é uma despesa já registrada)
+ *   jh:<contaId>                      registrar o pagamento de hoje
+ *   jl:<contaId>:<despesaId>          o pagamento é essa despesa já registrada: ligar
+ *   ju:<contaId>                      desfazer o pagamento
  */
 export type PedidoBotao =
   | { tipo: "despesa"; acao: "ok" | "co" | "x" | "ng" | "vc" | "vg" | "re" | "u" | "ou"; despesaId: string }
@@ -50,7 +55,9 @@ export type PedidoBotao =
   | { tipo: "conta-categoria"; contaId: string; prefixo: string }
   | { tipo: "conta-centro"; contaId: string; centroGeralId: string }
   | { tipo: "pagamento"; contaId: string; despesaId: string }
-  | { tipo: "pagamento-nao"; despesaId: string };
+  | { tipo: "pagamento-nao"; despesaId: string }
+  | { tipo: "paguei"; acao: "jp" | "jh" | "ju"; contaId: string }
+  | { tipo: "paguei-ligar"; contaId: string; despesaId: string };
 
 const ACOES_DESPESA = new Set(["ok", "co", "x", "ng", "vc", "vg", "re", "u", "ou"]);
 const ACOES_CONTA = new Set(["ok", "co", "x", "ng", "vc", "vg", "re"]);
@@ -86,6 +93,12 @@ export function lerBotao(dados: string | null | undefined): PedidoBotao | null {
       return partes.length === 3 && ok(a, b) ? { tipo: "pagamento", contaId: a, despesaId: b } : null;
     case "pn":
       return partes.length === 2 && ok(a) ? { tipo: "pagamento-nao", despesaId: a } : null;
+    case "jp":
+    case "jh":
+    case "ju":
+      return partes.length === 2 && ok(a) ? { tipo: "paguei", acao: prefixo, contaId: a } : null;
+    case "jl":
+      return partes.length === 3 && ok(a, b) ? { tipo: "paguei-ligar", contaId: a, despesaId: b } : null;
     default:
       return null;
   }

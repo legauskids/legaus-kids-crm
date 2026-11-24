@@ -1,10 +1,11 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { marcarContaPaga } from "@/lib/server/contas-pagar";
+import { desfazerPagamento, despesasParaLigar, marcarContaPaga } from "@/lib/server/contas-pagar";
 import { diaBrasilia, inicioDoDiaBrasilia, somarDias } from "@/lib/utils/brasilia";
 import { DIAS_PARA_LIGAR_DESPESA, dataBR } from "@/lib/utils/contas-pagar";
-import { canalDoIdentificador, type Botoes } from "@/lib/utils/agente-canal";
+import { canalDoIdentificador, type Botoes, type PedidoBotao } from "@/lib/utils/agente-canal";
+import { botaoDesfazerPagamento, botoesDeCandidatas, mensagemCandidatas, mensagemContaPaga } from "@/lib/utils/aviso-contas";
 import { botoesDePagamento, enqueteDePagamento, perguntaDePagamento, type ContaParaPagamento } from "@/lib/utils/conta-agente";
 import type { Enquete } from "@/lib/utils/despesa-agente";
 
@@ -97,4 +98,51 @@ export async function vincularPagamento(contaId: string, despesaId: string, iden
   return {
     mensagem: `✅ Conta *${conta.fornecedor}* (vencimento ${dataBR(diaBrasilia(conta.vencimento))}) marcada como paga com esse pagamento de *${reais(despesa.valorCentavos)}*. A despesa fica aguardando o extrato.`,
   };
+}
+
+function motivo(erro: unknown): string {
+  return erro instanceof Error ? erro.message : "erro desconhecido";
+}
+
+/**
+ * "Já paguei" do aviso diário (Telegram — ver lib/utils/aviso-contas.ts). Se
+ * já existe um pagamento registrado com o valor da conta (ex.: o do push do
+ * banco), pergunta se é ele — nunca liga sozinho; senão marca como paga hoje
+ * e cria a despesa aguardando o extrato.
+ */
+export async function responderBotaoPaguei(
+  pedido: Extract<PedidoBotao, { tipo: "paguei" | "paguei-ligar" }>,
+  usuarioId: string,
+): Promise<{ mensagem: string; botoes?: Botoes }> {
+  const achada = await prisma.contaPagar.findUnique({
+    where: { id: pedido.contaId },
+    select: { id: true, status: true, vencimento: true, valorCentavos: true, fornecedor: true, parcela: true, totalParcelas: true },
+  });
+  if (!achada || achada.status === "CANCELADA") return { mensagem: "Essa conta não existe mais." };
+  const conta = { ...achada, vencimento: diaBrasilia(achada.vencimento) };
+
+  if (pedido.tipo === "paguei" && pedido.acao === "ju") {
+    if (conta.status !== "PAGA") return { mensagem: `A conta *${conta.fornecedor}* já está em aberto.` };
+    try {
+      await desfazerPagamento(conta.id);
+    } catch (erro) {
+      return { mensagem: `Não consegui desfazer: ${motivo(erro)}` };
+    }
+    return { mensagem: `↩️ A conta *${conta.fornecedor}* voltou para em aberto.` };
+  }
+  if (conta.status === "PAGA") return { mensagem: `A conta *${conta.fornecedor}* já estava paga 👍` };
+  if (conta.status === "A_CONFIRMAR") return { mensagem: "Essa conta ainda não foi lançada — confirme antes de marcar como paga." };
+
+  const hoje = diaBrasilia(new Date());
+  if (pedido.tipo === "paguei" && pedido.acao === "jp") {
+    const candidatas = await despesasParaLigar(conta.id, hoje, conta.valorCentavos);
+    if (candidatas.length) return { mensagem: mensagemCandidatas(conta, candidatas), botoes: botoesDeCandidatas(conta.id, candidatas) };
+  }
+  const despesaId = pedido.tipo === "paguei-ligar" ? pedido.despesaId : null;
+  try {
+    await marcarContaPaga(conta.id, { dia: hoje, valorCentavos: conta.valorCentavos, despesaId }, usuarioId);
+  } catch (erro) {
+    return { mensagem: `Não consegui marcar como paga: ${motivo(erro)}` };
+  }
+  return { mensagem: mensagemContaPaga(conta, Boolean(despesaId)), botoes: botaoDesfazerPagamento(conta.id) };
 }
