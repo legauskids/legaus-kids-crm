@@ -26,7 +26,7 @@ function blobParaBase64(blob: Blob): Promise<string> {
   });
 }
 
-function ArquivoCard({ url }: { url: string }) {
+function ArquivoCard({ url, rotulo = "Baixar PDF" }: { url: string; rotulo?: string }) {
   return (
     <a
       href={url}
@@ -35,8 +35,21 @@ function ArquivoCard({ url }: { url: string }) {
       className="mt-1 flex w-fit items-center gap-1.5 rounded-lg border border-current/20 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:border-current/40"
     >
       <FileText className="size-3.5 shrink-0" />
-      Baixar PDF
+      {rotulo}
     </a>
+  );
+}
+
+/** *negrito* e _itálico_ do jeito do WhatsApp, que é como o agente escreve. */
+function TextoFormatado({ texto }: { texto: string }) {
+  const partes = texto.split(/((?<![\w*])\*[^*\n]+\*(?![\w*])|(?<![\w_])_[^_\n]+_(?![\w_]))/g);
+  return (
+    <>
+      {partes.map((parte, i) => {
+        if (i % 2 !== 1) return parte;
+        return parte.startsWith("*") ? <strong key={i}>{parte.slice(1, -1)}</strong> : <em key={i}>{parte.slice(1, -1)}</em>;
+      })}
+    </>
   );
 }
 
@@ -60,8 +73,14 @@ function RespostaComLinks({ texto }: { texto: string }) {
   return (
     <>
       {partes.map((parte, i) => {
-        if (i % 2 !== 1) return parte ? <span key={i}>{parte}</span> : null;
+        if (i % 2 !== 1)
+          return parte ? (
+            <span key={i}>
+              <TextoFormatado texto={parte} />
+            </span>
+          ) : null;
         if (parte.includes("/api/pdf/")) return <ArquivoCard key={i} url={parte} />;
+        if (parte.includes("/api/contas-pagar/planilha")) return <ArquivoCard key={i} url={parte} rotulo="Baixar planilha (Excel)" />;
         if (parte.includes("/api/imagem/produto-card/")) return <CardProdutoImagem key={i} url={parte} />;
         return (
           <a key={i} href={parte} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:no-underline">

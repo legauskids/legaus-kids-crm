@@ -89,7 +89,7 @@ import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
 import { listarContasPagar } from "@/lib/server/contas-pagar";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 import { pareceRespostaDeConta, type ExtracaoConta } from "@/lib/utils/conta-agente";
-import { centroDaConta, dataBR, filtroContasDaUrl, prazoLegivel, rotuloParcela, situacaoLegivel } from "@/lib/utils/contas-pagar";
+import { centroDaConta, dataBR, filtroContasDaUrl, parametrosDoFiltro, prazoLegivel, rotuloParcela, situacaoLegivel, totaisPor } from "@/lib/utils/contas-pagar";
 import { canalDoIdentificador, lerBotao, type Botoes, type CanalAgente } from "@/lib/utils/agente-canal";
 import { responderBotaoAviso } from "@/lib/server/push-bancario";
 import { moduloPermitido, type ModuloKey } from "@/lib/auth/permissoes";
@@ -2565,7 +2565,7 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "listar_contas_pagar",
     description:
-      "Lista as contas a pagar (boletos, faturas, contas fixas, parcelas) pra responder perguntas como 'o que vence essa semana?', 'tem conta atrasada?', 'quanto tenho pra pagar em dezembro?', 'já paguei a Unimed?'. Sem datas = todas em aberto (as atrasadas vêm marcadas). Responda curto: o total, as atrasadas primeiro, depois por data.",
+      "Lista as contas a pagar (boletos, faturas, contas fixas, parcelas) pra responder perguntas como 'o que vence essa semana?', 'tem conta atrasada?', 'quanto tenho pra pagar em dezembro?', 'já paguei a Unimed?', e pra resumo ou relatório das contas. Sem datas = todas em aberto (as atrasadas vêm marcadas). Responda curto: o total, as atrasadas primeiro, depois por data. Num resumo, use também os totais por categoria e por centro. Pedido de relatório, PDF, planilha ou Excel: relatorio=true — no chat do CRM, cole os links relatorioPdf e planilhaExcel que voltarem, puros e cada um sozinho numa linha (viram botões de baixar); no Telegram o PDF vai sozinho como arquivo no chat, depois do texto.",
     input_schema: {
       type: "object",
       properties: {
@@ -2573,18 +2573,37 @@ const FERRAMENTAS: Ferramenta[] = [
         ate: { type: "string", description: "Vencimento até (AAAA-MM-DD)." },
         situacao: { type: "string", enum: ["ABERTAS", "PAGAS", "TODAS"], description: "Padrão: ABERTAS." },
         fornecedor: { type: "string", description: "Parte do nome do fornecedor, se a pergunta for sobre um." },
+        relatorio: { type: "boolean", description: "true quando o usuário pedir relatório, PDF, planilha ou Excel (com o mesmo filtro)." },
       },
     },
-    async executar(args) {
+    async executar(args, ctx) {
       const texto = (v: unknown) => (typeof v === "string" ? v : undefined);
-      const contas = await listarContasPagar(filtroContasDaUrl({ de: texto(args.de), ate: texto(args.ate), situacao: texto(args.situacao), fornecedor: texto(args.fornecedor) }));
+      const filtro = filtroContasDaUrl({ de: texto(args.de), ate: texto(args.ate), situacao: texto(args.situacao), fornecedor: texto(args.fornecedor) });
+      const contas = await listarContasPagar(filtro);
       const hoje = diaBrasilia(new Date());
       const atrasadas = contas.filter((c) => c.status === "ABERTA" && c.vencimento < hoje);
+      const totais = (nome: (c: (typeof contas)[number]) => string) =>
+        totaisPor(contas, nome)
+          .slice(0, 10)
+          .map((t) => ({ nome: t.nome, quantidade: t.quantidade, total: centavosParaReais(t.totalCentavos) }));
+      // Relatório: no chat do CRM, links que viram botões de baixar; no Telegram, o PDF no chat.
+      const parametros = parametrosDoFiltro(filtro).toString();
+      const consulta = parametros ? `?${parametros}` : "";
+      const relatorio = args.relatorio === true;
+      const noTelegram = canalDoIdentificador(ctx.identificador ?? "crm:") === "telegram";
+      if (relatorio && noTelegram) entregarNoChat(ctx, { tipo: "contas-pagar-pdf", filtro: parametros });
       return {
         hoje: dataBR(hoje),
         quantidade: contas.length,
         total: centavosParaReais(contas.reduce((soma, c) => soma + c.valorCentavos, 0)),
         atrasadas: { quantidade: atrasadas.length, total: centavosParaReais(atrasadas.reduce((soma, c) => soma + c.valorCentavos, 0)) },
+        porCategoria: totais((c) => c.categoriaNome ?? "Sem categoria"),
+        porCentro: totais((c) => centroDaConta(c)),
+        ...(relatorio
+          ? noTelegram
+            ? { pdfEnviadoNoChat: true, planilhaExcel: `${URL_BASE}/api/contas-pagar/planilha${consulta}` }
+            : { relatorioPdf: `${URL_BASE}/api/pdf/contas-pagar${consulta}`, planilhaExcel: `${URL_BASE}/api/contas-pagar/planilha${consulta}` }
+          : {}),
         contas: contas.slice(0, 60).map((c) => ({
           vencimento: dataBR(c.vencimento),
           prazo: c.status === "ABERTA" ? prazoLegivel(c.vencimento, hoje) : undefined,

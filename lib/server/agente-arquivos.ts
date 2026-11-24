@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { gerarCardProdutoBuffer } from "@/lib/server/produto-cards";
 import { imagemDaArte } from "@/lib/server/marketing";
+import { filtroContasDaUrl } from "@/lib/utils/contas-pagar";
 
 // Arquivo que o agente entrega pra QUEM PEDIU, no próprio canal da conversa
 // (pedido de 2026-10-14). No Telegram não existe "o WhatsApp de quem pediu":
@@ -13,7 +14,9 @@ export type ArquivoParaEnviar =
   | { tipo: "orcamento-pdf"; orcamentoId: string }
   | { tipo: "card-produto"; produtoId: string; ocultarValor?: boolean }
   // Arte de um post do Marketing (desenhada pelo servidor) — 2026-10-21.
-  | { tipo: "arte-post"; arteId: string; legenda?: string };
+  | { tipo: "arte-post"; arteId: string; legenda?: string }
+  // Relatório de contas a pagar em PDF; filtro = parâmetros da URL da aba (2026-11-24).
+  | { tipo: "contas-pagar-pdf"; filtro: string };
 
 export type ArquivoGerado = { bytes: Buffer; nome: string; mime: string; legenda?: string };
 
@@ -23,6 +26,12 @@ export async function gerarArquivoParaEnviar(arquivo: ArquivoParaEnviar): Promis
     const { gerarPdfOrcamento } = await import("@/lib/server/pdf/orcamento-pdf");
     const { buffer, nomeArquivo } = await gerarPdfOrcamento(arquivo.orcamentoId);
     return { bytes: buffer, nome: nomeArquivo, mime: "application/pdf" };
+  }
+  if (arquivo.tipo === "contas-pagar-pdf") {
+    const { gerarPdfContasPagar } = await import("@/lib/server/pdf/contas-pagar-pdf");
+    const filtro = filtroContasDaUrl(Object.fromEntries(new URLSearchParams(arquivo.filtro)));
+    const { buffer, nomeArquivo } = await gerarPdfContasPagar(filtro);
+    return { bytes: buffer, nome: nomeArquivo, mime: "application/pdf", legenda: "Relatório de contas a pagar" };
   }
   if (arquivo.tipo === "arte-post") {
     const arte = await imagemDaArte(arquivo.arteId);
