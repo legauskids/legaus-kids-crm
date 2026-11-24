@@ -126,6 +126,7 @@ model User {
   despesasRegistradas    Despesa[]                   @relation("RegistradorDespesa")
   paresRejeitados        ParRejeitado[]              @relation("RejeitadorPar")
   contasPagarRegistradas ContaPagar[]                @relation("RegistradorContaPagar")
+  cotacoesFornecedor     CotacaoFornecedor[]         @relation("RegistradorCotacaoFornecedor")
 }
 
 enum OrigemComando {
@@ -214,11 +215,12 @@ model Contato {
 
   createdAt DateTime @default(now())
 
-  conversas    Conversa[]
-  negocios     Negocio[]
-  tarefas      Tarefa[]
-  orcamentos   Orcamento[]
-  notasFiscais NotaFiscal[]
+  conversas          Conversa[]
+  negocios           Negocio[]
+  tarefas            Tarefa[]
+  orcamentos         Orcamento[]
+  notasFiscais       NotaFiscal[]
+  cotacoesFornecedor CotacaoFornecedor[]
 }
 
 model Conversa {
@@ -385,6 +387,7 @@ model Negocio {
   arquivos            NegocioArquivo[]
   orcamentos          Orcamento[]
   contasPagar         ContaPagar[]
+  cotacoesFornecedor  CotacaoFornecedor[]
 
   @@index([contatoId])
 }
@@ -1248,6 +1251,96 @@ model ContaPagar {
   @@unique([serieId, vencimento])
   @@index([status, vencimento])
   @@index([negocioId])
+}
+
+enum OrigemCotacaoFornecedor {
+  // Foto, print ou PDF mandado pelo WhatsApp, Telegram ou chat do CRM.
+  ARQUIVO
+  TEXTO
+  AUDIO
+  MANUAL
+}
+
+// Cotação de fornecedor (pedido de 2026-11-24): o preço que um fornecedor
+// passou, guardado pra consulta na formação de preço ("busque nas cotações
+// por piso emborrachado 15mm"). Não confundir com Cotacao (a calculadora de
+// custo/margem da aba Cotações). Preço guardado como veio no documento (com
+// ou sem IPI, frete à parte) — as condições ficam em texto. O fornecedor
+// fica pelo nome como veio e, quando dá, ligado ao cadastro (Contato
+// FORNECEDOR). data/validade: meio-dia de Brasília do dia, igual Despesa.data.
+model CotacaoFornecedor {
+  id              String                     @id @default(cuid())
+  numero          Int                        @unique @default(autoincrement())
+  titulo          String
+  fornecedorNome  String
+  fornecedorId    String?
+  fornecedor      Contato?                   @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  data            DateTime
+  validade        DateTime?
+  frete           String?
+  prazoEntrega    String?
+  pagamento       String?
+  impostos        String?
+  observacoes     String?
+  totalCentavos   Int?
+  negocioId       String?
+  negocio         Negocio?                   @relation(fields: [negocioId], references: [id], onDelete: SetNull)
+  origem          OrigemCotacaoFornecedor    @default(MANUAL)
+  // Mensagem/transcrição, JSON da IA e conversa de origem (agente).
+  textoOriginal   String?
+  extracao        Json?
+  telefoneOrigem  String?
+  registradaPorId String
+  registradaPor   User                       @relation("RegistradorCotacaoFornecedor", fields: [registradaPorId], references: [id])
+  criadoEm        DateTime                   @default(now())
+  atualizadoEm    DateTime                   @updatedAt
+  itens           CotacaoFornecedorItem[]
+  arquivos        CotacaoFornecedorArquivo[]
+
+  @@index([data])
+  @@index([fornecedorId])
+  @@index([telefoneOrigem, criadoEm])
+}
+
+model CotacaoFornecedorItem {
+  id                    String            @id @default(cuid())
+  cotacaoId             String
+  cotacao               CotacaoFornecedor @relation(fields: [cotacaoId], references: [id], onDelete: Cascade)
+  ordem                 Int               @default(0)
+  // Produto como veio, com medida/especificação: "Piso emborrachado 15mm 50x50 preto".
+  descricao             String
+  unidade               String?
+  quantidade            Float?
+  precoUnitarioCentavos Int?
+  totalCentavos         Int?
+  observacao            String?
+
+  @@index([cotacaoId])
+}
+
+// Foto, print ou PDF da cotação, em partes de 3 MB (igual NegocioArquivo:
+// resposta acima de ~4,5 MB a Vercel recusa, então o download vai em stream).
+model CotacaoFornecedorArquivo {
+  id          String                          @id @default(cuid())
+  cotacaoId   String
+  cotacao     CotacaoFornecedor               @relation(fields: [cotacaoId], references: [id], onDelete: Cascade)
+  nome        String
+  mime        String
+  tamanho     Int
+  partesTotal Int
+  criadoEm    DateTime                        @default(now())
+  partes      CotacaoFornecedorArquivoParte[]
+
+  @@index([cotacaoId])
+}
+
+model CotacaoFornecedorArquivoParte {
+  arquivoId String
+  arquivo   CotacaoFornecedorArquivo @relation(fields: [arquivoId], references: [id], onDelete: Cascade)
+  indice    Int
+  bytes     Bytes
+
+  @@id([arquivoId, indice])
 }
 
 enum TurnoAvisoConta {

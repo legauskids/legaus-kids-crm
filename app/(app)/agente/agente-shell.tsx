@@ -81,6 +81,7 @@ function RespostaComLinks({ texto }: { texto: string }) {
           ) : null;
         if (parte.includes("/api/pdf/")) return <ArquivoCard key={i} url={parte} />;
         if (parte.includes("/api/contas-pagar/planilha")) return <ArquivoCard key={i} url={parte} rotulo="Baixar planilha (Excel)" />;
+        if (parte.includes("/api/cotacoes-fornecedores/arquivo/")) return <ArquivoCard key={i} url={parte} rotulo="Abrir arquivo da cotação" />;
         if (parte.includes("/api/imagem/produto-card/")) return <CardProdutoImagem key={i} url={parte} />;
         return (
           <a key={i} href={parte} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:no-underline">

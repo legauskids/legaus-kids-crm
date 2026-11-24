@@ -5,6 +5,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ListaContatos, type ContatoVM } from "@/app/(app)/cadastros/lista-contatos";
 import { ListaPrecos } from "@/app/(app)/cadastros/lista-precos";
 import { ListaCotacoes, type CotacaoResumoVM } from "@/app/(app)/cadastros/cotacoes/lista-cotacoes";
+import { ListaCotacoesFornecedores } from "@/app/(app)/cadastros/cotacoes-fornecedores/lista-cotacoes-fornecedores";
+import type { CotacaoFornecedorVM } from "@/lib/server/cotacoes-fornecedores";
 import { ProdutosShell, type ProdutoVM } from "@/app/(app)/produtos/produtos-shell";
 
 export function CadastrosShell({
@@ -14,6 +16,7 @@ export function CadastrosShell({
   produtos,
   categoriasFixas,
   cotacoes,
+  cotacoesFornecedores,
 }: {
   contatos: ContatoVM[];
   clientes: ContatoVM[];
@@ -21,6 +24,7 @@ export function CadastrosShell({
   produtos: ProdutoVM[];
   categoriasFixas: string[];
   cotacoes: CotacaoResumoVM[];
+  cotacoesFornecedores: CotacaoFornecedorVM[];
 }) {
   // Patches locais por produto (id -> campos alterados), aplicados por cima
   // do que veio do servidor. Assim a guia Produtos reflete na hora uma
@@ -49,6 +53,7 @@ export function CadastrosShell({
             <TabsTrigger value="contatos">Contatos ({contatos.length})</TabsTrigger>
             <TabsTrigger value="clientes">Clientes ({clientes.length})</TabsTrigger>
             <TabsTrigger value="fornecedores">Fornecedores ({fornecedores.length})</TabsTrigger>
+            <TabsTrigger value="cotacoes-fornecedores">Cotações de fornecedores ({cotacoesFornecedores.length})</TabsTrigger>
             <TabsTrigger value="produtos">Produtos ({produtos.length})</TabsTrigger>
             <TabsTrigger value="lista-precos">Lista de preços</TabsTrigger>
             <TabsTrigger value="cotacoes">Cotações ({cotacoes.length})</TabsTrigger>
@@ -63,6 +68,9 @@ export function CadastrosShell({
         </TabsContent>
         <TabsContent value="fornecedores" className="flex-1 overflow-hidden">
           <ListaContatos tipo="FORNECEDOR" contatos={fornecedores} />
+        </TabsContent>
+        <TabsContent value="cotacoes-fornecedores" className="flex-1 overflow-hidden">
+          <ListaCotacoesFornecedores cotacoes={cotacoesFornecedores} />
         </TabsContent>
         <TabsContent value="produtos" className="flex-1 overflow-hidden">
           <ProdutosShell produtos={produtosAtuais} categoriasFixas={categoriasFixas} />

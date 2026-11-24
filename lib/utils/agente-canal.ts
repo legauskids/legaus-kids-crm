@@ -42,6 +42,8 @@ export const LIMITE_DADOS_BOTAO = 64;
  *   jh:<contaId>                      registrar o pagamento de hoje
  *   jl:<contaId>:<despesaId>          o pagamento é essa despesa já registrada: ligar
  *   ju:<contaId>                      desfazer o pagamento
+ * Cotações de fornecedores (2026-11-24):
+ *   cfx:<cotacaoId>                   apagar a cotação que acabou de ser salva
  */
 export type PedidoBotao =
   | { tipo: "despesa"; acao: "ok" | "co" | "x" | "ng" | "vc" | "vg" | "re" | "u" | "ou"; despesaId: string }
@@ -57,7 +59,8 @@ export type PedidoBotao =
   | { tipo: "pagamento"; contaId: string; despesaId: string }
   | { tipo: "pagamento-nao"; despesaId: string }
   | { tipo: "paguei"; acao: "jp" | "jh" | "ju"; contaId: string }
-  | { tipo: "paguei-ligar"; contaId: string; despesaId: string };
+  | { tipo: "paguei-ligar"; contaId: string; despesaId: string }
+  | { tipo: "cotacao-apagar"; cotacaoId: string };
 
 const ACOES_DESPESA = new Set(["ok", "co", "x", "ng", "vc", "vg", "re", "u", "ou"]);
 const ACOES_CONTA = new Set(["ok", "co", "x", "ng", "vc", "vg", "re"]);
@@ -99,6 +102,8 @@ export function lerBotao(dados: string | null | undefined): PedidoBotao | null {
       return partes.length === 2 && ok(a) ? { tipo: "paguei", acao: prefixo, contaId: a } : null;
     case "jl":
       return partes.length === 3 && ok(a, b) ? { tipo: "paguei-ligar", contaId: a, despesaId: b } : null;
+    case "cfx":
+      return partes.length === 2 && ok(a) ? { tipo: "cotacao-apagar", cotacaoId: a } : null;
     default:
       return null;
   }

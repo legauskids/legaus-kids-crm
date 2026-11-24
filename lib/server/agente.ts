@@ -85,6 +85,17 @@ import {
   responderBotaoConta,
 } from "@/lib/server/conta-agente";
 import { responderBotaoPaguei } from "@/lib/server/conta-pagamento";
+import {
+  apagarCotacaoDaConversa,
+  apagarCotacaoPeloBotao,
+  buscarItensCotados,
+  corrigirCotacaoDaConversa,
+  itemParaAgente,
+  registrarCotacaoDaMensagem,
+  type AnexoCotacao,
+  type CorrecaoCotacao,
+} from "@/lib/server/cotacoes-fornecedores";
+import { botoesCotacaoSalva, type ExtracaoCotacao } from "@/lib/utils/cotacao-fornecedor";
 import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
 import { listarContasPagar } from "@/lib/server/contas-pagar";
 import { diaBrasilia } from "@/lib/utils/brasilia";
@@ -252,6 +263,64 @@ function extracaoContaDosArgs(args: ArgsFerramenta): ExtracaoConta {
     codigoPagamento: texto(args.codigoPagamento),
     parcelas: numero(args.parcelas),
     repeteTodoMes: typeof args.repeteTodoMes === "boolean" ? args.repeteTodoMes : null,
+  };
+}
+
+// Cotações de fornecedores pelo agente (pedido de 2026-11-24).
+const PROPRIEDADES_ITEM_COTACAO = {
+  descricao: { type: "string", description: "Produto com medida/especificação, como veio: 'Piso emborrachado 15mm 50x50 preto'." },
+  unidade: { type: "string", description: "m², un, m, kg, cx, galão… como veio." },
+  quantidade: { type: "number" },
+  precoUnitario: { type: "number", description: "Preço unitário em reais, como veio (sem somar IPI nem frete)." },
+  total: { type: "number", description: "Total do item em reais, se vier." },
+  observacao: { type: "string", description: "Cor, marca, prazo do item etc., se vier." },
+};
+
+const PROPRIEDADES_COTACAO_SEM_ITENS = {
+  fornecedor: {
+    type: "object",
+    description: "A empresa que mandou a cotação, como está no documento.",
+    properties: { nome: { type: "string" }, cnpj: { type: "string" }, telefone: { type: "string" }, email: { type: "string" }, cidade: { type: "string" }, vendedor: { type: "string" } },
+  },
+  dataTexto: { type: "string", description: "Data da cotação como está no documento (dd/mm/aaaa) ou falada ('ontem'). Vazio = hoje." },
+  validadeTexto: { type: "string", description: "Validade como veio: '10 dias', 'válida até 15/12/2026'." },
+  resumo: { type: "string", description: "Os produtos principais em poucas palavras, pro nome da cotação: 'Piso emborrachado 15 e 20mm'." },
+  frete: { type: "string", description: "Como veio: 'CIF', 'FOB', 'R$ 350,00', 'por conta do cliente'." },
+  prazoEntrega: { type: "string" },
+  pagamento: { type: "string", description: "Condição de pagamento: '28 dias', '50% entrada + 50% na entrega'…" },
+  impostos: { type: "string", description: "Como veio: 'IPI incluso', '+ IPI 5%', 'ICMS ST não incluso'." },
+  observacoes: { type: "string" },
+  total: { type: "number", description: "Total da cotação em reais, se vier." },
+  negocio: { type: "string", description: "Cliente/obra, só se disserem pra qual negócio é a cotação." },
+};
+
+const PROPRIEDADES_COTACAO = {
+  ...PROPRIEDADES_COTACAO_SEM_ITENS,
+  itens: { type: "array", description: "Todos os itens cotados, na ordem do documento.", items: { type: "object", properties: PROPRIEDADES_ITEM_COTACAO, required: ["descricao"] } },
+};
+
+/** Número que o modelo às vezes manda como texto ("89,90"). */
+function numeroDoModelo(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const limpo = v.replace(/[^\d,.-]/g, "");
+  const n = Number(limpo.includes(",") ? limpo.replace(/\./g, "").replace(",", ".") : limpo);
+  return limpo && Number.isFinite(n) ? n : null;
+}
+
+function itemDoModelo<T extends Record<string, unknown>>(i: T): T {
+  return { ...i, quantidade: numeroDoModelo(i.quantidade), precoUnitario: numeroDoModelo(i.precoUnitario), total: numeroDoModelo(i.total) };
+}
+
+function extracaoCotacaoDosArgs(args: ArgsFerramenta): CorrecaoCotacao & ExtracaoCotacao {
+  const lista = (v: unknown) => (Array.isArray(v) ? v.filter((i): i is Record<string, unknown> => typeof i === "object" && i !== null).map(itemDoModelo) : null);
+  return {
+    ...(args as CorrecaoCotacao & ExtracaoCotacao),
+    total: numeroDoModelo(args.total),
+    numero: numeroDoModelo(args.numero),
+    itens: lista(args.itens) as ExtracaoCotacao["itens"],
+    alterarItens: lista(args.alterarItens) as CorrecaoCotacao["alterarItens"],
+    novosItens: lista(args.novosItens) as CorrecaoCotacao["novosItens"],
   };
 }
 
@@ -2620,6 +2689,89 @@ const FERRAMENTAS: Ferramenta[] = [
       };
     },
   },
+  {
+    name: "registrar_cotacao_fornecedor",
+    description:
+      "Salva uma COTAÇÃO DE FORNECEDOR — orçamento, cotação, proposta comercial ou tabela de preços que um fornecedor mandou pra Legaus COMPRAR (foto, print ou PDF), ou ditada ('cotei com a X o piso 15mm a 89 o m²'). Uma chamada por documento, com TODOS os itens e preços exatamente como vieram (não some IPI nem frete, não calcule nada). Salva direto, sem pedir confirmação; a resposta da ferramenta vai direto pro usuário. Vários prints seguidos do mesmo fornecedor juntam sozinhos na mesma cotação.",
+    input_schema: { type: "object", properties: PROPRIEDADES_COTACAO },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      const anexos: AnexoCotacao[] = [];
+      if (ctx.anexoImagem) {
+        anexos.push({ bytes: ctx.anexoImagem.bytes, mime: ctx.anexoImagem.mimetype, nome: `cotacao.${ctx.anexoImagem.mimetype.split("/")[1] ?? "jpg"}` });
+        // A foto fica com a cotação: não sobra pra virar foto de produto.
+        ctx.imagemConsumida = true;
+      }
+      if (ctx.anexoPdf) anexos.push({ bytes: ctx.anexoPdf.bytes, mime: "application/pdf", nome: ctx.anexoPdf.nomeArquivo });
+      if (ctx.anexoArquivo) anexos.push({ bytes: ctx.anexoArquivo.bytes, mime: ctx.anexoArquivo.mimetype, nome: ctx.anexoArquivo.nomeArquivo });
+      const identificador = ctx.identificador ?? `crm:${ctx.usuarioId}`;
+      const r = await registrarCotacaoDaMensagem({
+        extracao: extracaoCotacaoDosArgs(args),
+        texto: ctx.textoMensagem ?? "",
+        origem: anexos.length ? "ARQUIVO" : ctx.anexoAudio ? "AUDIO" : "TEXTO",
+        identificador,
+        usuarioId: ctx.usuarioId,
+        anexos,
+      });
+      const noTelegram = canalDoIdentificador(identificador) === "telegram";
+      return { mensagem: r.mensagem, botoes: r.cotacaoId && noTelegram ? botoesCotacaoSalva(r.cotacaoId) : undefined, cotacaoId: r.cotacaoId };
+    },
+  },
+  {
+    name: "corrigir_cotacao_fornecedor",
+    description:
+      "Corrige uma cotação de fornecedor salva nesta conversa (a última, ou a nº informada) quando a pessoa disser o que mudar: 'o preço do piso é 89,90', 'a validade é 15 dias', 'o fornecedor é a Borrachas Sul', 'tira o item 3', 'faltou a cola a 45 o galão', 'é pra obra do Arco-Íris'. Itens pelo número que aparece no resumo (1, 2, 3…). Passe só o que muda. A resposta vai direto pro usuário.",
+    input_schema: {
+      type: "object",
+      properties: {
+        numero: { type: "number", description: "Nº da cotação de fornecedor, se a pessoa disser; senão a última desta conversa." },
+        ...PROPRIEDADES_COTACAO_SEM_ITENS,
+        alterarItens: {
+          type: "array",
+          description: "Itens existentes a mudar ou remover.",
+          items: { type: "object", properties: { item: { type: "number", description: "Número do item no resumo (1, 2, 3…)." }, remover: { type: "boolean" }, ...PROPRIEDADES_ITEM_COTACAO }, required: ["item"] },
+        },
+        novosItens: { type: "array", description: "Itens que faltaram.", items: { type: "object", properties: PROPRIEDADES_ITEM_COTACAO, required: ["descricao"] } },
+      },
+    },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      const r = await corrigirCotacaoDaConversa({ identificador: ctx.identificador ?? `crm:${ctx.usuarioId}`, correcao: extracaoCotacaoDosArgs(args), texto: ctx.textoMensagem ?? "" });
+      return { mensagem: r.mensagem };
+    },
+  },
+  {
+    name: "apagar_cotacao_fornecedor",
+    description: "Apaga uma cotação de fornecedor salva nesta conversa no último dia ('apaga essa cotação', 'desfaz', 'salvou errado'). A resposta vai direto pro usuário. Outras cotações só pela tela (Cadastros → Cotações de fornecedores).",
+    input_schema: { type: "object", properties: { numero: { type: "number", description: "Nº da cotação, se a pessoa disser; senão a última desta conversa." } } },
+    respostaDireta: true,
+    async executar(args, ctx) {
+      const r = await apagarCotacaoDaConversa(ctx.identificador ?? `crm:${ctx.usuarioId}`, numeroDoModelo(args.numero));
+      return { mensagem: r.mensagem };
+    },
+  },
+  {
+    name: "buscar_cotacoes_fornecedores",
+    description:
+      "Busca nos preços das cotações de fornecedores guardadas ('busque nas cotações por piso emborrachado 15mm', 'quem cotou tela de proteção?', 'quanto a Borrachas Sul cobrou no piso?', 'menor preço de parafuso sextavado'). Passe o produto em termos e mais 1 a 3 variações (sinônimos, outro jeito de escrever: 'piso emborrachado 15mm', 'piso de borracha 15mm', 'piso borracha 15 mm'). Sem termos + fornecedor = tudo o que esse fornecedor cotou. Responda com fornecedor, produto, preço/unidade, data (com a idade), validade e condições (frete, IPI, prazo, pagamento), do mais parecido e mais barato pro mais caro; avise quando a cotação for VENCIDA ou antiga (mais de 3 meses); se houver link do arquivo, cole puro numa linha. Não é a calculadora de custo/margem (buscar_cotacoes).",
+    input_schema: {
+      type: "object",
+      properties: {
+        termos: { type: "array", items: { type: "string" }, description: "O produto pedido e variações." },
+        fornecedor: { type: "string", description: "Parte do nome do fornecedor, se a pergunta for sobre um." },
+        desde: { type: "string", description: "Só cotações a partir de (AAAA-MM-DD)." },
+      },
+    },
+    async executar(args) {
+      const termos = Array.isArray(args.termos) ? args.termos.filter((t): t is string => typeof t === "string") : [];
+      const fornecedor = typeof args.fornecedor === "string" ? args.fornecedor : null;
+      const itens = await buscarItensCotados({ termos, fornecedor, desde: typeof args.desde === "string" ? args.desde : null });
+      if (!itens.length) {
+        return { quantidade: 0, aviso: "Nenhum item cotado combina. Tente outra palavra ou peça pra ver as cotações em Cadastros → Cotações de fornecedores." };
+      }
+      return { hoje: dataBR(diaBrasilia(new Date())), quantidade: itens.length, itens: itens.map((i) => itemParaAgente(i, (id) => `${URL_BASE}/api/cotacoes-fornecedores/arquivo/${id}`)) };
+    },
+  },
 ];
 
 function paraToolAnthropic(f: Ferramenta): Anthropic.Tool {
@@ -2670,6 +2822,7 @@ Regras:
 - Quando vier um arquivo anexado que não é PDF nem imagem (planilha, documento, .zip etc.), você recebe o nome e o tipo dele sempre — e o conteúdo de verdade quando for um tipo de texto simples (csv, json, txt, html, xml). Pra reenviar/encaminhar QUALQUER arquivo anexado (imagem, PDF, planilha, o que for) pro WhatsApp de alguém, use enviar_arquivo_whatsapp — ela manda de verdade o arquivo que chegou nesse mesmo comando. Você TEM essa ferramenta: nunca diga que só consegue mandar texto ou card de produto quando o pedido for reenviar um anexo que acabou de chegar.
 - Despesas da empresa: quando a mensagem contar um gasto já feito ("paguei", "gastei", "abasteci", "comprei", "almoço da equipe...") ou vier um comprovante de pagamento, cupom, nota ou recibo (foto ou PDF) sem outro pedido, use registrar_despesa — uma chamada por gasto, sem perguntar nada antes e sem buscar o negócio, mesmo que pareça repetir um gasto de antes. Sempre preencha categoria e centro: se a pessoa não disse, deduza da lista (madeira/parafuso/tinta → Matéria-prima e insumos; combustível/pedágio → Veículos e combustível; almoço/lanche → Alimentação; hotel → Hospedagem e viagens). Se houver despesa esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela ("não, foi 260", "o centro é produção", "era ontem"), use corrigir_despesa. Quem registra e responde é a ferramenta: nunca escreva você mesmo um resumo de despesa nem diga que registrou, corrigiu ou cancelou uma despesa sem ter chamado a ferramenta.
 - Contas a pagar: boleto, fatura (inclusive do cartão de crédito), carnê ou conta que AINDA VAI SER PAGA, com vencimento — foto/PDF de boleto ou fatura sem comprovante de pagamento, ou "tenho que pagar", "vence dia 10", "lança a conta de luz", "comprei parcelado em 3x", "o aluguel é todo dia 5" — é registrar_conta_pagar, não despesa. Comprovante de pagamento ou "paguei" continua sendo registrar_despesa (se o valor bater com uma conta aberta, a ferramenta já pergunta se é o pagamento dela). Se houver conta esperando confirmação (aparece no fim destas instruções) e a mensagem corrigir algo dela, use corrigir_conta_pagar. Perguntas sobre contas a pagar ("o que vence essa semana?", "tem boleto atrasado?") → listar_contas_pagar; no WhatsApp ela não existe (consulta financeira é só no Telegram e no CRM, decisão do Marcos): diga isso e que dá pra ver em Financeiro → Contas a pagar. Igual à despesa: nunca escreva você mesmo o resumo de uma conta nem diga que lançou sem ter chamado a ferramenta.
+- Cotações de fornecedores: orçamento, cotação, proposta comercial ou tabela de preços que um FORNECEDOR mandou pra Legaus comprar (foto, print ou PDF, com ou sem texto), ou ditada ("cotei com a X o piso 15mm a 89 o m²", "guarda essa cotação") → registrar_cotacao_fornecedor, salvando todos os itens e preços como vieram. Não é despesa (nada foi pago), não é conta a pagar (não tem boleto nem vencimento de pagamento) e não é orçamento da Legaus Kids pra cliente (esse tem o logo/dados da Legaus como emitente). Correção ou "apaga essa cotação" logo depois → corrigir_cotacao_fornecedor / apagar_cotacao_fornecedor. "Busque nas cotações…", "quem cotou…", "menor preço de…", "quanto o fornecedor X cobrou…" → buscar_cotacoes_fornecedores. A calculadora de custo/margem (buscar_cotacoes) é outra coisa. Nunca escreva você mesmo o resumo de uma cotação salva sem ter chamado a ferramenta.
 - Depois de executar uma ação com sucesso, confirme o que foi feito em uma frase curta.`;
 }
 
@@ -2778,6 +2931,11 @@ const MODULO_DA_FERRAMENTA: Partial<Record<string, ModuloKey>> = {
   registrar_conta_pagar: "financeiro",
   corrigir_conta_pagar: "financeiro",
   listar_contas_pagar: "financeiro",
+  // Cotações de fornecedores ficam em Cadastros; a Dani manda e busca pelo WhatsApp (decisão do Marcos, 24/11).
+  registrar_cotacao_fornecedor: "contatos",
+  corrigir_cotacao_fornecedor: "contatos",
+  apagar_cotacao_fornecedor: "contatos",
+  buscar_cotacoes_fornecedores: "contatos",
 };
 
 // Consulta financeira não vai no WhatsApp, que a Dani também usa (decisão do
@@ -2965,7 +3123,8 @@ async function rodarAgenteClaude(
       // rodado = nada foi gravado. Uma volta a mais, obrigando a ferramenta.
       // A resposta de uma consulta de contas (listar_contas_pagar) fala de contas
       // sem ser um lançamento — visto no teste de 2026-11-23, virou rascunho vazio.
-      const usouDespesa = ferramentasChamadas.some((n) => /^(registrar|corrigir)_(despesa|conta_pagar)$|^listar_contas_pagar$/.test(n));
+      // Idem a busca e o registro de cotação de fornecedor, que falam de preços.
+      const usouDespesa = ferramentasChamadas.some((n) => /^(registrar|corrigir)_(despesa|conta_pagar)$|^listar_contas_pagar$|_cotac(ao|oes)_fornecedor(es)?$/.test(n));
       const ehConta = pareceRespostaDeConta(textoFinal);
       if (!usouDespesa && !jaForcouDespesa && (ehConta || pareceRespostaDeDespesa(textoFinal))) {
         jaForcouDespesa = true;
@@ -3402,6 +3561,11 @@ export async function processarBotaoAgente(input: { identificador: string; usuar
       return { resposta: "Combinado, não fiz nada." };
     }
     return executarPendente(pendente, input);
+  }
+
+  if (pedido.tipo === "cotacao-apagar") {
+    const r = await apagarCotacaoPeloBotao(pedido.cotacaoId, input.identificador);
+    return r ? { resposta: r.mensagem } : null;
   }
 
   // "Já paguei" do aviso diário: não é de uma conversa, então confere o acesso ao Financeiro.
