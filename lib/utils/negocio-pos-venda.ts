@@ -7,6 +7,33 @@
 
 export const SUFIXO_POS_VENDA = " — Pós-venda";
 
+export const MAX_TITULO_NEGOCIO = 200;
+
+/** O título sem o " — Pós-venda" do fim (com ou sem o espaço antes do travessão). */
+export function semSufixoPosVenda(titulo: string): string {
+  const marca = SUFIXO_POS_VENDA.trim();
+  return titulo.endsWith(marca) ? titulo.slice(0, -marca.length).trimEnd() : titulo;
+}
+
+/**
+ * Renomear um negócio (pedido de 2026-11-24): como venda e pós-venda se
+ * reconhecem pelo título, o outro do par (mesmo cliente) acompanha, e o
+ * pós-venda que tem o sufixo continua com ele — só o nome antes muda.
+ * `gemeoAtual`: o título de hoje do outro do par, para procurar; null = não
+ * tem par.
+ */
+export function renomeacaoDoPar(input: { atual: string; novo: string; ehPosVenda: boolean }): {
+  titulo: string;
+  gemeoAtual: string | null;
+  gemeoNovo: string | null;
+} {
+  const novo = input.novo.trim().replace(/\s+/g, " ");
+  if (!input.ehPosVenda) return { titulo: novo, gemeoAtual: `${input.atual}${SUFIXO_POS_VENDA}`, gemeoNovo: `${novo}${SUFIXO_POS_VENDA}` };
+  if (!input.atual.endsWith(SUFIXO_POS_VENDA)) return { titulo: novo, gemeoAtual: null, gemeoNovo: null };
+  const base = semSufixoPosVenda(novo);
+  return { titulo: `${base}${SUFIXO_POS_VENDA}`, gemeoAtual: semSufixoPosVenda(input.atual), gemeoNovo: base };
+}
+
 /**
  * Tira da lista o negócio de venda cuja cópia de pós-venda (mesmo título +
  * sufixo, mesmo cliente) também está nela — quem procura pelo nome cai

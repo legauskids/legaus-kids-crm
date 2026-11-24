@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { onNegocioEtapaChanged, type OpcoesGanho } from "@/lib/server/automations";
 import { validarDadosParaContrato } from "@/lib/server/contratos";
 import { negociosComTarefaAtiva } from "@/lib/utils/dates";
+import { MAX_TITULO_NEGOCIO, renomeacaoDoPar, semSufixoPosVenda } from "@/lib/utils/negocio-pos-venda";
 
 /** Ids dos negócios com tarefa ativa — pra regra de negócio parado (negocioParado, lib/utils/dates.ts). */
 export async function idsComTarefaAtiva(negocios: { id: string; contatoId: string | null }[]): Promise<Set<string>> {
@@ -187,6 +188,49 @@ export type AtualizarDadosNegocioInput = {
 
 export function atualizarDadosNegocio(negocioId: string, input: AtualizarDadosNegocioInput) {
   return prisma.negocio.update({ where: { id: negocioId }, data: input });
+}
+
+const FUNIL_POS_VENDA = "Funil de pós-venda";
+
+/**
+ * Novo título (lápis no topo do negócio, aba Dados ou agente). Venda e
+ * pós-venda são o mesmo projeto e se reconhecem pelo título + " — Pós-venda"
+ * e pelo cliente (negocio-pos-venda.ts): renomear um renomeia o outro, senão
+ * a busca do agente volta a achar os dois. A troca fica no histórico.
+ */
+export async function renomearNegocio(negocioId: string, novoTitulo: string): Promise<{ titulo: string; gemeos: { id: string; titulo: string }[] }> {
+  return prisma.$transaction(async (tx) => {
+    const negocio = await tx.negocio.findUniqueOrThrow({
+      where: { id: negocioId },
+      select: { titulo: true, contatoId: true, funil: { select: { nome: true } } },
+    });
+    const ehPosVenda = negocio.funil.nome === FUNIL_POS_VENDA;
+    const r = renomeacaoDoPar({ atual: negocio.titulo, novo: novoTitulo, ehPosVenda });
+    if (!semSufixoPosVenda(r.titulo).trim()) throw new Error("Informe um título.");
+    if (r.titulo.length > MAX_TITULO_NEGOCIO) throw new Error(`Título muito longo — no máximo ${MAX_TITULO_NEGOCIO} letras.`);
+    if (r.titulo === negocio.titulo) return { titulo: r.titulo, gemeos: [] };
+
+    const gemeos = r.gemeoAtual
+      ? await tx.negocio.findMany({
+          where: {
+            id: { not: negocioId },
+            titulo: r.gemeoAtual,
+            contatoId: negocio.contatoId,
+            funil: ehPosVenda ? { nome: { not: FUNIL_POS_VENDA } } : { nome: FUNIL_POS_VENDA },
+          },
+          select: { id: true, titulo: true },
+        })
+      : [];
+    const renomear = async (id: string, de: string, para: string, texto: string) => {
+      await tx.negocio.update({ where: { id }, data: { titulo: para } });
+      await tx.atividade.create({ data: { negocioId: id, tipo: "SISTEMA", texto: `${texto} de “${de}” para “${para}”.` } });
+    };
+    await renomear(negocioId, negocio.titulo, r.titulo, "Título alterado");
+    for (const g of gemeos) {
+      await renomear(g.id, g.titulo, r.gemeoNovo!, ehPosVenda ? "Título alterado junto com o pós-venda:" : "Título alterado junto com o negócio de venda:");
+    }
+    return { titulo: r.titulo, gemeos: gemeos.map((g) => ({ id: g.id, titulo: r.gemeoNovo! })) };
+  });
 }
 
 export async function marcarNegocioPerdido(negocioId: string, motivo: string): Promise<void> {

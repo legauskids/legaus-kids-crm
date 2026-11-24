@@ -9,6 +9,7 @@ import {
   criarNegocio,
   marcarNegocioPerdido,
   atualizarDadosNegocio,
+  renomearNegocio,
   adicionarNotaHistorico,
   excluirNegocio,
   adicionarItemChecklistNegocio,
@@ -130,8 +131,17 @@ export async function atualizarDadosNegocioAction(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
+  // O título passa pelo renomear (o pós-venda acompanha e fica no histórico).
+  let gemeos: { id: string }[] = [];
+  if (parsed.data.titulo) {
+    try {
+      gemeos = (await renomearNegocio(parsed.data.negocioId, parsed.data.titulo)).gemeos;
+    } catch (erro) {
+      return { error: erro instanceof Error ? erro.message : "Não consegui trocar o título." };
+    }
+  }
+
   await atualizarDadosNegocio(parsed.data.negocioId, {
-    titulo: parsed.data.titulo || undefined,
     contatoId: parsed.data.contatoId === "" ? null : parsed.data.contatoId,
     valorCentavos: parsed.data.valorReais != null ? reaisParaCentavos(parsed.data.valorReais) : undefined,
     produto: parsed.data.produto || undefined,
@@ -147,7 +157,23 @@ export async function atualizarDadosNegocioAction(
 
   revalidatePath("/negocios");
   revalidatePath(`/negocios/${parsed.data.negocioId}`);
+  for (const g of gemeos) revalidatePath(`/negocios/${g.id}`);
   return { success: true };
+}
+
+/** Lápis ao lado do título, no topo do negócio. `gemeo`: o título novo do outro do par venda/pós-venda, se acompanhou. */
+export async function renomearNegocioAction(negocioId: string, titulo: string): Promise<{ error?: string; titulo?: string; gemeo?: string }> {
+  await requireUser();
+  try {
+    const r = await renomearNegocio(negocioId, titulo);
+    revalidatePath("/negocios");
+    revalidatePath("/producao");
+    revalidatePath(`/negocios/${negocioId}`);
+    for (const g of r.gemeos) revalidatePath(`/negocios/${g.id}`);
+    return { titulo: r.titulo, gemeo: r.gemeos[0]?.titulo };
+  } catch (erro) {
+    return { error: erro instanceof Error ? erro.message : "Não consegui trocar o título." };
+  }
 }
 
 export async function adicionarNotaHistoricoAction(negocioId: string, texto: string): Promise<void> {

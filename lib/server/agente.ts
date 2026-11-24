@@ -28,6 +28,7 @@ import {
   criarNegocio,
   moverNegocio,
   atualizarDadosNegocio,
+  renomearNegocio,
   marcarNegocioPerdido,
   adicionarNotaHistorico,
 } from "@/lib/server/negocios";
@@ -84,6 +85,7 @@ import {
   responderBotaoConta,
 } from "@/lib/server/conta-agente";
 import { responderBotaoPaguei } from "@/lib/server/conta-pagamento";
+import { semVendaComPosVenda } from "@/lib/utils/negocio-pos-venda";
 import { listarContasPagar } from "@/lib/server/contas-pagar";
 import { diaBrasilia } from "@/lib/utils/brasilia";
 import { pareceRespostaDeConta, type ExtracaoConta } from "@/lib/utils/conta-agente";
@@ -1651,12 +1653,13 @@ const FERRAMENTAS: Ferramenta[] = [
   {
     name: "atualizar_negocio",
     description:
-      "Edita valor, produto, descrição, forma de pagamento ou dados de produção/instalação de um negócio já existente. Informe negocioId ou tituloBusca. A forma de pagamento é exigida antes de marcar o negócio como Ganho (vai pro contrato). Datas em formato AAAA-MM-DD.",
+      "Edita título (renomear), valor, produto, descrição, forma de pagamento ou dados de produção/instalação de um negócio já existente. Informe negocioId ou tituloBusca (o nome atual). Renomear a venda renomeia também o pós-venda do mesmo projeto (e vice-versa) — avise o usuário quando isso acontecer. A forma de pagamento é exigida antes de marcar o negócio como Ganho (vai pro contrato). Datas em formato AAAA-MM-DD.",
     input_schema: {
       type: "object",
       properties: {
         negocioId: { type: "string" },
         tituloBusca: { type: "string" },
+        novoTitulo: { type: "string", description: "Novo título do negócio, só quando o usuário pedir para renomear" },
         novoValorReais: { type: "number" },
         novoProduto: { type: "string" },
         novaDescricao: { type: "string" },
@@ -1671,6 +1674,7 @@ const FERRAMENTAS: Ferramenta[] = [
       const a = args as {
         negocioId?: string;
         tituloBusca?: string;
+        novoTitulo?: string;
         novoValorReais?: number;
         novoProduto?: string;
         novaDescricao?: string;
@@ -1680,12 +1684,19 @@ const FERRAMENTAS: Ferramenta[] = [
         novaDataInstalacao?: string;
         novaEquipeInstalacao?: string;
       };
-      const resolvido = await resolverPorBusca(a.negocioId, a.tituloBusca, buscarNegociosSimilarIds);
+      let resolvido = await resolverPorBusca(a.negocioId, a.tituloBusca, buscarNegociosSimilarIds);
       if (!resolvido) throw new Error(`Não achei nenhum negócio parecido com "${a.tituloBusca}".`);
+      // Renomear muda venda e pós-venda juntos: o par do mesmo projeto não é ambiguidade.
+      if ("ambiguo" in resolvido && a.novoTitulo?.trim()) {
+        const candidatos = await prisma.negocio.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, titulo: true, contato: { select: { nome: true } } } });
+        const sobra = semVendaComPosVenda(candidatos.map((n) => ({ id: n.id, titulo: n.titulo, contatoNome: n.contato?.nome ?? null })));
+        if (sobra.length === 1) resolvido = { id: sobra[0].id };
+      }
       if ("ambiguo" in resolvido) {
         const opcoes = await prisma.negocio.findMany({ where: { id: { in: resolvido.ids } }, select: { id: true, titulo: true } });
         return { ambiguo: true, opcoes };
       }
+      const renomeado = a.novoTitulo?.trim() ? await renomearNegocio(resolvido.id, a.novoTitulo) : null;
       const negocio = await atualizarDadosNegocio(resolvido.id, {
         valorCentavos: a.novoValorReais != null ? reaisParaCentavos(a.novoValorReais) : undefined,
         produto: a.novoProduto,
@@ -1696,7 +1707,9 @@ const FERRAMENTAS: Ferramenta[] = [
         dataInstalacao: a.novaDataInstalacao ? new Date(a.novaDataInstalacao) : undefined,
         equipeInstalacao: a.novaEquipeInstalacao,
       });
-      return { id: negocio.id, titulo: negocio.titulo };
+      return renomeado?.gemeos.length
+        ? { id: negocio.id, titulo: negocio.titulo, tambemRenomeado: renomeado.gemeos.map((g) => g.titulo) }
+        : { id: negocio.id, titulo: negocio.titulo };
     },
   },
   {

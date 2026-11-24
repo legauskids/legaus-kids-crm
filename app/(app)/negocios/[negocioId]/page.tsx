@@ -10,6 +10,7 @@ import { ArrowLeft, FileSignature } from "lucide-react";
 import { centavosParaReais } from "@/lib/utils/money";
 import { EtapaBreadcrumb } from "@/app/(app)/negocios/[negocioId]/etapa-breadcrumb";
 import { DadosTab } from "@/app/(app)/negocios/[negocioId]/dados-tab";
+import { TituloNegocio } from "@/app/(app)/negocios/[negocioId]/titulo-negocio";
 import { TarefasTab } from "@/app/(app)/negocios/[negocioId]/tarefas-tab";
 import { HistoricoTab } from "@/app/(app)/negocios/[negocioId]/historico-tab";
 import { ChecklistEtapa } from "@/app/(app)/negocios/[negocioId]/checklist-etapa";
@@ -46,8 +47,8 @@ export default async function NegocioDetalhePage({
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground">{negocio.titulo}</h1>
+        <div className="min-w-0 flex-1">
+          <TituloNegocio negocioId={negocio.id} titulo={negocio.titulo} />
           <p className="text-sm text-muted-foreground">
             {negocio.contato?.nome ?? "Sem contato"} · <span className="font-semibold text-success">{centavosParaReais(negocio.valorCentavos)}</span>
           </p>
@@ -106,7 +107,8 @@ export default async function NegocioDetalhePage({
           <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
         <TabsContent value="dados">
-          <DadosTab negocio={negocio} contatos={contatos} usuarios={usuarios} isFunilPosVenda={isFunilPosVenda} />
+          {/* key: renomeado pelo lápis do topo, o formulário recarrega com o título novo (senão o Salvar daqui voltaria o antigo). */}
+          <DadosTab key={negocio.titulo} negocio={negocio} contatos={contatos} usuarios={usuarios} isFunilPosVenda={isFunilPosVenda} />
         </TabsContent>
         <TabsContent value="tarefas">
           <TarefasTab
