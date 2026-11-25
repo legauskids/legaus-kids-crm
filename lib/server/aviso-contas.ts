@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { gerarContasFixas } from "@/lib/server/contas-pagar";
-import { encontrarOuCriarConversaPorTelefone, registrarMensagem } from "@/lib/server/conversas";
 import { destinatarioDosAvisos } from "@/lib/server/push-bancario";
 import { enviarRespostaTelegram, telegramConfigurado } from "@/lib/server/telegram";
 import { diaBrasilia, inicioDoDiaBrasilia } from "@/lib/utils/brasilia";
@@ -12,39 +11,16 @@ import type { Botoes } from "@/lib/utils/agente-canal";
 // chama é o relógio do servidor da Legaus (whatsapp-service), a cada minuto,
 // junto com os posts agendados — ver app/api/integracoes/publicar-agendados.
 // Cada canal recebe uma vez por dia e turno (AvisoContasPagar).
-
-/**
- * Números de WhatsApp que recebem o aviso (AVISO_CONTAS_WHATSAPP, separados
- * por vírgula). Decisão do Marcos: só o pessoal dele, por enquanto. A mensagem
- * sai do número da Legaus, pela fila de envio de sempre.
- */
-function telefonesDoAviso(): string[] {
-  return (process.env.AVISO_CONTAS_WHATSAPP ?? "")
-    .split(",")
-    .map((t) => t.replace(/\D/g, ""))
-    .filter((t) => t.length >= 10);
-}
+// Só pelo Telegram: o Marcos tirou o WhatsApp em 2026-11-25 (a variável
+// AVISO_CONTAS_WHATSAPP não é mais lida).
 
 export type DestinoAviso = { canal: string; tipo: CanalAviso; enviar: (aviso: { mensagem: string; botoes?: Botoes }) => Promise<void> };
 
 async function destinosDoAviso(): Promise<DestinoAviso[]> {
-  const destinos: DestinoAviso[] = [];
   const admin = await destinatarioDosAvisos();
-  if (admin?.telegramId && telegramConfigurado()) {
-    const chat = admin.telegramId;
-    destinos.push({ canal: "telegram", tipo: "telegram", enviar: (aviso) => enviarRespostaTelegram(chat, aviso) });
-  }
-  for (const telefone of telefonesDoAviso()) {
-    destinos.push({
-      canal: `whatsapp:${telefone}`,
-      tipo: "whatsapp",
-      enviar: async (aviso) => {
-        const conversa = await encontrarOuCriarConversaPorTelefone({ telefone });
-        await registrarMensagem({ conversaId: conversa.id, texto: aviso.mensagem, direcao: "SAIDA", origem: "SISTEMA" });
-      },
-    });
-  }
-  return destinos;
+  if (!admin?.telegramId || !telegramConfigurado()) return [];
+  const chat = admin.telegramId;
+  return [{ canal: "telegram", tipo: "telegram", enviar: (aviso) => enviarRespostaTelegram(chat, aviso) }];
 }
 
 function jaReservado(erro: unknown): boolean {
